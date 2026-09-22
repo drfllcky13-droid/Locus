@@ -44,6 +44,7 @@ fn main() {
             scene_cmds::measurement_delete,
             scene_cmds::set_point_sigma,
             scene_cmds::cleanup_apply,
+            scene_cmds::cleanup_preview,
             scene_cmds::cleanup_set_active,
             scene_cmds::app_info,
             scene_cmds::startup,

@@ -361,6 +361,8 @@ pub struct Region {
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+// A short-lived request per user action; boxing the lasso matrix would buy nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum CleanupRequest {
     BoxDelete {
         region: Region,
@@ -369,6 +371,9 @@ pub enum CleanupRequest {
         view_proj: [f64; 16],
         origin: [f64; 3],
         polygon: Vec<[f64; 2]>,
+        depth: cleanup::LassoDepth,
+        #[serde(default)]
+        clip: cleanup::Clip,
     },
     Outliers {
         k: usize,
@@ -401,7 +406,9 @@ impl CleanupRequest {
                 view_proj,
                 origin,
                 polygon,
-            } => cleanup::lasso_delete(scene, view_proj, origin, polygon),
+                depth,
+                clip,
+            } => cleanup::lasso_delete(scene, view_proj, origin, polygon, *depth, clip),
             CleanupRequest::Outliers {
                 k,
                 std_mult,
@@ -460,6 +467,17 @@ pub async fn cleanup_apply(app: AppHandle, request: CleanupRequest) -> CmdResult
             s.scene.write().unwrap().reload_removed(p).map_err(err)?;
         }
         state_view(s)
+    })
+    .await
+}
+
+/// How many visible points a cleanup would remove, without recording anything.
+#[tauri::command]
+pub async fn cleanup_preview(app: AppHandle, request: CleanupRequest) -> CmdResult<u64> {
+    blocking(app, move |s| {
+        let scene = s.scene.read().unwrap();
+        let removal = request.run(&scene, &mut |_, _| {})?;
+        Ok(removal.iter().map(|(_, bm)| bm.len()).sum())
     })
     .await
 }

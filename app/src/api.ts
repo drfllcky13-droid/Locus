@@ -144,6 +144,22 @@ export interface Region {
   max: [number, number, number];
 }
 
+export type LassoDepth =
+  | { mode: "all_depths" }
+  | {
+      mode: "visible_surface";
+      viewport: [number, number];
+      cell_px: number;
+      tolerance_m: number;
+      tolerance_rel: number;
+    };
+
+/** What the view was clipped to: [min, max, showInside] and [axis, offset, flip]. */
+export interface LassoClip {
+  clip_box: [[number, number, number], [number, number, number], boolean] | null;
+  plane: [number, number, boolean] | null;
+}
+
 export type CleanupRequest =
   | { kind: "box_delete"; region: Region }
   | {
@@ -151,6 +167,8 @@ export type CleanupRequest =
       view_proj: number[];
       origin: [number, number, number];
       polygon: [number, number][];
+      depth: LassoDepth;
+      clip: LassoClip;
     }
   | { kind: "outliers"; k: number; std_mult: number; region: Region | null }
   | { kind: "voxel"; size: number; region: Region | null };
@@ -178,6 +196,7 @@ export const api = {
   measurementDelete: (id: number) => invoke<StateView>("measurement_delete", { id }),
   setPointSigma: (meters: number) => invoke<StateView>("set_point_sigma", { meters }),
   cleanupApply: (request: CleanupRequest) => invoke<StateView>("cleanup_apply", { request }),
+  cleanupPreview: (request: CleanupRequest) => invoke<number>("cleanup_preview", { request }),
   cleanupSetActive: (id: number, active: boolean) =>
     invoke<StateView>("cleanup_set_active", { id, active }),
   appInfo: () => invoke<{ version: string; webview: string }>("app_info"),

@@ -273,3 +273,87 @@ fn outliers_are_found_and_voxels_keep_one_point_each() {
         .collect();
     assert_eq!(kept, voxels.len() as u64);
 }
+
+/// A camera 10 m above the origin looking straight down: NDC = offset / (depth × t).
+fn looking_down(t: f64) -> [f64; 16] {
+    // Column-major; clip w = 10 − z (distance below the camera).
+    [
+        1.0 / t,
+        0.0,
+        0.0,
+        0.0, //
+        0.0,
+        1.0 / t,
+        0.0,
+        0.0, //
+        0.0,
+        0.0,
+        -1.0,
+        -1.0, //
+        0.0,
+        0.0,
+        0.0,
+        10.0,
+    ]
+}
+
+#[test]
+fn lasso_removes_all_depths_or_only_the_visible_surface() {
+    use locus_octree::cleanup::{lasso_delete, Clip, LassoDepth};
+    let dir = tempfile::tempdir().unwrap();
+    // Two 2 m floors, 1 m apart, 5 cm grid; records 0..1681 are the top one.
+    let mut pts: Vec<[f64; 3]> = grid(41, 0.05)
+        .into_iter()
+        .map(|p| [p[0] - 1.0, p[1] - 1.0, 0.0])
+        .collect();
+    pts.extend(
+        grid(41, 0.05)
+            .into_iter()
+            .map(|p| [p[0] - 1.0, p[1] - 1.0, -1.0]),
+    );
+    let src = xyz(dir.path(), "floors.xyz", &pts);
+    let mut p = project(dir.path());
+    import(&mut p, &src, Some(LinearUnit::Meter));
+    let scene = Scene::load(&p).unwrap();
+
+    let vp = looking_down(0.1);
+    let square = [[-0.3, -0.3], [0.3, -0.3], [0.3, 0.3], [-0.3, 0.3]];
+    let count = |r: &locus_octree::cleanup::Removal| r.iter().map(|(_, b)| b.len()).sum::<u64>();
+    let all = lasso_delete(
+        &scene,
+        &vp,
+        &[0.0; 3],
+        &square,
+        LassoDepth::AllDepths,
+        &Clip::default(),
+    )
+    .unwrap();
+    let surface = LassoDepth::VisibleSurface {
+        viewport: [1000, 1000],
+        cell_px: 30,
+        tolerance_m: 0.02,
+        tolerance_rel: 0.005,
+    };
+    let front = lasso_delete(&scene, &vp, &[0.0; 3], &square, surface, &Clip::default()).unwrap();
+
+    let top = pts.len() as u32 / 2;
+    assert!(count(&front) > 100);
+    assert!(front[0].1.iter().all(|i| i < top), "only the top floor");
+    assert!(count(&all) > count(&front));
+    assert!(
+        all[0].1.iter().any(|i| i >= top),
+        "all depths reaches the floor below"
+    );
+
+    // With the top floor clipped out of view, the visible surface is the floor below.
+    let clip = Clip {
+        clip_box: Some(([-2.0, -2.0, -1.5], [2.0, 2.0, -0.5], true)),
+        plane: None,
+    };
+    let lower = lasso_delete(&scene, &vp, &[0.0; 3], &square, surface, &clip).unwrap();
+    assert!(count(&lower) > 100);
+    assert!(
+        lower[0].1.iter().all(|i| i >= top),
+        "clipped points are never lassoed"
+    );
+}

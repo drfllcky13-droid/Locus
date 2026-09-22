@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import type { CleanupRequest, Region, StateView } from "../api";
+import type { CleanupRequest, LassoDepth, Region, StateView } from "../api";
 import { initialBudget, updateBudget, type BudgetState } from "./budget";
 import { EdlPass } from "./edl";
 import type { View } from "./lod";
@@ -46,6 +46,12 @@ export class Engine {
   private mouse: { x: number; y: number } | null = null;
   focusActive = false;
   clipMode: ClipMode = "off";
+  private plane: { on: boolean; axis: 0 | 1 | 2; offset: number; flip: boolean } = {
+    on: false,
+    axis: 2,
+    offset: 0,
+    flip: false,
+  };
 
   constructor(
     private host: HTMLElement,
@@ -194,6 +200,7 @@ export class Engine {
   }
 
   setClipPlane(on: boolean, axis: 0 | 1 | 2, offset: number, flip: boolean) {
+    this.plane = { on, axis, offset, flip };
     if (!this.layer) return;
     const n = [0, 0, 0];
     n[axis] = flip ? -1 : 1;
@@ -232,7 +239,7 @@ export class Engine {
   }
 
   /** A lasso drawn in CSS pixels, as a cleanup request in NDC with the current camera. */
-  lassoRequest(polygon: [number, number][]): CleanupRequest {
+  lassoRequest(polygon: [number, number][], mode: LassoDepth["mode"]): CleanupRequest {
     const w = this.host.clientWidth;
     const h = this.host.clientHeight;
     this.camera.updateMatrixWorld();
@@ -245,6 +252,18 @@ export class Engine {
       view_proj: [...vp.elements],
       origin: this.origin,
       polygon: polygon.map(([x, y]) => [(x / w) * 2 - 1, -((y / h) * 2 - 1)]),
+      // Defaults documented in docs/methods/cleanup.md.
+      depth:
+        mode === "all_depths"
+          ? { mode }
+          : { mode, viewport: [w, h], cell_px: 3, tolerance_m: 0.02, tolerance_rel: 0.005 },
+      clip: {
+        clip_box: (() => {
+          const r = this.clipRegion();
+          return r ? [r.min, r.max, this.clipMode === "inside"] : null;
+        })(),
+        plane: this.plane.on ? [this.plane.axis, this.plane.offset, this.plane.flip] : null,
+      },
     };
   }
 

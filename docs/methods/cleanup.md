@@ -16,7 +16,11 @@ Measurements always resolve against visible points, and a pick made on a view dr
 ## Operations
 
 - **Box delete** removes every point inside an axis-aligned box in the project frame (the clip box).
-- **Lasso delete** removes every point in front of the camera whose projection falls inside the drawn polygon, at any depth, including points hidden behind others. The stored parameters are the polygon in normalized device coordinates, the camera's view-projection matrix (f64), and the render origin.
+- **Lasso delete** removes the points inside a polygon drawn on screen, in one of two modes. Before confirming, the examiner sees how many points each mode would remove.
+  - **Visible surface only** (default): the view is divided into cells of 3 × 3 pixels, and each cell's nearest point sets its front depth. A point inside the lasso is removed only if its view depth is within 2 cm + 0.5 % of that depth of the front, so points on surfaces further back survive. The front is computed from every visible point in the cells the lasso touches, including points just outside it, so a lasso edge can't expose what is behind.
+  - **All depths**: every point whose projection falls inside the polygon, including points hidden behind others.
+
+  In both modes, points hidden by the clip box or clip plane are never touched. The stored parameters are everything needed to recompute the result: the polygon in normalized device coordinates, the camera's view-projection matrix (f64), the render origin, the mode with its viewport size, cell size and tolerances, and the clip box and plane.
 - **Statistical outlier removal** (Rusu et al., 2008): for each point, the mean distance to its *k* nearest neighbours. A point is removed when its mean exceeds the scan-wide mean of those means by more than *n* standard deviations. Parameters: *k* (default 8) and *n* (default 2). It runs per scan, and only on points inside the clip box when that is on.
 - **Voxel downsample** keeps one point per voxel of edge *s*: the point nearest the voxel centre, with ties going to the lower record number. Voxels are aligned to the scan's own origin. The operation is deterministic.
 
@@ -24,4 +28,5 @@ Measurements always resolve against visible points, and a pick made on a view dr
 
 - Outlier removal and downsampling work tile by tile, to bound memory. Each tile reads a margin of 5 % of its edge for neighbours. A point whose *k* neighbours lie beyond that margin at a tile border gets a slightly overestimated mean distance. This matters only for sparse data near tile borders.
 - Statistics are per scan, so a dense scan and a sparse scan are judged against their own distributions, not a common one.
-- Lasso delete is intentionally depth-blind (like other point-cloud tools). Use the clip box first to limit it to what is in view.
+- The visible-surface test uses the full-resolution data, not what the view happened to draw at its current level of detail. Where a surface is sparser than one point per 3 × 3-pixel cell, points behind it show through the gaps and count as visible. Zoom in, or use a clip box, when that matters.
+- Surfaces closer together than the tolerance (2 cm + 0.5 % of distance) are treated as one surface.

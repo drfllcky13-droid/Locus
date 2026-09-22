@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ProjectInfo, type Resolved, type StateView } from "../api";
+import { formatCount } from "../format";
 import { Engine, type ClipMode, type Stats } from "./engine";
 import { TOOL_POINTS, type MeasurementRecord } from "./measureFormat";
 import type { ColorMode, PickHit, SceneData } from "./pointcloud";
@@ -47,6 +48,12 @@ export function Viewport({
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState<string | null>(null);
   const [lasso, setLasso] = useState<[number, number][]>([]);
+  const [lassoConfirm, setLassoConfirm] = useState<{
+    polygon: [number, number][];
+    visible: number;
+    all: number;
+    mode: "visible_surface" | "all_depths";
+  } | null>(null);
 
   // One engine for the lifetime of the component.
   useEffect(() => {
@@ -248,8 +255,22 @@ export function Viewport({
     if (!start) return;
     const p = local(ev);
     if (tool === "lasso") {
-      if (lasso.length >= 3 && engineRef.current)
-        await runCleanup(engineRef.current.lassoRequest(lasso));
+      const e = engineRef.current;
+      if (lasso.length >= 3 && e) {
+        // Count both modes first, so the examiner sees what each would remove.
+        setBusy("Counting points…");
+        try {
+          const [visible, all] = await Promise.all([
+            api.cleanupPreview(e.lassoRequest(lasso, "visible_surface")),
+            api.cleanupPreview(e.lassoRequest(lasso, "all_depths")),
+          ]);
+          setLassoConfirm({ polygon: lasso, visible, all, mode: "visible_surface" });
+        } catch (err) {
+          onNotice(String(err));
+        } finally {
+          setBusy(null);
+        }
+      }
       setLasso([]);
       return;
     }
@@ -302,6 +323,46 @@ export function Viewport({
           </div>
         )}
       </div>
+      {lassoConfirm && (
+        <div className="overlay">
+          <div className="dialog" role="dialog" aria-label="Lasso delete">
+            <h2>Delete points inside the lasso?</h2>
+            <label className="inline">
+              <input
+                type="radio"
+                checked={lassoConfirm.mode === "visible_surface"}
+                onChange={() => setLassoConfirm({ ...lassoConfirm, mode: "visible_surface" })}
+              />
+              Visible surface only: {formatCount(lassoConfirm.visible, "point")}
+            </label>
+            <label className="inline">
+              <input
+                type="radio"
+                checked={lassoConfirm.mode === "all_depths"}
+                onChange={() => setLassoConfirm({ ...lassoConfirm, mode: "all_depths" })}
+              />
+              All depths, including points hidden behind: {formatCount(lassoConfirm.all, "point")}
+            </label>
+            <p className="muted">
+              Evidence is not changed. The operation is logged and can be undone.
+            </p>
+            <div className="buttons">
+              <button onClick={() => setLassoConfirm(null)}>Cancel</button>
+              <button
+                className="primary"
+                onClick={() => {
+                  const e = engineRef.current;
+                  const c = lassoConfirm;
+                  setLassoConfirm(null);
+                  if (e) void runCleanup(e.lassoRequest(c.polygon, c.mode));
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {project && (
         <ScenePanel
           scene={shownScene}
