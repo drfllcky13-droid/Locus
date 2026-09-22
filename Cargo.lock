@@ -2225,6 +2225,9 @@ version = "0.1.0"
 [[package]]
 name = "locus-validate"
 version = "0.1.0"
+dependencies = [
+ "e57",
+]
 
 [[package]]
 name = "log"
