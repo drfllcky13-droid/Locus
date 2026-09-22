@@ -2227,6 +2227,11 @@ name = "locus-validate"
 version = "0.1.0"
 dependencies = [
  "e57",
+ "locus-core",
+ "locus-io",
+ "locus-octree",
+ "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

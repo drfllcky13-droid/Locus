@@ -1,9 +1,12 @@
 //! Synthetic ground-truth scenes and the end-to-end accuracy suite (built in Phase 13).
 //!
-//! Available now: `locus-validate gen-scene --scans N --points-per-scan M --out FILE.e57
-//! [--seed S]`, which writes a synthetic multi-station E57 for performance and pipeline
-//! testing.
+//! Available now:
+//! - `locus-validate gen-scene --scans N --points-per-scan M --out FILE.e57 [--seed S]`
+//!   writes a synthetic multi-station E57 for performance and pipeline testing.
+//! - `locus-validate import --project DIR --examiner NAME [--unit meter] FILE...` imports
+//!   files and builds their octrees exactly as the app does, reporting time and memory.
 
+mod import;
 mod scene;
 
 use std::process::ExitCode;
@@ -47,8 +50,38 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("import") => {
+            let run = || -> Result<(), String> {
+                let project: String = arg(&args, "--project", None)?;
+                let examiner: String = arg(&args, "--examiner", None)?;
+                let unit = match args.iter().position(|a| a == "--unit") {
+                    Some(i) => Some(
+                        serde_json::from_value(serde_json::json!(args
+                            .get(i + 1)
+                            .ok_or("--unit needs a value")?))
+                        .map_err(|_| "unknown unit")?,
+                    ),
+                    None => None,
+                };
+                let files: Vec<String> = args
+                    .iter()
+                    .enumerate()
+                    .skip(1)
+                    .filter(|(i, a)| !a.starts_with("--") && !args[i - 1].starts_with("--"))
+                    .map(|(_, a)| a.clone())
+                    .collect();
+                import::run(std::path::Path::new(&project), &examiner, &files, unit)
+            };
+            match run() {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("import: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         _ => {
-            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene`.");
+            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene` or `import`.");
             ExitCode::FAILURE
         }
     }
