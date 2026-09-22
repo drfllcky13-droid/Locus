@@ -44,6 +44,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: 100M-point E57 import stays under 4 GB (Phase 1 acceptance)
+        if: runner.os == 'Linux'
+        run: cargo test -p locus-io --release --test e57_memory -- --ignored --nocapture
 
       - run: pnpm typecheck
       - run: pnpm lint
