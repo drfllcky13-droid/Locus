@@ -1,0 +1,24 @@
+# Enforces CLAUDE.md rule 7. Anything not listed here fails CI; ask before adding.
+[licenses]
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "0BSD",
+  "Zlib",
+  "MPL-2.0",
+  "Unlicense",
+  "CC0-1.0",
+  "Unicode-3.0", # provisional, see docs/DECISIONS.md
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+ignore = true
+
+# Apache-2.0 plus the LLVM exception (strictly more permissive). Linux build-time only, via gtk's system-deps.
+[[licenses.exceptions]]
+crate = "target-lexicon"
+allow = ["Apache-2.0 WITH LLVM-exception"]
