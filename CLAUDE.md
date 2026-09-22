@@ -11,6 +11,7 @@ Locus is a desktop application for documenting, analyzing, and presenting crime 
 5. **Explain the method.** Each analysis tool records which method, inputs, assumptions, and limitations were used, so the report can show its work. An examiner must be able to defend every number in court.
 6. **Tests before merge.** `cargo test`, `cargo clippy -- -D warnings`, `pnpm test`, and `pnpm typecheck` must pass before a phase is marked done.
 7. **Licensing.** Dependencies must be MIT, Apache-2.0, BSD, Zlib, or MPL-2.0. Ask before adding anything GPL, AGPL, LGPL, or with unclear terms.
+8. **Offline only.** The app makes no network requests of any kind. No telemetry, no auto-update checks, no online license activation, no CDN-loaded assets. All fonts, libraries, and assets are bundled locally.
 
 ## Stack
 
