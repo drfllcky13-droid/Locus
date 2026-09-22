@@ -2140,9 +2140,13 @@ dependencies = [
 name = "locus"
 version = "0.1.0"
 dependencies = [
+ "locus-analysis",
  "locus-core",
  "locus-io",
+ "locus-octree",
+ "roaring",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

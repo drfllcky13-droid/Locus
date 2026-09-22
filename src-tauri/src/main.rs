@@ -4,10 +4,24 @@
 #![cfg_attr(feature = "spike", allow(dead_code))]
 
 mod commands;
+mod scene_cmds;
 #[cfg(feature = "spike")]
 mod spike;
 
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+/// Ask hybrid-graphics laptops to run Locus on the dedicated GPU (NVIDIA Optimus and AMD
+/// PowerXpress read these exported symbols; build.rs exports them). WebGL draws in
+/// WebView2's own GPU process, which these don't reach, so tauri.conf.json also passes
+/// `--force_high_performance_gpu` to WebView2. Help > About shows the GPU actually used.
+#[cfg(windows)]
+#[no_mangle]
+#[used]
+pub static NvOptimusEnablement: u32 = 1;
+#[cfg(windows)]
+#[no_mangle]
+#[used]
+pub static AmdPowerXpressRequestHighPerformance: u32 = 1;
+
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 
 fn main() {
@@ -16,13 +30,34 @@ fn main() {
         .manage(commands::AppState::default());
 
     #[cfg(not(feature = "spike"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::project_create,
-        commands::project_open,
-        commands::import_preview,
-        commands::import_commit,
-        commands::evidence_verify,
-    ]);
+    let builder = builder
+        .invoke_handler(tauri::generate_handler![
+            commands::project_create,
+            commands::project_open,
+            commands::import_preview,
+            commands::import_commit,
+            commands::evidence_verify,
+            scene_cmds::scene_view,
+            scene_cmds::analysis_state,
+            scene_cmds::pick_resolve,
+            scene_cmds::measure,
+            scene_cmds::measurement_delete,
+            scene_cmds::set_point_sigma,
+            scene_cmds::cleanup_apply,
+            scene_cmds::cleanup_set_active,
+            scene_cmds::app_info,
+        ])
+        .register_asynchronous_uri_scheme_protocol("locus", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(scene_cmds::protocol(&app, request))
+            });
+        })
+        .setup(|app| {
+            use tauri::Manager;
+            app.manage(scene_cmds::Builder::start(app.handle().clone()));
+            Ok(())
+        });
 
     // Rendering spike: serve synthetic chunks; tauri.spike.conf.json opens spike.html.
     #[cfg(feature = "spike")]
@@ -76,15 +111,7 @@ fn main() {
                         app,
                         "Help",
                         true,
-                        &[&PredefinedMenuItem::about(
-                            app,
-                            Some("About Locus"),
-                            Some(AboutMetadata {
-                                name: Some("Locus".into()),
-                                version: Some(env!("CARGO_PKG_VERSION").into()),
-                                ..Default::default()
-                            }),
-                        )?],
+                        &[&item("about", "About Locus", None)?],
                     )?,
                 ],
             )

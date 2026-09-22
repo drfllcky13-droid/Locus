@@ -12,7 +12,7 @@ fn import(p: &mut Project, src: &Path, unit: Option<LinearUnit>) -> i64 {
     let pv = locus_io::preview(src, &mut |_| {}).unwrap();
     let rec = locus_io::commit(p, &pv, unit, &mut |_| {}).unwrap();
     for s in 0..rec.contents.scans.len() {
-        let meta = build_scan(p, &rec, s, &mut |_| {}).unwrap();
+        let meta = build_scan(p.root(), &rec, s, &mut |_| {}).unwrap();
         p.record_octree(rec.id, s, "built", meta.points, "")
             .unwrap();
     }

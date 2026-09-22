@@ -137,8 +137,12 @@ impl Project {
     }
 
     pub fn octree_dir(&self, evidence_id: i64, scan_idx: usize) -> PathBuf {
-        self.root
-            .join("derived")
+        Self::octree_dir_in(&self.root, evidence_id, scan_idx)
+    }
+
+    /// Where a scan's octree lives inside a project folder.
+    pub fn octree_dir_in(root: &std::path::Path, evidence_id: i64, scan_idx: usize) -> PathBuf {
+        root.join("derived")
             .join("octree")
             .join(format!("{evidence_id}-{scan_idx}"))
     }

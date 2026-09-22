@@ -5,25 +5,27 @@ use locus_core::{EvidenceRecord, IntegrityReport, LinearUnit, Project};
 use locus_io::{Preview, Progress};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager};
 
 #[derive(Default)]
 pub struct AppState {
-    project: Mutex<Option<Project>>,
+    pub(crate) project: Mutex<Option<Project>>,
     /// The last preview shown to the examiner; commit only ever imports this one.
     preview: Mutex<Option<Preview>>,
+    /// The open project's point clouds. Lock order: project, then scene.
+    pub(crate) scene: RwLock<locus_octree::scene::Scene>,
 }
 
-type CmdResult<T> = Result<T, String>;
+pub(crate) type CmdResult<T> = Result<T, String>;
 
-fn err(e: impl ToString) -> String {
+pub(crate) fn err(e: impl ToString) -> String {
     e.to_string()
 }
 
 /// Run blocking work (file I/O, SQLite) on a worker thread.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     app: AppHandle,
     f: impl FnOnce(&AppState) -> CmdResult<T> + Send + 'static,
 ) -> CmdResult<T> {
@@ -90,9 +92,11 @@ pub async fn project_create(
         })
         .collect();
     let root = parent.join(format!("{folder}.locus"));
+    let handle = app.clone();
     blocking(app, move |s| {
         let p = Project::create(&root, &name, &examiner).map_err(err)?;
         let i = info(&p, None)?;
+        crate::scene_cmds::refresh(&handle, &p)?;
         *s.project.lock().unwrap() = Some(p);
         Ok(i)
     })
@@ -107,12 +111,14 @@ pub async fn project_open(
     on_progress: Channel<u64>,
 ) -> CmdResult<ProjectInfo> {
     let examiner = examiner(&examiner_name)?;
+    let handle = app.clone();
     blocking(app, move |s| {
         let p = Project::open_with_progress(&root, &examiner, &mut |b| {
             let _ = on_progress.send(b);
         })
         .map_err(err)?;
         let i = info(&p, Some(p.integrity_on_open().clone()))?;
+        crate::scene_cmds::refresh(&handle, &p)?;
         *s.project.lock().unwrap() = Some(p);
         Ok(i)
     })
@@ -151,6 +157,7 @@ pub async fn import_commit(
     unit: Option<LinearUnit>,
     on_progress: Channel<Progress>,
 ) -> CmdResult<CommitResult> {
+    let handle = app.clone();
     blocking(app, move |s| {
         let pv = s
             .preview
@@ -166,6 +173,9 @@ pub async fn import_commit(
         })
         .map_err(err)?;
         *s.preview.lock().unwrap() = None;
+        handle
+            .state::<crate::scene_cmds::Builder>()
+            .queue_missing(project, std::slice::from_ref(&rec))?;
         let warning = if rec.contents.format == "E57" && !rec.contents.images.is_empty() {
             extract_panoramas(project.root(), &rec).err()
         } else {

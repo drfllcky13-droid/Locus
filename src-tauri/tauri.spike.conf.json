@@ -1,7 +1,14 @@
 {
   "app": {
     "windows": [
-      { "title": "Locus rendering spike", "url": "spike.html", "maximized": true, "width": 1400, "height": 900 }
+      {
+        "title": "Locus rendering spike",
+        "url": "spike.html",
+        "maximized": true,
+        "width": 1400,
+        "height": 900,
+        "additionalBrowserArgs": "--force_high_performance_gpu --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+      }
     ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost spike: http://spike.localhost"

@@ -247,7 +247,7 @@ impl From<locus_io::Error> for Error {
 /// Build (or rebuild) the octree for one scan of an evidence item into the project's
 /// derived folder. Reads the evidence copy, never the original.
 pub fn build_scan(
-    project: &Project,
+    root: &Path,
     rec: &EvidenceRecord,
     scan_idx: usize,
     progress: &mut dyn FnMut(BuildProgress),
@@ -270,13 +270,13 @@ pub fn build_scan(
         .fold(0.0, f64::max);
     // Pad so points on the far faces fall inside, and give flat or single-point scans a size.
     let size = (extent * (1.0 + 1e-9)).max(1e-3) + 1e-6;
-    let path = project.root().join(&rec.stored_path);
+    let path = root.join(&rec.stored_path);
     let opts = BuildOptions {
         has_color: info.attributes.iter().any(|a| a == "color"),
         has_intensity: info.attributes.iter().any(|a| a == "intensity"),
         ..BuildOptions::default()
     };
-    let dir = project.octree_dir(rec.id, scan_idx);
+    let dir = Project::octree_dir_in(root, rec.id, scan_idx);
     let tmp = dir.with_extension("building");
     if tmp.exists() {
         fs::remove_dir_all(&tmp)?;
