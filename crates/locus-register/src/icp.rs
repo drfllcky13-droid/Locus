@@ -114,7 +114,7 @@ pub fn icp(
             wsum += w;
             wr2 += w * r * r;
         }
-        let dx = a.clone().cholesky()?.solve(&(-b));
+        let dx = a.cholesky()?.solve(&(-b));
         let (omega, tau) = (
             dx.fixed_rows::<3>(0).into_owned(),
             dx.fixed_rows::<3>(3).into_owned(),
