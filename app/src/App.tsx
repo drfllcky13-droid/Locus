@@ -48,7 +48,9 @@ export function App() {
       const bad = results.filter(([, s]) => s.status !== "intact");
       setNotice(
         bad.length === 0
-          ? `All ${formatCount(results.length, "evidence file")} match their recorded SHA-256.`
+          ? results.length === 1
+            ? "The evidence file matches its recorded SHA-256."
+            : `All ${results.length} evidence files match their recorded SHA-256.`
           : `${bad.length} of ${results.length} evidence files FAILED: ` +
               bad.map(([id, s]) => `#${id} ${s.status}`).join(", "),
       );
