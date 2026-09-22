@@ -14,3 +14,7 @@ locus-io = { version = "0.1.0", path = "../crates/locus-io" }
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+
+[features]
+# Phase 2 rendering spike; see docs/spike-rendering.md. Never enabled in releases.
+spike = []

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Locus rendering spike</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1e1f22;
+        color: #e6e8eb;
+        font:
+          13px system-ui,
+          sans-serif;
+      }
+      #status {
+        position: fixed;
+        left: 8px;
+        top: 8px;
+        white-space: pre;
+        background: rgb(0 0 0 / 60%);
+        padding: 6px 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="status">starting…</div>
+    <script type="module" src="/spike/main.ts"></script>
+  </body>
+</html>

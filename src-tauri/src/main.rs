@@ -1,22 +1,45 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// The spike build swaps the app commands for its own.
+#![cfg_attr(feature = "spike", allow(dead_code))]
 
 mod commands;
+#[cfg(feature = "spike")]
+mod spike;
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::AppState::default())
+        .manage(commands::AppState::default());
+
+    #[cfg(not(feature = "spike"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::project_create,
+        commands::project_open,
+        commands::import_preview,
+        commands::import_commit,
+        commands::evidence_verify,
+    ]);
+
+    // Rendering spike: serve synthetic chunks; tauri.spike.conf.json opens spike.html.
+    #[cfg(feature = "spike")]
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
-            commands::project_create,
-            commands::project_open,
-            commands::import_preview,
-            commands::import_commit,
-            commands::evidence_verify,
+            spike::spike_chunk,
+            spike::spike_params,
+            spike::spike_report
         ])
+        .register_asynchronous_uri_scheme_protocol("spike", |_ctx, request, responder| {
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(spike::protocol(request))
+            });
+        })
+        .setup(|_| Ok(spike::ensure_fixture()?));
+
+    builder
         .menu(|app| {
             let item = |id: &str, text: &str, accel: Option<&str>| {
                 MenuItem::with_id(app, id, text, true, accel)

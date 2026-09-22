@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **Phase 1 (complete locally; awaiting final CI run)**. Phase 0 complete.
+Current phase: **Phase 2: rendering spike done, waiting for Addison's decision before feature work.** Phases 0 and 1 are complete.
 
 ## Phase log
 
@@ -24,7 +24,7 @@ Local setup done: rustup stable (1.98.1, MSVC) and VS 2022 Build Tools (C++ work
 
 Follow-ups after review (2026-09-22): all crates confirmed `publish = false` (inherited from the workspace); cargo-deny license check added to CI to enforce CLAUDE.md rule 7.
 
-### Phase 1: Project model, evidence integrity, import
+### Phase 1: Project model, evidence integrity, import (done 2026-09-22; CI green on a4577a7)
 
 Plan:
 1. **locus-core: project bundle.** `Project::create(dir, name, examiner)` / `Project::open(dir)` on a `.locus` folder with `project.sqlite`, `evidence/`, `derived/`, `assets/`. rusqlite with bundled SQLite. Every mutation is a transaction, so there is no separate "save" step (see DECISIONS). Schema version stored in a `meta` table.
@@ -53,10 +53,32 @@ Differences from the plan:
 - There is no `evidence_list` command; every command returns the refreshed project info instead.
 - E57 records are decoded from the raw reader because of an upstream bug in the `e57` crate's simple reader (see DECISIONS).
 
+Follow-up after review (2026-09-22): opening a project now re-hashes every evidence file and reports changed, missing and unrecorded files. The result is logged in `project.opened` and shown as a warning in the evidence panel. Tests: `opening_rehashes_evidence_and_reports_changes` and `opening_reports_missing_and_unrecorded_evidence_files`.
+
 Open issues:
+- Opening a project re-hashes all evidence, which takes about 1 s per GB. That's acceptable, and progress is shown, but very large cases will open slowly.
 - OBJ files are read fully into memory (`tobj`); this is acceptable for meshes and is marked with a `ponytail:` comment.
 - LAS files that name only an EPSG code make the examiner choose the unit; resolving it needs an EPSG table.
 - The `e57` simple-reader bug should be reported upstream.
+
+### Phase 2: Point cloud engine
+
+Plan (step 1 gates the rest; results go to Addison before any feature work):
+
+1. **Rendering spike (SPEC section 5).** Prove, or disprove, that the Tauri webview can stream and render a large point cloud at the target frame rate.
+   - *Target:* 500M-point scene above 30 fps on a mid-range GPU. With LOD only a budget of points is drawn per frame, so the question is whether the webview can draw a realistic budget (roughly 5-20M points) with eye-dome lighting at display resolution above 30 fps, and keep receiving chunks fast enough without frame hitches.
+   - *Rust side:* synthetic chunk file (1M points per chunk, float32 xyz relative to a local origin plus RGB8, 15 bytes per point) generated into `target/fixtures/`. It is served to the webview two ways so they can be compared: a custom URI scheme read with `fetch()` into an ArrayBuffer, and binary `invoke` responses.
+   - *Webview side:* a separate `spike.html` entry using Three.js `Points` (WebGL2) with an eye-dome-lighting pass. It measures chunk transfer throughput (MB/s, per-chunk latency), time to first frame, steady-state fps and p95/max frame time at 1, 5, 10, 20 and 30M visible points with EDL off and on, and the worst frame time while chunks stream in. It also records renderer, GPU, resolution and WebGPU availability.
+   - *Hardware:* RTX 3070 Ti (upper mid-range) at 2560×1440, plus a low-power request that may land on the Intel UHD 770 as a below-mid-range reference.
+   - *Decision rule:* stay in the webview if at least 10M points with EDL hold 30 fps on the 3070 Ti with headroom (below 16 ms p95), or if the numbers scale to at least 5M on a mid-range card, and if streaming sustains more than 100 MB/s without hitches over 50 ms. Otherwise switch the point renderer to native wgpu now.
+   - Spike code sits behind a `spike` cargo feature and a separate HTML entry so it never ships.
+   - **Result (2026-09-22):** every decision-rule criterion passes. RTX 3070 Ti: 10M points with EDL at 132 fps (p95 8.5 ms). 500 or 1,000 draws cost the same as 10. Streaming runs at 145 MB/s per request and 235 MB/s with 4 in flight, with no frame over 50 ms. Intel UHD 770 holds 30 fps at 5M. **Recommendation: stay in the webview (WebGL2); WebGPU is available later.** Full report: `docs/spike-rendering.md`.
+2. Remaining Phase 2 features, planned after the spike decision.
+
+Acceptance criteria:
+- [ ] 500M-point scene stays above 30 fps on a mid-range GPU
+- [ ] Picked-point coordinates match the source file within 1 mm
+- [ ] Every cleanup is undoable and audit-logged
 
 ## Blocked
 
