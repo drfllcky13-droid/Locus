@@ -1,0 +1,15 @@
+{
+  "name": "locus",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "tauri": "tauri",
+    "test": "pnpm -C app test",
+    "typecheck": "pnpm -C app typecheck",
+    "lint": "pnpm -C app lint",
+    "format:check": "pnpm -C app format:check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
