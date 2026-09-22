@@ -9,4 +9,8 @@ publish.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+locus-core = { version = "0.1.0", path = "../crates/locus-core" }
+locus-io = { version = "0.1.0", path = "../crates/locus-io" }
+serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
