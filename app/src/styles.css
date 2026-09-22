@@ -48,8 +48,12 @@ body,
 
 .viewer {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr;
   height: 100%;
+}
+
+.viewer:has(.scene-panel) {
+  grid-template-columns: 1fr 320px;
 }
 
 .viewer .viewport {

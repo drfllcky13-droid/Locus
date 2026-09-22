@@ -181,4 +181,5 @@ export const api = {
   cleanupSetActive: (id: number, active: boolean) =>
     invoke<StateView>("cleanup_set_active", { id, active }),
   appInfo: () => invoke<{ version: string; webview: string }>("app_info"),
+  startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),
 };

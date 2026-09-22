@@ -65,6 +65,17 @@ export function App() {
   }, [project]);
 
   useEffect(() => {
+    void api.startup().then(async (s) => {
+      if (!s.open || !s.examiner) return;
+      try {
+        setProject(await api.projectOpen(s.open, s.examiner, () => {}));
+      } catch (e) {
+        setNotice(String(e));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     const unlisten = listen<string>("menu", ({ payload }) => {
       if (payload === "new_project") setDialog({ kind: "new" });
       else if (payload === "open_project") setDialog({ kind: "open" });

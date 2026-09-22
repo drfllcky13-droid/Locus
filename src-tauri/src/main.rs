@@ -46,6 +46,7 @@ fn main() {
             scene_cmds::cleanup_apply,
             scene_cmds::cleanup_set_active,
             scene_cmds::app_info,
+            scene_cmds::startup,
         ])
         .register_asynchronous_uri_scheme_protocol("locus", |ctx, request, responder| {
             let app = ctx.app_handle().clone();

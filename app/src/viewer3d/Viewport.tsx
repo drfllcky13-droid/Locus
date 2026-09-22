@@ -53,7 +53,8 @@ export function Viewport({
     let last = 0;
     const engine = new Engine(hostRef.current!, (s) => {
       const now = performance.now();
-      if (now - last > 250) {
+      // Throttle, but never drop the last frame before the view goes idle.
+      if (now - last > 250 || !s.loading) {
         last = now;
         setStats(s);
       }

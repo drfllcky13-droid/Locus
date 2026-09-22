@@ -36,6 +36,7 @@ export class Engine {
   private overlays = new THREE.Group();
   private markers = new THREE.Group();
   private clipBox: THREE.Mesh;
+  private grid: THREE.Object3D;
   private gizmo: TransformControls;
   private dirty = true;
   private raf = 0;
@@ -50,7 +51,11 @@ export class Engine {
     private host: HTMLElement,
     private onStats: (s: Stats) => void,
   ) {
-    const { scene, camera } = createScene();
+    const { scene, camera, grid } = createScene();
+    this.grid = grid;
+    // The background is painted by the EDL pass (or the clear colour without it), not by
+    // three.js, so it isn't colour-converted twice on the way through the sRGB target.
+    scene.background = null;
     this.scene = scene;
     this.camera = camera;
     this.renderer = new THREE.WebGLRenderer({
@@ -58,6 +63,7 @@ export class Engine {
       powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setClearColor(0x1e1f22, 1);
     host.appendChild(this.renderer.domElement);
     this.labels.domElement.className = "labels";
     host.appendChild(this.labels.domElement);
@@ -92,6 +98,8 @@ export class Engine {
       if (this.focusActive) this.requestRender();
     });
     this.renderer.domElement.addEventListener("pointerleave", () => (this.mouse = null));
+    // Handle for scripted measurements (performance runs drive `benchmark` over DevTools).
+    (globalThis as Record<string, unknown>).__locus = this;
     new ResizeObserver(() => this.resize()).observe(host);
     this.resize();
     this.loop();
@@ -120,6 +128,8 @@ export class Engine {
       this.layer.dispose();
       this.layer = null;
     }
+    // The grid marks the project's z = 0 plane under the data.
+    this.grid.position.z = -(data?.origin[2] ?? 0);
     if (data && data.scans.length > 0) {
       this.layer = new PointCloudLayer(data, () => this.requestRender());
       this.scene.add(this.layer.group);
@@ -291,6 +301,55 @@ export class Engine {
       g.add(label);
       this.overlays.add(g);
     }
+  }
+
+  /**
+   * Orbit the camera around its target for `seconds`, rendering every frame, and report
+   * frame times, the adaptive budget and node-selection cost. Used for performance runs.
+   */
+  benchmark(seconds: number): Promise<Record<string, number>> {
+    return new Promise((resolve) => {
+      const t = this.controls.target.clone();
+      const start = this.camera.position.clone().sub(t);
+      const frames: number[] = [];
+      const selection: number[] = [];
+      const t0 = performance.now();
+      let last = t0;
+      const step = () => {
+        const now = performance.now();
+        frames.push(now - last);
+        last = now;
+        selection.push(this.layer?.lastSelection.ms ?? 0);
+        const a = ((now - t0) / 1000) * 0.4;
+        this.camera.position.copy(
+          start
+            .clone()
+            .applyAxisAngle(new THREE.Vector3(0, 0, 1), a)
+            .add(t),
+        );
+        this.camera.lookAt(t);
+        this.requestRender();
+        if (now - t0 < seconds * 1000) requestAnimationFrame(step);
+        else {
+          const f = frames.slice(1).sort((x, y) => x - y);
+          const s = [...selection].sort((x, y) => x - y);
+          const avg = f.reduce((x, y) => x + y, 0) / f.length;
+          resolve({
+            fps: 1000 / avg,
+            p95_ms: f[Math.floor(f.length * 0.95)],
+            max_ms: f[f.length - 1],
+            budget: this.budget.points,
+            drawn: this.layer?.loadedPoints ?? 0,
+            selection_avg_ms: s.reduce((x, y) => x + y, 0) / s.length,
+            selection_max_ms: s[s.length - 1],
+            nodes_visited: this.layer?.lastSelection.visited ?? 0,
+            nodes_selected: this.layer?.lastSelection.nodes ?? 0,
+            frames: f.length,
+          });
+        }
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   // ---------- render loop ----------

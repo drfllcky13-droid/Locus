@@ -487,6 +487,22 @@ pub async fn cleanup_set_active(app: AppHandle, id: i64, active: bool) -> CmdRes
     .await
 }
 
+/// Project to open at startup, from `LOCUS_OPEN` and `LOCUS_EXAMINER` (used by scripted
+/// runs such as performance measurements; opening still goes through the normal path).
+#[derive(Serialize)]
+pub struct Startup {
+    open: Option<String>,
+    examiner: Option<String>,
+}
+
+#[tauri::command]
+pub fn startup() -> Startup {
+    Startup {
+        open: std::env::var("LOCUS_OPEN").ok(),
+        examiner: std::env::var("LOCUS_EXAMINER").ok(),
+    }
+}
+
 #[derive(Serialize)]
 pub struct AppInfo {
     version: &'static str,

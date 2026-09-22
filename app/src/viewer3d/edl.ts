@@ -1,7 +1,10 @@
 // Eye-dome lighting: render the scene to a target with depth, then shade each pixel by how
-// much nearer its eight neighbours are (log depth). Point colours are sRGB bytes and pass
-// straight through both passes untouched, which fixes the washed-out colours the spike had
-// (it let three.js convert them twice).
+// much nearer its eight neighbours are (log depth).
+//
+// Colour: everything is linear inside the pipeline. Point shaders decode their sRGB bytes
+// to linear, the target is a linear half-float texture (enough precision in the darks), and
+// the composite encodes once for the screen. One conversion each way: the spike, and a first
+// attempt here with an sRGB target, both converted twice and washed colours out.
 import * as THREE from "three";
 
 export class EdlPass {
@@ -13,7 +16,10 @@ export class EdlPass {
   strength = 1.0;
 
   constructor() {
-    this.target = new THREE.WebGLRenderTarget(1, 1, { depthTexture: new THREE.DepthTexture(1, 1) });
+    this.target = new THREE.WebGLRenderTarget(1, 1, {
+      depthTexture: new THREE.DepthTexture(1, 1),
+      type: THREE.HalfFloatType,
+    });
     this.quad = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2),
       new THREE.ShaderMaterial({
@@ -24,11 +30,14 @@ export class EdlPass {
           near: { value: 0.1 },
           far: { value: 1000 },
           strength: { value: 1 },
+          // Written as-is: pixels nothing was drawn on get exactly the page background.
+          background: { value: new THREE.Vector3(0x1e / 255, 0x1f / 255, 0x22 / 255) },
         },
         vertexShader: `varying vec2 vUv;
           void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
         fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth;
           uniform vec2 texel; uniform float near; uniform float far; uniform float strength;
+          uniform vec3 background;
           varying vec2 vUv;
           float logDepth(vec2 uv) {
             float d = texture2D(tDepth, uv).x;
@@ -39,7 +48,7 @@ export class EdlPass {
           void main() {
             vec4 color = texture2D(tColor, vUv);
             float dc = logDepth(vUv);
-            if (dc < 0.0) { gl_FragColor = color; return; }
+            if (dc < 0.0) { gl_FragColor = vec4(background, 1.0); return; }
             float sum = 0.0;
             for (int i = 0; i < 8; i++) {
               float a = float(i) * 0.7853982;
@@ -47,6 +56,7 @@ export class EdlPass {
               sum += dn < 0.0 ? 1.0 : max(0.0, dc - dn);
             }
             gl_FragColor = vec4(color.rgb * exp(-sum * 40.0 * strength / 8.0), 1.0);
+            #include <colorspace_fragment>
           }`,
         depthTest: false,
         depthWrite: false,

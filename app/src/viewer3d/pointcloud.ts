@@ -78,6 +78,10 @@ uniform bool uClipPlaneOn;
 out vec3 vColor;
 flat out float vIndex;
 
+vec3 srgbToLinear(vec3 c) {
+  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+}
+
 vec3 ramp(float t) {
   t = clamp(t, 0.0, 1.0);
   return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
@@ -96,20 +100,27 @@ void main() {
   gl_Position = clipped ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * mv;
   gl_PointSize = clamp(uSizeFactor * uSpacing * uScale / max(-mv.z, 1e-6), 1.5, 8.0);
   vIndex = float(gl_VertexID);
-  if (uColorMode == 0 && uHasColor) vColor = aColor;
-  else if (uColorMode == 1 && uHasIntensity) vColor = vec3(pow(aIntensity, 0.6));
-  else vColor = ramp((world.z + uOriginZ - uElevation.x) / max(uElevation.y - uElevation.x, 1e-6));
+  // Stored colours and the display ramps are sRGB; the pipeline works in linear.
+  if (uColorMode == 0 && uHasColor) vColor = srgbToLinear(aColor);
+  else if (uColorMode == 1 && uHasIntensity) vColor = srgbToLinear(vec3(pow(aIntensity, 0.6)));
+  else vColor = srgbToLinear(ramp((world.z + uOriginZ - uElevation.x) / max(uElevation.y - uElevation.x, 1e-6)));
 }`;
 
-const FRAGMENT = `
+// GLSL 3 shader materials get no gl_FragColor in this three.js version: declare the output.
+const FRAGMENT_OUT = `layout(location = 0) out highp vec4 fragColor;
+#define gl_FragColor fragColor
+`;
+
+const FRAGMENT = `${FRAGMENT_OUT}
 in vec3 vColor;
 void main() {
   vec2 c = gl_PointCoord - 0.5;
   if (dot(c, c) > 0.25) discard;
-  gl_FragColor = vec4(vColor, 1.0); // sRGB values straight through; see edl.ts
+  gl_FragColor = vec4(vColor, 1.0);
+  #include <colorspace_fragment>
 }`;
 
-const PICK_FRAGMENT = `
+const PICK_FRAGMENT = `${FRAGMENT_OUT}
 flat in float vIndex;
 uniform float uSlot;
 ${PICK_GLSL}
@@ -254,7 +265,9 @@ export class PointCloudLayer {
       visible.add(key);
       const entry = this.loaded.get(key);
       if (entry) entry.lastUsed = this.frame;
-      else if (!this.loading.has(key)) this.wanted.push(key);
+      // Downloaded nodes wait in `pending` for their upload slot; don't request them again.
+      else if (!this.loading.has(key) && !this.pending.some((p) => p.key === key))
+        this.wanted.push(key);
     }
     for (const [key, entry] of this.loaded) entry.points.visible = visible.has(key);
     this.pump();
@@ -262,6 +275,7 @@ export class PointCloudLayer {
     let uploaded = 0;
     while (this.pending.length && uploaded < UPLOAD_BYTES_PER_FRAME) {
       const { key, entry } = this.pending.shift()!;
+      this.unload(key); // never two copies of one node in the scene
       this.loaded.set(key, entry);
       entry.lastUsed = this.frame;
       entry.points.visible = visible.has(key);
