@@ -1,4 +1,4 @@
-//! Surface normals from local principal component analysis.
+//! Neighbourhoods: kd-tree queries, surface normals (local PCA) and voxel downsampling.
 
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
 use nalgebra::{Matrix3, SymmetricEigen, Vector3};
@@ -19,6 +19,15 @@ pub fn knn(tree: &Tree, p: &[f64; 3], k: usize) -> Vec<usize> {
         .iter()
         .map(|r| r.item as usize)
         .collect()
+}
+
+/// Index of the point nearest `p`, and its squared distance.
+pub fn nearest(tree: &Tree, p: &[f64; 3]) -> (usize, f64) {
+    let n = tree
+        .query(p)
+        .nearest_one::<SquaredEuclidean<f64>>()
+        .execute();
+    (n.item as usize, n.distance)
 }
 
 /// Indices of all points within `radius` of `p`.
@@ -64,6 +73,38 @@ pub fn estimate(
                 n = -n;
             }
             Some(n.normalize().into())
+        })
+        .collect()
+}
+
+/// One point per occupied voxel of edge `size`: the real point nearest the voxel's centroid,
+/// so the result stays on the scanned surfaces. Deterministic.
+pub fn voxel_downsample(points: &[[f64; 3]], size: f64) -> Vec<[f64; 3]> {
+    let mut cells: std::collections::HashMap<[i64; 3], (Vector3<f64>, u32, Vec<usize>)> =
+        std::collections::HashMap::new();
+    for (i, p) in points.iter().enumerate() {
+        let e = cells
+            .entry(p.map(|v| (v / size).floor() as i64))
+            .or_default();
+        e.0 += Vector3::from(*p);
+        e.1 += 1;
+        e.2.push(i);
+    }
+    let mut keys: Vec<_> = cells.keys().copied().collect();
+    keys.sort_unstable();
+    keys.iter()
+        .map(|k| {
+            let (sum, n, ix) = &cells[k];
+            let c = sum / *n as f64;
+            let best = ix
+                .iter()
+                .min_by(|a, b| {
+                    (Vector3::from(points[**a]) - c)
+                        .norm_squared()
+                        .total_cmp(&(Vector3::from(points[**b]) - c).norm_squared())
+                })
+                .expect("non-empty cell");
+            points[*best]
         })
         .collect()
 }
