@@ -6,3 +6,4 @@ pub mod checker;
 pub mod normals;
 pub mod rigid;
 pub mod sphere;
+pub mod targets;
