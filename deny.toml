@@ -11,7 +11,7 @@ allow = [
   "MPL-2.0",
   "Unlicense",
   "CC0-1.0",
-  "Unicode-3.0", # provisional, see docs/DECISIONS.md
+  "Unicode-3.0", # approved 2026-09-22, see docs/DECISIONS.md
 ]
 confidence-threshold = 0.9
 

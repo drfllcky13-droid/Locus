@@ -10,7 +10,7 @@ Locus is a desktop application for documenting, analyzing, and presenting crime 
 4. **Forensic math is pure and tested.** All analysis math lives in `crates/locus-analysis` as pure functions with no I/O or UI dependency. Every function has unit tests with hand-verified values plus property tests. Every result carries an uncertainty or residual, never a bare number.
 5. **Explain the method.** Each analysis tool records which method, inputs, assumptions, and limitations were used, so the report can show its work. An examiner must be able to defend every number in court.
 6. **Tests before merge.** `cargo test`, `cargo clippy -- -D warnings`, `pnpm test`, and `pnpm typecheck` must pass before a phase is marked done.
-7. **Licensing.** Dependencies must be MIT, Apache-2.0, BSD, Zlib, or MPL-2.0. Ask before adding anything GPL, AGPL, LGPL, or with unclear terms.
+7. **Licensing.** Dependencies must be MIT, Apache-2.0, BSD, Zlib, MPL-2.0, or Unicode-3.0. Ask before adding anything GPL, AGPL, LGPL, or with unclear terms.
 8. **Desktop only.** Locus ships as an installed desktop app. There is no web version and no hosted deployment, and nothing in the repo should be set up to publish it as a website.
 
 ## Stack
