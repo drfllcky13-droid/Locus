@@ -124,6 +124,31 @@ Full results, timings and limits: `docs/phase2-report.md`. The 500M-point import
 
 What was built: point streaming with source record numbers in locus-io; locus-octree (out-of-core builder, node server, region queries, scene layer with poses and removed sets, cleanup operations); measurement math in locus-analysis; schema 2 (settings, octrees, measurements, cleanup_ops); background build queue, the `locus://` node protocol and pick/measure/cleanup commands; the viewer (LOD, adaptive budget, upload budget, EDL, colour modes, clip box and plane, GPU picking, measurement and cleanup tools, About dialog); `locus-validate gen-scene` and `import`. Tests: 71 Rust, 19 frontend.
 
+### Phase 3: Registration
+
+Plan (step 1 comes first: every accuracy criterion is measured against it):
+
+1. **Ground-truth scenes (`locus-synth`). Done.** Move the Phase 2 scene generator into a library crate and extend it:
+   - full 6-DOF poses: yaw anywhere, plus a levelling error in roll and pitch (default up to 0.5°) and station height varying from 1.2 to 1.8 m;
+   - sphere targets on stands (radius 72.5 mm) and planar checkerboard targets on walls and pillars (2 × 2 squares, black and white in intensity and colour), each ray-cast exactly;
+   - optional outliers (mixed pixels along the beam) as a fraction of points;
+   - fault injection for "bad link" tests: a target moved between two scans by a given offset;
+   - the pose stored in the E57 is the true pose, none (identity) or perturbed by a given amount;
+   - a JSON sidecar with the ground truth (true poses, target centres, radius and board normals, injected faults), and the same data from an in-memory API that registration tests call without writing files.
+
+   Tests: every generated point, mapped through its scan's true pose, lies on a scene surface within the noise; target fits on noiseless data recover the true centres; same seed gives identical output; the sidecar round-trips.
+2. **Registration core (`locus-register`, pure math, tested).** Rigid least-squares fit with covariance (Horn/Kabsch); sphere detection (RANSAC plus least-squares fit, radius check); checkerboard detection (planar patch plus intensity corner); target correspondence across scans by consistent distance geometry; cloud-to-cloud with FPFH features and RANSAC for the coarse pose, then point-to-plane ICP; survey control points; hybrid mode that mixes all three in one adjustment.
+3. **Pose graph.** Links between scans (target, cloud or control) with covariances, then global optimisation over all scans. Each link is tested against the solution: a link whose residual is statistically inconsistent is flagged red, with the test and threshold shown.
+4. **Storage and audit.** Schema 3: registrations, links, per-scan poses, detected targets; every run and every manual link change (delete, force) audit-logged. Applying a registration only updates scan poses (octrees stay as built).
+5. **Graph view.** Scans as nodes, links as edges coloured by error; delete or force a link and re-optimise.
+6. **Registration report.** Per-link error, overlap %, max and mean target residuals, overall statistics; exported to PDF (PDF crate chosen for its licence, logged here).
+7. **Method notes** in `docs/methods/registration.md`.
+
+Acceptance criteria:
+- [ ] On synthetic scans with known poses, registration error is under 2 mm and 0.02° (relative to the first scan).
+- [ ] Bad links injected by the test are flagged red.
+- [ ] Report numbers match the internal computation.
+
 ## Blocked
 
 - **Mid-range GPU measurement** (2026-09-22): Phase 2's frame-rate criterion has been measured on an RTX 3070 Ti and an Intel UHD 770 only. It still needs a run on a real mid-range card (e.g. RTX 3060 or GTX 1660).

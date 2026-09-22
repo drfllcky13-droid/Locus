@@ -1,13 +1,16 @@
 //! Synthetic ground-truth scenes and the end-to-end accuracy suite (built in Phase 13).
 //!
 //! Available now:
-//! - `locus-validate gen-scene --scans N --points-per-scan M --out FILE.e57 [--seed S]`
-//!   writes a synthetic multi-station E57 for performance and pipeline testing.
+//! - `locus-validate gen-scene --out FILE.e57 [options]` writes a synthetic multi-station
+//!   E57 and its ground truth (`FILE.e57.truth.json`: true poses, targets, injected faults).
+//!   Options: `--scans N` (4), `--points-per-scan M` (1000000), `--seed S` (1),
+//!   `--no-targets`, `--tilt-deg D` (0.5), `--noise-mm R` (1), `--outliers F` (0),
+//!   `--stored-pose true|none|M,DEG` (true; `M,DEG` perturbs by M metres and DEG degrees),
+//!   `--move-sphere K,FROM,DX,DY,DZ` (sphere K moved by DX,DY,DZ m from scan FROM on).
 //! - `locus-validate import --project DIR --examiner NAME [--unit meter] FILE...` imports
 //!   files and builds their octrees exactly as the app does, reporting time and memory.
 
 mod import;
-mod scene;
 
 use std::process::ExitCode;
 
@@ -21,25 +24,88 @@ fn arg<T: std::str::FromStr>(args: &[String], name: &str, default: Option<T>) ->
     }
 }
 
+/// Comma-separated numbers after `name`, if the flag is present.
+fn list(args: &[String], name: &str, n: usize) -> Result<Option<Vec<f64>>, String> {
+    let Some(i) = args.iter().position(|a| a == name) else {
+        return Ok(None);
+    };
+    let v: Vec<f64> = args
+        .get(i + 1)
+        .ok_or(format!("{name} needs a value"))?
+        .split(',')
+        .map(|x| {
+            x.trim()
+                .parse()
+                .map_err(|_| format!("{name}: bad number {x:?}"))
+        })
+        .collect::<Result<_, _>>()?;
+    if v.len() != n {
+        return Err(format!("{name} needs {n} comma-separated values"));
+    }
+    Ok(Some(v))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("gen-scene") => {
             let run = || -> Result<(), String> {
                 let out: String = arg(&args, "--out", None)?;
-                let opts = scene::Options {
+                let stored: String = arg(&args, "--stored-pose", Some("true".into()))?;
+                let opts = locus_synth::Options {
                     scans: arg(&args, "--scans", Some(4))?,
                     points_per_scan: arg(&args, "--points-per-scan", Some(1_000_000))?,
                     seed: arg(&args, "--seed", Some(1))?,
+                    targets: !args.iter().any(|a| a == "--no-targets"),
+                    tilt_deg: arg(&args, "--tilt-deg", Some(0.5))?,
+                    range_noise_m: arg::<f64>(&args, "--noise-mm", Some(1.0))? / 1000.0,
+                    outliers: arg(&args, "--outliers", Some(0.0))?,
+                    stored_pose: match stored.as_str() {
+                        "true" => locus_synth::StoredPose::True,
+                        "none" => locus_synth::StoredPose::None,
+                        _ => {
+                            let v = list(&args, "--stored-pose", 2)
+                                .map_err(|_| "--stored-pose is true, none or METRES,DEGREES")?
+                                .expect("flag present");
+                            locus_synth::StoredPose::Perturbed {
+                                metres: v[0],
+                                degrees: v[1],
+                            }
+                        }
+                    },
+                    moved_sphere: list(&args, "--move-sphere", 5)?.map(|v| {
+                        locus_synth::MovedSphere {
+                            sphere: v[0] as usize,
+                            from_scan: v[1] as usize,
+                            offset: [v[2], v[3], v[4]],
+                        }
+                    }),
                 };
+                let truth = locus_synth::truth(&opts);
+                if let Some(m) = opts.moved_sphere {
+                    if m.sphere >= truth.spheres.len() {
+                        return Err(format!(
+                            "--move-sphere: there are {} spheres",
+                            truth.spheres.len()
+                        ));
+                    }
+                }
+                let out = std::path::Path::new(&out);
                 let t = std::time::Instant::now();
-                let n = scene::generate(std::path::Path::new(&out), &opts, &mut |s, i| {
+                let n = locus_synth::write_e57(out, &opts, &truth, &mut |s, i| {
                     if i % 10_000_000 == 0 {
                         eprintln!("scan {} of {}: {} points", s + 1, opts.scans, i);
                     }
                 })
                 .map_err(|e| e.to_string())?;
-                eprintln!("wrote {n} points to {out} in {:.0?}", t.elapsed());
+                let sidecar = locus_synth::truth_path(out);
+                locus_synth::write_truth(&truth, &sidecar).map_err(|e| e.to_string())?;
+                eprintln!(
+                    "wrote {n} points to {} in {:.0?}; ground truth in {}",
+                    out.display(),
+                    t.elapsed(),
+                    sidecar.display()
+                );
                 Ok(())
             };
             match run() {

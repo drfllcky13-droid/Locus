@@ -2223,13 +2223,23 @@ name = "locus-report"
 version = "0.1.0"
 
 [[package]]
-name = "locus-validate"
+name = "locus-synth"
 version = "0.1.0"
 dependencies = [
  "e57",
+ "locus-io",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "locus-validate"
+version = "0.1.0"
+dependencies = [
  "locus-core",
  "locus-io",
  "locus-octree",
+ "locus-synth",
  "serde_json",
  "windows-sys 0.61.2",
 ]
