@@ -2,6 +2,29 @@ use crate::{Progress, ProgressFn, Stage};
 use locus_core::{Bounds, ScanInfo};
 use std::io::{self, BufRead, Read};
 
+/// One point as stored in the source file, in the file's own coordinates and unit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    pub p: [f64; 3],
+    pub rgb: Option<[u8; 3]>,
+    /// Scaled to the full u16 range from whatever range the format uses.
+    pub intensity: Option<u16>,
+    /// Record number within its scan, counting records with no valid position too.
+    pub index: u64,
+}
+
+/// Scan to visit and the callback. Readers given a visitor may skip other scans.
+pub(crate) type Visitor<'a> = Option<(usize, &'a mut dyn FnMut(&Point))>;
+
+/// Map `v` from `[lo, hi]` onto `[0, max]`, clamped.
+pub(crate) fn rescale(v: f64, lo: f64, hi: f64, max: f64) -> f64 {
+    if hi > lo {
+        ((v - lo) / (hi - lo) * max).clamp(0.0, max).round()
+    } else {
+        0.0
+    }
+}
+
 /// Running count and bounds while streaming a scan.
 #[derive(Default)]
 pub(crate) struct ScanStats {

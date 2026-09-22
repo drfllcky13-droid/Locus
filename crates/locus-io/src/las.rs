@@ -3,7 +3,7 @@
 //! The linear unit is taken from the CRS stored in the file (GeoTIFF keys or WKT).
 //! Geographic (degree) coordinates are refused: they are not lengths.
 
-use crate::stats::{stem, ScanStats};
+use crate::stats::{stem, Point, ScanStats, Visitor};
 use crate::{parse_err, Progress, ProgressFn, Result, Stage};
 use las::crs::GeoTiffData;
 use locus_core::{Contents, LinearUnit, IDENTITY};
@@ -224,7 +224,14 @@ pub(crate) fn resolve_unit(info: &CrsInfo, c: &mut Contents) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
+/// `color_8bit` in a scan's attributes means the file put 8-bit values in LAS's 16-bit
+/// colour fields (common in practice), found by checking every point at inspect time.
+pub(crate) fn inspect(
+    path: &Path,
+    progress: ProgressFn,
+    mut visit: Visitor,
+    eight_bit: bool,
+) -> Result<Contents> {
     let mut reader = las::Reader::from_path(path).map_err(|e| parse_err(FMT, e))?;
     let header = reader.header().clone();
     let mut c = Contents::new(FMT);
@@ -234,6 +241,7 @@ pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
 
     let total = header.number_of_points();
     let mut stats = ScanStats::default();
+    let mut max_color = 0u16;
     let mut pd = reader.read_points(0).map_err(|e| parse_err(FMT, e))?;
     loop {
         let n = reader
@@ -242,7 +250,26 @@ pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
         if n == 0 {
             break;
         }
-        for ((x, y), z) in pd.x().zip(pd.y()).zip(pd.z()) {
+        let colors: Vec<(u16, u16, u16)> = pd.rgb().map(|c| c.collect()).unwrap_or_default();
+        for (k, ((x, y), (z, i))) in pd
+            .x()
+            .zip(pd.y())
+            .zip(pd.z().zip(pd.intensity()))
+            .enumerate()
+        {
+            let rgb = colors.get(k).copied();
+            if let Some((r, g, b)) = rgb {
+                max_color = max_color.max(r).max(g).max(b);
+            }
+            if let Some((_, f)) = visit.as_mut() {
+                let shift = if eight_bit { 0 } else { 8 };
+                f(&Point {
+                    p: [x, y, z],
+                    rgb: rgb.map(|(r, g, b)| [r, g, b].map(|v| (v >> shift).min(255) as u8)),
+                    intensity: Some(i),
+                    index: stats.count,
+                });
+            }
             stats.point([x, y, z]);
         }
         progress(Progress {
@@ -261,6 +288,9 @@ pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
     let mut attributes = vec!["intensity".to_string(), "classification".into()];
     if format.has_color {
         attributes.push("color".into());
+        if max_color <= 255 {
+            attributes.push("color_8bit".into());
+        }
     }
     if format.has_gps_time {
         attributes.push("gps_time".into());

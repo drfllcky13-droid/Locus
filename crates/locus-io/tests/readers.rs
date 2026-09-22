@@ -490,3 +490,73 @@ fn preview_then_commit_leaves_source_untouched() {
         Err(Error::Project(locus_core::Error::SourceChanged { .. }))
     ));
 }
+
+// ---------- point streaming ----------
+
+fn points_of(path: &Path, scan: usize) -> Vec<locus_io::Point> {
+    let contents = inspect(path, &mut quiet()).unwrap();
+    let mut out = vec![];
+    locus_io::for_each_point(path, &contents, scan, &mut quiet(), &mut |p| out.push(*p)).unwrap();
+    out
+}
+
+#[test]
+fn e57_points_keep_source_record_numbers() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scene.e57");
+    e57_fixture(&path, &jpeg_fixture(8, 8, None));
+    let a = points_of(&path, 0);
+    assert_eq!(a.len(), 10);
+    assert_eq!(a[3].p, [3.0, -3.0, 0.5]);
+    // Scan 2's third record has no return: it is skipped, but numbering still counts it.
+    let b = points_of(&path, 1);
+    assert_eq!(b.iter().map(|p| p.index).collect::<Vec<_>>(), [0, 1]);
+    assert_eq!(b[1].p, [-4.0, 0.0, 9.0], "scan-local, pose not applied");
+}
+
+#[test]
+fn las_points_with_eight_bit_colour_in_sixteen_bit_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cloud.las");
+    las_fixture(&path);
+    let c = inspect(&path, &mut quiet()).unwrap();
+    assert!(c.scans[0].attributes.contains(&"color_8bit".to_string()));
+    let pts = points_of(&path, 0);
+    assert_eq!(pts.len(), 3);
+    assert_eq!(pts[1].p, [-1.5, 0.25, 10.0]);
+    assert_eq!(
+        pts[1].rgb,
+        Some([1, 2, 3]),
+        "8-bit values are not shifted away"
+    );
+}
+
+#[test]
+fn pts_block_points_carry_intensity_and_colour() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = write(
+        dir.path(),
+        "two.pts",
+        "1\n0 0 0 -2048 1 2 3\n2\n1 1 1 2047 250 0 9\n2 2 2 0 0 0 0\n",
+    );
+    let second = points_of(&p, 1);
+    assert_eq!(second.len(), 2);
+    assert_eq!(second[0].intensity, Some(65535));
+    assert_eq!(second[0].rgb, Some([250, 0, 9]));
+    assert_eq!(points_of(&p, 0)[0].intensity, Some(0));
+}
+
+#[test]
+fn ply_points_scale_float_and_byte_colours() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = write(
+        dir.path(),
+        "c.ply",
+        "ply\nformat ascii 1.0\nelement vertex 2\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nproperty float intensity\nend_header\n1 2 3 255 128 0 1.0\n4 5 6 0 0 0 0.5\n",
+    );
+    let pts = points_of(&p, 0);
+    assert_eq!(pts[0].rgb, Some([255, 128, 0]));
+    assert_eq!(pts[0].intensity, Some(65535));
+    assert_eq!(pts[1].intensity, Some(32768));
+    assert_eq!(pts[1].index, 1);
+}

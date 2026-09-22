@@ -3,7 +3,7 @@
 //! A file with a non-empty `face` element is reported as a mesh; otherwise its
 //! vertices are reported as a scan.
 
-use crate::stats::{stem, Counting, ScanStats};
+use crate::stats::{rescale, stem, Counting, Point, ScanStats, Visitor};
 use crate::{parse_err, Error, ProgressFn, Result};
 use locus_core::{Contents, MeshInfo, IDENTITY};
 use std::fs::File;
@@ -217,7 +217,31 @@ impl<R: BufRead> Records<'_, R> {
     }
 }
 
-pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
+/// A colour or intensity channel's position among the scalar values, and its type.
+fn channel(vertex: &Element, names: &[&str]) -> Option<(usize, Scalar)> {
+    let scalars = || {
+        vertex.props.iter().filter_map(|p| match p {
+            Prop::Scalar(n, t) => Some((n.as_str(), *t)),
+            Prop::List(..) => None,
+        })
+    };
+    names
+        .iter()
+        .find_map(|want| scalars().position(|(n, _)| n == *want))
+        .map(|i| (i, scalars().nth(i).unwrap().1))
+}
+
+/// Full-scale value of a scalar type: floats are taken to run from 0 to 1.
+fn full_scale(t: Scalar) -> f64 {
+    match t {
+        Scalar::U8 | Scalar::I8 => 255.0,
+        Scalar::U16 | Scalar::I16 => 65535.0,
+        Scalar::U32 | Scalar::I32 => u32::MAX as f64,
+        Scalar::F32 | Scalar::F64 => 1.0,
+    }
+}
+
+pub(crate) fn inspect(path: &Path, progress: ProgressFn, mut visit: Visitor) -> Result<Contents> {
     let total = std::fs::metadata(path)?.len();
     let mut r = Counting::new(
         BufReader::with_capacity(1 << 20, File::open(path)?),
@@ -254,10 +278,36 @@ pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
             records.read(el, &mut values)?;
         }
     }
+    let rgb = [
+        channel(vertex, &["red", "r", "diffuse_red"]),
+        channel(vertex, &["green", "g", "diffuse_green"]),
+        channel(vertex, &["blue", "b", "diffuse_blue"]),
+    ];
+    let intensity = channel(
+        vertex,
+        &["intensity", "scalar_intensity", "scalar_Intensity"],
+    );
     let mut stats = ScanStats::default();
     for _ in 0..vertex.count {
         records.read(vertex, &mut values)?;
-        stats.point([values[ix], values[iy], values[iz]]);
+        let p = [values[ix], values[iy], values[iz]];
+        if let Some((_, f)) = visit.as_mut() {
+            let rgb = match rgb {
+                [Some(r), Some(g), Some(b)] => Some(
+                    [r, g, b].map(|(i, t)| rescale(values[i], 0.0, full_scale(t), 255.0) as u8),
+                ),
+                _ => None,
+            };
+            let intensity =
+                intensity.map(|(i, t)| rescale(values[i], 0.0, full_scale(t), 65535.0) as u16);
+            f(&Point {
+                p,
+                rgb,
+                intensity,
+                index: stats.count,
+            });
+        }
+        stats.point(p);
     }
 
     let faces = elements

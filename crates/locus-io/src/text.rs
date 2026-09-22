@@ -4,7 +4,7 @@
 //! block's point count; each block becomes its own scan. Malformed lines are an error,
 //! never skipped silently.
 
-use crate::stats::{stem, Counting, ScanStats};
+use crate::stats::{rescale, stem, Counting, Point, ScanStats, Visitor};
 use crate::{parse_err, ProgressFn, Result};
 use locus_core::{Contents, IDENTITY};
 use std::fs::File;
@@ -45,7 +45,31 @@ fn attributes(kind: Kind, columns: usize) -> Vec<String> {
     }
 }
 
-pub(crate) fn inspect(path: &Path, kind: Kind, progress: ProgressFn) -> Result<Contents> {
+/// PTS columns: x y z [intensity] [r g b]. PTS intensity runs from -2048 to 2047.
+/// XYZ extra columns have no agreed meaning, so only the position is used.
+fn text_point(kind: Kind, p: [f64; 3], extra: &[f64], index: u64) -> Point {
+    let rgb = |s: &[f64]| Some([s[0], s[1], s[2]].map(|v| v.clamp(0.0, 255.0) as u8));
+    let intensity = |v: f64| Some(rescale(v, -2048.0, 2047.0, 65535.0) as u16);
+    let (intensity, rgb) = match (kind, extra.len()) {
+        (Kind::Pts, 1) => (intensity(extra[0]), None),
+        (Kind::Pts, 3) => (None, rgb(extra)),
+        (Kind::Pts, 4) => (intensity(extra[0]), rgb(&extra[1..])),
+        _ => (None, None),
+    };
+    Point {
+        p,
+        rgb,
+        intensity,
+        index,
+    }
+}
+
+pub(crate) fn inspect(
+    path: &Path,
+    kind: Kind,
+    progress: ProgressFn,
+    mut visit: Visitor,
+) -> Result<Contents> {
     let name = if kind == Kind::Pts { "PTS" } else { "XYZ" };
     let total = std::fs::metadata(path)?.len();
     let mut r = Counting::new(
@@ -91,11 +115,19 @@ pub(crate) fn inspect(path: &Path, kind: Kind, progress: ProgressFn) -> Result<C
         let [Ok(x), Ok(y), Ok(z)] = p else {
             return Err(bad());
         };
-        let columns = 3 + tokens.count();
         if blocks.is_empty() {
             blocks.push(Block::new(None));
         }
+        let block = blocks.len() - 1;
         let b = blocks.last_mut().unwrap();
+        let columns = match visit.as_mut() {
+            Some((scan, f)) if *scan == block => {
+                let extra: Vec<f64> = tokens.map(|t| t.parse().unwrap_or(f64::NAN)).collect();
+                f(&text_point(kind, [x, y, z], &extra, b.stats.count));
+                3 + extra.len()
+            }
+            _ => 3 + tokens.count(),
+        };
         if b.columns == 0 {
             b.columns = columns;
         } else if b.columns != columns {

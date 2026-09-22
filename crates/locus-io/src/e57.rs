@@ -6,7 +6,7 @@
 //! Records are decoded here from the raw reader rather than the `e57` crate's simple
 //! reader, which fails on some short final data packets (see DECISIONS.md, 2026-09-22).
 
-use crate::stats::ScanStats;
+use crate::stats::{rescale, Point, ScanStats, Visitor};
 use crate::{parse_err, Progress, ProgressFn, Result, Stage};
 use e57::{
     E57Reader, ImageFormat, PointCloud, Projection, RecordDataType, RecordName, RecordValue,
@@ -51,6 +51,32 @@ struct Layout {
     spherical: Option<[(usize, RecordDataType); 3]>,
     cartesian_state: Option<usize>,
     spherical_state: Option<usize>,
+    /// Record position and value range for red, green, blue.
+    color: Option<[(usize, RecordDataType, f64, f64); 3]>,
+    intensity: Option<(usize, RecordDataType, f64, f64)>,
+}
+
+/// Value range a channel spans: from the record's declared type when it is an integer,
+/// otherwise 0 to 1.
+fn range(t: &RecordDataType) -> (f64, f64) {
+    match t {
+        RecordDataType::Integer { min, max } => (*min as f64, *max as f64),
+        RecordDataType::ScaledInteger {
+            min,
+            max,
+            scale,
+            offset,
+        } => (*min as f64 * scale + offset, *max as f64 * scale + offset),
+        RecordDataType::Single {
+            min: Some(lo),
+            max: Some(hi),
+        } => (*lo as f64, *hi as f64),
+        RecordDataType::Double {
+            min: Some(lo),
+            max: Some(hi),
+        } => (*lo, *hi),
+        _ => (0.0, 1.0),
+    }
 }
 
 impl Layout {
@@ -78,6 +104,21 @@ impl Layout {
             ),
             cartesian_state: find(RecordName::CartesianInvalidState).map(|f| f.0),
             spherical_state: find(RecordName::SphericalInvalidState).map(|f| f.0),
+            color: match (
+                find(RecordName::ColorRed),
+                find(RecordName::ColorGreen),
+                find(RecordName::ColorBlue),
+            ) {
+                (Some(r), Some(g), Some(b)) => Some([r, g, b].map(|(i, t)| {
+                    let (lo, hi) = range(&t);
+                    (i, t, lo, hi)
+                })),
+                _ => None,
+            },
+            intensity: find(RecordName::Intensity).map(|(i, t)| {
+                let (lo, hi) = range(&t);
+                (i, t, lo, hi)
+            }),
         };
         if layout.cartesian.is_none() && layout.spherical.is_none() {
             return Err(parse_err(
@@ -109,6 +150,20 @@ impl Layout {
     }
 }
 
+impl Layout {
+    fn attributes(&self, raw: &[RecordValue]) -> (Option<[u8; 3]>, Option<u16>) {
+        let rgb = self.color.as_ref().map(|c| {
+            c.clone()
+                .map(|(i, t, lo, hi)| rescale(value(&raw[i], Some(&t)), lo, hi, 255.0) as u8)
+        });
+        let intensity = self
+            .intensity
+            .as_ref()
+            .map(|(i, t, lo, hi)| rescale(value(&raw[*i], Some(t)), *lo, *hi, 65535.0) as u16);
+        (rgb, intensity)
+    }
+}
+
 /// Numeric value of a raw record, applying the scaled-integer scale and offset.
 fn value(v: &RecordValue, t: Option<&RecordDataType>) -> f64 {
     match (v, t) {
@@ -122,7 +177,7 @@ fn value(v: &RecordValue, t: Option<&RecordDataType>) -> f64 {
     }
 }
 
-pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
+pub(crate) fn inspect(path: &Path, progress: ProgressFn, mut visit: Visitor) -> Result<Contents> {
     let mut reader = E57Reader::from_file(path).map_err(|e| parse_err(FMT, e))?;
     let mut c = Contents::new(FMT);
     c.declared_unit = Some(LinearUnit::Meter); // E57 coordinates are meters by definition
@@ -134,11 +189,25 @@ pub(crate) fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
 
     let clouds = reader.pointclouds();
     for (i, pc) in clouds.iter().enumerate() {
+        if visit.as_ref().is_some_and(|(scan, _)| *scan != i) {
+            continue; // a visitor only needs its own scan
+        }
         let layout = Layout::new(pc)?;
         let points = reader.pointcloud_raw(pc).map_err(|e| parse_err(FMT, e))?;
         let mut stats = ScanStats::default();
         for raw in points {
-            match layout.position(&raw.map_err(|e| parse_err(FMT, e))?) {
+            let raw = raw.map_err(|e| parse_err(FMT, e))?;
+            let position = layout.position(&raw);
+            if let (Some(p), Some((_, f))) = (position, visit.as_mut()) {
+                let (rgb, intensity) = layout.attributes(&raw);
+                f(&Point {
+                    p,
+                    rgb,
+                    intensity,
+                    index: stats.count,
+                });
+            }
+            match position {
                 Some(p) => stats.point(p),
                 None => stats.invalid(),
             }
@@ -298,6 +367,8 @@ mod tests {
             spherical: Some([(0, dt()), (1, dt()), (2, dt())]),
             cartesian_state: None,
             spherical_state: Some(3),
+            color: None,
+            intensity: None,
         };
         // Range 2 m, azimuth 90 degrees, elevation 30 degrees.
         let p = layout

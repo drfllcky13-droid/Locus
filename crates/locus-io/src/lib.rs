@@ -19,6 +19,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub use e57::extract_images as extract_e57_images;
+pub use stats::Point;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -146,17 +147,45 @@ pub type ProgressFn<'a> = &'a mut dyn FnMut(Progress);
 pub fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
     let format = Format::detect(path)?;
     let mut contents = match format {
-        Format::E57 => e57::inspect(path, progress)?,
-        Format::Las | Format::Laz => las::inspect(path, progress)?,
-        Format::Ply => ply::inspect(path, progress)?,
-        Format::Pts => text::inspect(path, text::Kind::Pts, progress)?,
-        Format::Xyz => text::inspect(path, text::Kind::Xyz, progress)?,
+        Format::E57 => e57::inspect(path, progress, None)?,
+        Format::Las | Format::Laz => las::inspect(path, progress, None, false)?,
+        Format::Ply => ply::inspect(path, progress, None)?,
+        Format::Pts => text::inspect(path, text::Kind::Pts, progress, None)?,
+        Format::Xyz => text::inspect(path, text::Kind::Xyz, progress, None)?,
         Format::Obj => mesh::inspect_obj(path)?,
         Format::Gltf | Format::Glb => mesh::inspect_gltf(path)?,
         Format::Jpeg | Format::Png => image::inspect(path)?,
     };
     contents.format = format.name().into();
     Ok(contents)
+}
+
+/// Stream every point of scan `scan` (index into `Contents::scans`) of an evidence file,
+/// in the file's own coordinates and unit. Records with no valid position are skipped, but
+/// `Point::index` still counts them, so it matches the record number in the file.
+pub fn for_each_point(
+    path: &Path,
+    contents: &Contents,
+    scan: usize,
+    progress: ProgressFn,
+    f: &mut dyn FnMut(&Point),
+) -> Result<()> {
+    let info = contents
+        .scans
+        .get(scan)
+        .ok_or_else(|| parse_err("scan", format!("no scan {scan} in this file")))?;
+    let visit = Some((scan, f));
+    match Format::detect(path)? {
+        Format::E57 => e57::inspect(path, progress, visit).map(drop),
+        Format::Las | Format::Laz => {
+            let eight = info.attributes.iter().any(|a| a == "color_8bit");
+            las::inspect(path, progress, visit, eight).map(drop)
+        }
+        Format::Ply => ply::inspect(path, progress, visit).map(drop),
+        Format::Pts => text::inspect(path, text::Kind::Pts, progress, visit).map(drop),
+        Format::Xyz => text::inspect(path, text::Kind::Xyz, progress, visit).map(drop),
+        other => Err(parse_err(other.name(), "this file has no point clouds")),
+    }
 }
 
 /// What the examiner sees before committing an import.
