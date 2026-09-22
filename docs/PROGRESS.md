@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **Phase 2: rendering spike done, waiting for Addison's decision before feature work.** Phases 0 and 1 are complete.
+Current phase: **Phase 2 (in progress)**. The spike is approved: stay in the webview with WebGL2. Phases 0 and 1 are complete.
 
 ## Phase log
 
@@ -73,13 +73,55 @@ Plan (step 1 gates the rest; results go to Addison before any feature work):
    - *Decision rule:* stay in the webview if at least 10M points with EDL hold 30 fps on the 3070 Ti with headroom (below 16 ms p95), or if the numbers scale to at least 5M on a mid-range card, and if streaming sustains more than 100 MB/s without hitches over 50 ms. Otherwise switch the point renderer to native wgpu now.
    - Spike code sits behind a `spike` cargo feature and a separate HTML entry so it never ships.
    - **Result (2026-09-22):** every decision-rule criterion passes. RTX 3070 Ti: 10M points with EDL at 132 fps (p95 8.5 ms). 500 or 1,000 draws cost the same as 10. Streaming runs at 145 MB/s per request and 235 MB/s with 4 in flight, with no frame over 50 ms. Intel UHD 770 holds 30 fps at 5M. **Recommendation: stay in the webview (WebGL2); WebGPU is available later.** Full report: `docs/spike-rendering.md`.
-2. Remaining Phase 2 features, planned after the spike decision.
+2. **Point streaming in locus-io.** `for_each_point(path, scan)` for every scan format: scan-local position (source units), RGB and intensity if present, and the record's index in the source file. The octree builder and every cleanup read through this.
+3. **locus-octree: out-of-core builder, own format.** One octree per scan, in scan-local coordinates converted to meters. The pose is kept separate, so registration (Phase 3) only changes a matrix and never rebuilds. Stored in `derived/octree/<evidence>-<scan>/`.
+   - A counting pass fills a 128³ grid, and chunks are chosen as the largest octree nodes holding at most 5M points.
+   - A distribution pass walks each point down the upper levels, where it is kept if its grid cell is empty (128³ grid sampling per node, Potree 1 style). Otherwise it is appended to its chunk's temp file.
+   - Each chunk is then indexed in memory the same way, top-down.
+   - Every point lives in exactly one node, so the union of nodes on a path down to a leaf is full resolution.
+   - A node stores f64 xyz, a u32 source index, RGB8 and u16 intensity. The hierarchy (bounds, counts, spacing, byte ranges) is JSON. Memory is bounded by the chunk size, not the scan size.
+   - Runs as a background task with progress after import (or on open if missing), recorded in an `octrees` table and audit-logged.
+4. **Serving nodes.** A `locus://` async protocol returns a node as f32 xyz relative to the node's minimum corner, plus intensity and RGB, with removed points filtered out. Georeferenced coordinates never reach the GPU. The render origin is the centre of the project's data, and object matrices are computed in f64 in JS.
+5. **Renderer (app/src/viewer3d).**
+   - LOD selection by projected node size under a point budget. It is a pure function, tested, and timed on the 500M-point scene.
+   - **Adaptive budget** (spike item 1): starts at 10M points and follows measured frame time.
+   - **Budgeted GPU uploads**, at most about 4 MB per frame (item 2).
+   - **Four node requests in flight** (item 3).
+   - **EDL with correct color space** (item 4).
+   - **Redraws only when something changes**: camera, node arrival, tool state (item 5).
+   - Its own point shader: RGB, intensity or elevation coloring, and point size from node spacing (size by LOD).
+   - Clip box (moved and scaled with gizmos) and clip plane (axis and offset).
+6. **Picking and measurement (item 6).** A GPU pick pass renders a small window around the cursor into an RGBA8 target that encodes node slot and point index, and nothing else. Rust resolves the id to the stored f64 point and applies unit and pose in f64.
+   - Measurements are distance, angle, polygon area (on a least-squares plane, with residual) and height above a fitted plane.
+   - The math lives in `locus-analysis` as pure functions with hand-checked values, property tests and propagated uncertainty. The per-point σ is a project setting, default 2 mm, and is stated with every result.
+   - Measurements are stored in SQLite and audit-logged. A method note goes in `docs/methods/measurement.md`.
+7. **Cursor-focused refinement (item 8).** While a measurement tool is active, nodes intersecting the cursor ray are loaded down to the leaves first, whatever their screen size, so snapping uses full-resolution points.
+8. **Cleanup: box delete, lasso delete, statistical outlier removal, voxel downsample.**
+   - Each operation stores its full parameters in SQLite (the lasso stores its polygon and f64 view-projection matrix) and writes a roaring bitmap of removed source indices, with its SHA-256, to `derived/cleanup/`. Source data is never touched.
+   - The removed set is the union of active operations. Undo and redo toggle an operation, and each change is audit-logged. Ctrl+Z / Ctrl+Y and a list with checkboxes.
+   - Outlier removal and voxel downsampling run tile by tile over the octree with a margin, so memory stays bounded.
+9. **GPU choice (item 7).** Export `NvOptimusEnablement` and `AmdPowerXpressRequestHighPerformance` from locus.exe. WebGL renders in WebView2's own GPU process, which those exports don't reach, so also pass `--force_high_performance_gpu` to WebView2. Help → About shows the GPU WebGL is actually using.
+10. **500M-point scene and report.** `locus-validate gen-scene` writes synthetic multi-scan E57 scenes (rooms: floor, walls, objects) at scanner-like density. Import 500M points (20 scans × 25M), build the octrees, and measure:
+    - frame rate and budget on the RTX 3070 Ti and UHD 770;
+    - the CPU cost of node selection;
+    - build time and peak memory.
+
+    Results go in `docs/phase2-report.md`. "Measured on a real mid-range card" stays under Blocked.
+
+Tests:
+- Octree: every point exactly once, node limits, determinism, bounded memory.
+- Precision (item 6): a georeferenced LAS far from the origin (e.g. 500 km, 4,400 km). The coordinate resolved for a pick equals the source within 1 mm, and the UI's formatted value keeps the millimetres.
+- Measurement math: hand-checked values, property tests, uncertainty propagation.
+- Cleanup: each operation removes the right points, source hash unchanged, undo/redo restores and is logged, bitmap tamper detected.
+- Frontend: LOD selection, budget controller, pick decoding, cursor refinement.
 
 Acceptance criteria:
-- [ ] 500M-point scene stays above 30 fps on a mid-range GPU
+- [ ] 500M-point scene stays above 30 fps on a mid-range GPU (to be logged for the RTX 3070 Ti and UHD 770; the real mid-range measurement stays under Blocked and does not stop Phase 2 from closing)
 - [ ] Picked-point coordinates match the source file within 1 mm
 - [ ] Every cleanup is undoable and audit-logged
 
 ## Blocked
+
+- **Mid-range GPU measurement** (2026-09-22): Phase 2's frame-rate criterion has been measured on an RTX 3070 Ti and an Intel UHD 770 only. It still needs a run on a real mid-range card (e.g. RTX 3060 or GTX 1660).
 
 - **Bundle identifier** (2026-09-22): `app.locus.desktop` is a placeholder. Addison will supply the real publisher domain before Phase 14; it must change before the first signed release.
