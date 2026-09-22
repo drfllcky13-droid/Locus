@@ -40,10 +40,12 @@ pub enum Error {
     },
     #[error("not a SHA-256 hex digest: {0}")]
     BadHash(String),
+    #[error("not found: {0}")]
+    NotFound(String),
 }
 
 const DB_FILE: &str = "project.sqlite";
-const SCHEMA_VERSION: &str = "1";
+const SCHEMA_VERSION: &str = "2";
 
 const SCHEMA: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -90,7 +92,7 @@ pub(crate) fn meta_set(conn: &Connection, key: &str, value: &str) -> Result<()> 
     Ok(())
 }
 
-fn now() -> String {
+pub(crate) fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
@@ -148,9 +150,9 @@ impl IntegrityReport {
 
 /// An open `.locus` project folder.
 pub struct Project {
-    root: PathBuf,
-    conn: Connection,
-    examiner: String,
+    pub(crate) root: PathBuf,
+    pub(crate) conn: Connection,
+    pub(crate) examiner: String,
     integrity_on_open: IntegrityReport,
 }
 
@@ -167,6 +169,7 @@ impl Project {
         let tx = conn.transaction()?;
         tx.execute_batch(SCHEMA)?;
         tx.execute_batch(audit::SCHEMA)?;
+        tx.execute_batch(crate::state::SCHEMA_V2)?;
         let created_at = now();
         for (k, v) in [
             ("schema_version", SCHEMA_VERSION),
@@ -212,11 +215,26 @@ impl Project {
             return Err(Error::NotAProject(root.into()));
         }
         let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        match meta_get(&conn, "schema_version")? {
-            Some(v) if v == SCHEMA_VERSION => {}
-            v => return Err(Error::SchemaVersion(v.unwrap_or_default())),
+        let version = meta_get(&conn, "schema_version")?.unwrap_or_default();
+        if version != "1" && version != SCHEMA_VERSION {
+            return Err(Error::SchemaVersion(version));
         }
         audit::verify(&conn)?;
+        if version == "1" {
+            // Schema 2 only adds tables; the migration is logged like any other change.
+            let mut conn = conn;
+            let tx = conn.transaction()?;
+            tx.execute_batch(crate::state::SCHEMA_V2)?;
+            meta_set(&tx, "schema_version", SCHEMA_VERSION)?;
+            audit::append(
+                &tx,
+                examiner,
+                "project.migrated",
+                &json!({ "from": "1", "to": SCHEMA_VERSION }),
+            )?;
+            tx.commit()?;
+            return Self::open_with_progress(root, examiner, progress);
+        }
         let mut project = Self {
             root: root.into(),
             conn,
