@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **Phase 2 (in progress)**. The spike is approved: stay in the webview with WebGL2. Phases 0 and 1 are complete.
+Current phase: **Phase 2 complete** (pending the latest CI run). The mid-range GPU measurement is still open under Blocked, as agreed. Phases 0 and 1 are complete.
 
 ## Phase log
 
@@ -116,9 +116,13 @@ Tests:
 - Frontend: LOD selection, budget controller, pick decoding, cursor refinement.
 
 Acceptance criteria:
-- [ ] 500M-point scene stays above 30 fps on a mid-range GPU (to be logged for the RTX 3070 Ti and UHD 770; the real mid-range measurement stays under Blocked and does not stop Phase 2 from closing)
-- [ ] Picked-point coordinates match the source file within 1 mm
-- [ ] Every cleanup is undoable and audit-logged
+- [x] 500M-point scene above 30 fps: RTX 3070 Ti 47 fps (overview) / 65 fps (interior); Intel UHD 770 51 / 40 fps with the adaptive budget at 2.5–3.2M points. Node selection costs 0.9–1.0 ms on average and 2.3 ms at most per frame over 28,243 nodes. **A real mid-range card is still unmeasured (Blocked).**
+- [x] Picked-point coordinates match the source file within 1 mm: tested to better than 1 µm on a georeferenced LAS about 500 km / 4,400 km from the origin, and the UI shows coordinates within 0.5 mm.
+- [x] Every cleanup is undoable and audit-logged: tests plus a live check in the app (lasso, box, outliers, voxel; Ctrl+Z / Ctrl+Y).
+
+Full results, timings and limits: `docs/phase2-report.md`. The 500M-point import took 6 minutes end to end with a 550 MB peak working set.
+
+What was built: point streaming with source record numbers in locus-io; locus-octree (out-of-core builder, node server, region queries, scene layer with poses and removed sets, cleanup operations); measurement math in locus-analysis; schema 2 (settings, octrees, measurements, cleanup_ops); background build queue, the `locus://` node protocol and pick/measure/cleanup commands; the viewer (LOD, adaptive budget, upload budget, EDL, colour modes, clip box and plane, GPU picking, measurement and cleanup tools, About dialog); `locus-validate gen-scene` and `import`. Tests: 71 Rust, 19 frontend.
 
 ## Blocked
 
