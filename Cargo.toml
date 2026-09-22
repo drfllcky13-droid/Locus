@@ -7,3 +7,14 @@ version = "0.1.0"
 edition = "2021"
 license = "UNLICENSED"
 publish = false
+
+# Registration and scene generation are numeric hot loops; unoptimised, their tests take
+# minutes. Dependencies are optimised too (kd-tree, linear algebra).
+[profile.dev.package.locus-register]
+opt-level = 2
+
+[profile.dev.package.locus-synth]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 2
