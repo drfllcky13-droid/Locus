@@ -79,6 +79,13 @@ export interface ProjectInfo {
   evidence: EvidenceRecord[];
   audit_entries: number;
   audit_head: string;
+  /** Latest evidence re-hash (on open or Verify Evidence); null for a new project. */
+  integrity: IntegrityReport | null;
+}
+
+export interface IntegrityReport {
+  results: [number, EvidenceStatus][];
+  unrecorded: string[];
 }
 
 export interface Progress {
@@ -99,8 +106,8 @@ function channel<T>(onMessage: (m: T) => void): Channel<T> {
 export const api = {
   projectCreate: (parent: string, name: string, examinerName: string) =>
     invoke<ProjectInfo>("project_create", { parent, name, examinerName }),
-  projectOpen: (root: string, examinerName: string) =>
-    invoke<ProjectInfo>("project_open", { root, examinerName }),
+  projectOpen: (root: string, examinerName: string, onProgress: (bytes: number) => void) =>
+    invoke<ProjectInfo>("project_open", { root, examinerName, onProgress: channel(onProgress) }),
   importPreview: (path: string, onProgress: (p: Progress) => void) =>
     invoke<Preview>("import_preview", { path, onProgress: channel(onProgress) }),
   importCommit: (sha256: string, unit: LinearUnit | null, onProgress: (p: Progress) => void) =>
@@ -110,7 +117,5 @@ export const api = {
       onProgress: channel(onProgress),
     }),
   evidenceVerify: (onProgress: (bytes: number) => void) =>
-    invoke<{ project: ProjectInfo; results: [number, EvidenceStatus][] }>("evidence_verify", {
-      onProgress: channel(onProgress),
-    }),
+    invoke<ProjectInfo>("evidence_verify", { onProgress: channel(onProgress) }),
 };

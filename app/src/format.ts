@@ -1,5 +1,5 @@
 // Display formatting. Every number shown carries its unit (CLAUDE.md rule 3).
-import type { Contents, LinearUnit } from "./api";
+import type { Contents, EvidenceStatus, IntegrityReport, LinearUnit } from "./api";
 
 export const UNITS: { value: LinearUnit; label: string; symbol: string }[] = [
   { value: "meter", label: "Meters", symbol: "m" },
@@ -43,6 +43,22 @@ export function formatExtent(
 /** Mirrors `Contents::needs_unit` in locus-core. */
 export function needsUnit(c: Contents): boolean {
   return c.declared_unit === null && (c.scans.length > 0 || c.meshes.length > 0);
+}
+
+/** One line per integrity problem, or an empty list when every file matches. */
+export function integrityProblems(r: IntegrityReport): string[] {
+  const describe = (s: EvidenceStatus) =>
+    s.status === "missing"
+      ? "is missing from the evidence folder"
+      : s.status === "changed"
+        ? `has changed: its SHA-256 is now ${s.actual}`
+        : "";
+  return [
+    ...r.results
+      .filter(([, s]) => s.status !== "intact")
+      .map(([id, s]) => `Evidence #${id} ${describe(s)}`),
+    ...r.unrecorded.map((f) => `${f} is in the evidence folder but was never imported`),
+  ];
 }
 
 export function progressPercent(done: number, total: number): number {

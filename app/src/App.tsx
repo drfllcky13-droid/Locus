@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { api, type EvidenceRecord, type ProjectInfo } from "./api";
-import { formatBytes, formatCount, unitSymbol } from "./format";
+import { formatBytes, formatCount, integrityProblems, unitSymbol } from "./format";
 import { ImportDialog } from "./ImportDialog";
 import { ProjectDialog } from "./ProjectDialog";
 import { Viewport } from "./viewer3d/Viewport";
@@ -43,17 +43,18 @@ export function App() {
     if (!project) return setNotice("Open a project first.");
     setVerifying(true);
     try {
-      const { project: p, results } = await api.evidenceVerify(() => {});
+      const p = await api.evidenceVerify(() => {});
       setProject(p);
-      const bad = results.filter(([, s]) => s.status !== "intact");
-      setNotice(
-        bad.length === 0
-          ? results.length === 1
+      const n = p.integrity?.results.length ?? 0;
+      if (p.integrity && integrityProblems(p.integrity).length === 0) {
+        setNotice(
+          n === 1
             ? "The evidence file matches its recorded SHA-256."
-            : `All ${results.length} evidence files match their recorded SHA-256.`
-          : `${bad.length} of ${results.length} evidence files FAILED: ` +
-              bad.map(([id, s]) => `#${id} ${s.status}`).join(", "),
-      );
+            : `All ${n} evidence files match their recorded SHA-256.`,
+        );
+      } else {
+        setNotice(null); // the panel's integrity warning lists the problems
+      }
     } catch (e) {
       setNotice(String(e));
     } finally {
@@ -161,6 +162,7 @@ function ProjectPanel({
           </button>
         </div>
       </header>
+      {project.integrity && <IntegrityWarning problems={integrityProblems(project.integrity)} />}
       <h2>Evidence</h2>
       {project.evidence.length === 0 ? (
         <p className="muted">No evidence imported yet.</p>
@@ -172,6 +174,24 @@ function ProjectPanel({
         </ul>
       )}
     </>
+  );
+}
+
+function IntegrityWarning({ problems }: { problems: string[] }) {
+  if (problems.length === 0) return null;
+  return (
+    <div className="integrity" role="alert">
+      <strong>Evidence integrity check failed</strong>
+      <ul>
+        {problems.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
+      <p>
+        The evidence folder no longer matches the hashes recorded at import. This finding is in the
+        audit log. Restore the original files from a verified copy before relying on this project.
+      </p>
+    </div>
   );
 }
 

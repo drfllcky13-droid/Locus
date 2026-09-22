@@ -1,6 +1,13 @@
 import { expect, test } from "vitest";
 import type { Contents } from "./api";
-import { formatBytes, formatCount, formatExtent, needsUnit, progressPercent } from "./format";
+import {
+  formatBytes,
+  formatCount,
+  formatExtent,
+  integrityProblems,
+  needsUnit,
+  progressPercent,
+} from "./format";
 
 test("bytes show a unit and the exact count", () => {
   expect(formatBytes(512)).toBe("512 B");
@@ -44,6 +51,24 @@ test("unit is required only for geometry without a declared unit", () => {
   expect(needsUnit(empty)).toBe(false);
   expect(needsUnit({ ...empty, scans: [scan] })).toBe(true);
   expect(needsUnit({ ...empty, scans: [scan], declared_unit: "meter" })).toBe(false);
+});
+
+test("integrity problems are spelled out", () => {
+  expect(integrityProblems({ results: [[1, { status: "intact" }]], unrecorded: [] })).toEqual([]);
+  expect(
+    integrityProblems({
+      results: [
+        [1, { status: "intact" }],
+        [2, { status: "changed", actual: "ab12" }],
+        [3, { status: "missing" }],
+      ],
+      unrecorded: ["planted.xyz"],
+    }),
+  ).toEqual([
+    "Evidence #2 has changed: its SHA-256 is now ab12",
+    "Evidence #3 is missing from the evidence folder",
+    "planted.xyz is in the evidence folder but was never imported",
+  ]);
 });
 
 test("progress never exceeds 100", () => {

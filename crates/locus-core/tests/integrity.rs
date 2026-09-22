@@ -153,10 +153,9 @@ fn evidence_verification_detects_changes() {
             &mut |_| {},
         )
         .unwrap();
-    assert_eq!(
-        p.verify_evidence(&mut |_| {}).unwrap(),
-        vec![(rec.id, EvidenceStatus::Intact)]
-    );
+    let report = p.verify_evidence(&mut |_| {}).unwrap();
+    assert!(report.is_clean());
+    assert_eq!(report.results, vec![(rec.id, EvidenceStatus::Intact)]);
 
     let stored = p.root().join(&rec.stored_path);
     let mut perms = fs::metadata(&stored).unwrap().permissions();
@@ -164,8 +163,11 @@ fn evidence_verification_detects_changes() {
     perms.set_readonly(false);
     fs::set_permissions(&stored, perms).unwrap();
     fs::write(&stored, "1 1 1\n").unwrap();
-    let results = p.verify_evidence(&mut |_| {}).unwrap();
-    assert!(matches!(results[0].1, EvidenceStatus::Changed { .. }));
+    let report = p.verify_evidence(&mut |_| {}).unwrap();
+    assert!(matches!(
+        report.results[0].1,
+        EvidenceStatus::Changed { .. }
+    ));
     assert!(p
         .audit_log()
         .unwrap()
@@ -173,6 +175,62 @@ fn evidence_verification_detects_changes() {
         .unwrap()
         .details
         .contains("changed"));
+}
+
+fn make_writable(path: &Path) {
+    let mut perms = fs::metadata(path).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(path, perms).unwrap();
+}
+
+/// The read-only flag only guards against accidents; the hash check on open is what
+/// catches a deliberately edited evidence file.
+#[test]
+fn opening_rehashes_evidence_and_reports_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = project_with_log(dir.path());
+    let clean = Project::open(&root, "B").unwrap();
+    assert!(clean.integrity_on_open().is_clean());
+    let stored = clean.root().join(&clean.evidence().unwrap()[0].stored_path);
+    drop(clean);
+
+    make_writable(&stored);
+    fs::write(&stored, "0 0 0\n1 1 1\n2 2 9\n").unwrap(); // one digit changed
+    let p = Project::open(&root, "C").unwrap();
+    let report = p.integrity_on_open();
+    assert!(!report.is_clean());
+    let actual = sha(&stored);
+    assert_eq!(
+        report.results,
+        vec![(
+            1,
+            EvidenceStatus::Changed {
+                actual: actual.clone()
+            }
+        )]
+    );
+    let entry = p.audit_log().unwrap().pop().unwrap();
+    assert_eq!(entry.action, "project.opened");
+    assert!(entry.details.contains(&actual), "{}", entry.details);
+}
+
+#[test]
+fn opening_reports_missing_and_unrecorded_evidence_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = project_with_log(dir.path());
+    let stored = {
+        let p = Project::open(&root, "B").unwrap();
+        p.root().join(&p.evidence().unwrap()[0].stored_path)
+    };
+    make_writable(&stored);
+    fs::remove_file(&stored).unwrap();
+    fs::write(root.join("evidence").join("planted.xyz"), "5 5 5\n").unwrap();
+
+    let p = Project::open(&root, "C").unwrap();
+    let report = p.integrity_on_open();
+    assert_eq!(report.results, vec![(1, EvidenceStatus::Missing)]);
+    assert_eq!(report.unrecorded, ["planted.xyz"]);
 }
 
 #[test]

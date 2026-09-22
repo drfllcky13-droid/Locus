@@ -296,3 +296,23 @@ td.num {
 .notice button {
   padding: 0 8px;
 }
+
+.integrity {
+  border: 1px solid var(--error);
+  background: rgb(255 123 114 / 10%);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-top: 12px;
+  color: var(--error);
+}
+
+.integrity ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  word-break: break-all;
+}
+
+.integrity p {
+  color: var(--text);
+  margin: 0;
+}

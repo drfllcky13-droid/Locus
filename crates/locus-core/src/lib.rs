@@ -13,5 +13,5 @@ pub use audit::AuditEntry;
 pub use contents::{
     Bounds, Contents, ExifField, ImageInfo, ImageKind, MeshInfo, ScanInfo, IDENTITY,
 };
-pub use project::{Error, EvidenceRecord, EvidenceStatus, Project, Result};
+pub use project::{Error, EvidenceRecord, EvidenceStatus, IntegrityReport, Project, Result};
 pub use units::LinearUnit;

@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import { api, type ProjectInfo } from "./api";
+import { formatBytes } from "./format";
 
 const EXAMINER_KEY = "locus.examiner";
 
@@ -26,6 +27,7 @@ export function ProjectDialog({
   const [examiner, setExaminer] = useState(rememberedExaminer);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hashed, setHashed] = useState(0);
 
   const choose = async () => {
     const picked = await open({
@@ -43,7 +45,7 @@ export function ProjectDialog({
       const p =
         mode === "new"
           ? await api.projectCreate(folder, name, examiner)
-          : await api.projectOpen(folder, examiner);
+          : await api.projectOpen(folder, examiner, setHashed);
       try {
         localStorage.setItem(EXAMINER_KEY, examiner.trim());
       } catch {
@@ -103,6 +105,11 @@ export function ProjectDialog({
         <p className="muted">
           The examiner&apos;s name is recorded in the audit log with every change.
         </p>
+        {busy && mode === "open" && (
+          <p className="muted">
+            Checking every evidence file against its recorded SHA-256… {formatBytes(hashed)}
+          </p>
+        )}
         {error && <p className="error">{error}</p>}
         <div className="buttons">
           <button type="button" onClick={onClose}>

@@ -117,11 +117,41 @@ pub enum EvidenceStatus {
     Changed { actual: String },
 }
 
+/// Result of re-hashing the evidence folder against the recorded hashes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct IntegrityReport {
+    pub results: Vec<(i64, EvidenceStatus)>,
+    /// Files in `evidence/` that no evidence record accounts for (placed there by hand,
+    /// or left by an interrupted import).
+    pub unrecorded: Vec<String>,
+}
+
+impl IntegrityReport {
+    pub fn is_clean(&self) -> bool {
+        self.unrecorded.is_empty()
+            && self
+                .results
+                .iter()
+                .all(|(_, s)| *s == EvidenceStatus::Intact)
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        let failed: Vec<_> = self
+            .results
+            .iter()
+            .filter(|(_, s)| *s != EvidenceStatus::Intact)
+            .map(|(id, s)| json!({ "evidence_id": id, "result": s }))
+            .collect();
+        json!({ "checked": self.results.len(), "failed": failed, "unrecorded": self.unrecorded })
+    }
+}
+
 /// An open `.locus` project folder.
 pub struct Project {
     root: PathBuf,
     conn: Connection,
     examiner: String,
+    integrity_on_open: IntegrityReport,
 }
 
 impl Project {
@@ -158,11 +188,25 @@ impl Project {
             root: root.into(),
             conn,
             examiner: examiner.into(),
+            integrity_on_open: IntegrityReport::default(),
         })
     }
 
-    /// Open an existing project. Refuses to open if the audit log fails verification.
+    /// Open an existing project. See [`Project::open_with_progress`].
     pub fn open(root: &Path, examiner: &str) -> Result<Self> {
+        Self::open_with_progress(root, examiner, &mut |_| {})
+    }
+
+    /// Open an existing project. Refuses to open if the audit log fails verification.
+    /// Every evidence file is then re-hashed. Problems don't block opening (the examiner
+    /// needs to see the case to deal with them) but are reported by
+    /// [`Project::integrity_on_open`] and recorded in the `project.opened` audit entry.
+    /// `progress` receives bytes hashed so far.
+    pub fn open_with_progress(
+        root: &Path,
+        examiner: &str,
+        progress: &mut dyn FnMut(u64),
+    ) -> Result<Self> {
         let db = root.join(DB_FILE);
         if !db.is_file() {
             return Err(Error::NotAProject(root.into()));
@@ -177,9 +221,17 @@ impl Project {
             root: root.into(),
             conn,
             examiner: examiner.into(),
+            integrity_on_open: IntegrityReport::default(),
         };
-        project.log("project.opened", json!({}))?;
+        let report = project.check_evidence(progress)?;
+        project.log("project.opened", json!({ "evidence": report.to_json() }))?;
+        project.integrity_on_open = report;
         Ok(project)
+    }
+
+    /// What the evidence check found when this project was opened.
+    pub fn integrity_on_open(&self) -> &IntegrityReport {
+        &self.integrity_on_open
     }
 
     fn log(&mut self, action: &str, details: serde_json::Value) -> Result<AuditEntry> {
@@ -425,13 +477,17 @@ impl Project {
     }
 
     /// Re-hash every stored evidence file against its recorded hash, and log the result.
-    pub fn verify_evidence(
-        &mut self,
-        progress: &mut dyn FnMut(u64),
-    ) -> Result<Vec<(i64, EvidenceStatus)>> {
-        let mut results = vec![];
+    pub fn verify_evidence(&mut self, progress: &mut dyn FnMut(u64)) -> Result<IntegrityReport> {
+        let report = self.check_evidence(progress)?;
+        self.log("evidence.verified", report.to_json())?;
+        Ok(report)
+    }
+
+    fn check_evidence(&self, progress: &mut dyn FnMut(u64)) -> Result<IntegrityReport> {
+        let mut report = IntegrityReport::default();
         let mut done = 0u64;
-        for rec in self.evidence()? {
+        let records = self.evidence()?;
+        for rec in &records {
             let path = self.root.join(&rec.stored_path);
             let status = if !path.is_file() {
                 EvidenceStatus::Missing
@@ -444,18 +500,25 @@ impl Project {
                     EvidenceStatus::Changed { actual }
                 }
             };
-            results.push((rec.id, status));
+            report.results.push((rec.id, status));
         }
-        let failed: Vec<_> = results
+        let recorded: std::collections::HashSet<_> = records
             .iter()
-            .filter(|(_, s)| *s != EvidenceStatus::Intact)
-            .map(|(id, s)| json!({ "evidence_id": id, "result": s }))
+            .map(|r| self.root.join(&r.stored_path))
             .collect();
-        self.log(
-            "evidence.verified",
-            json!({ "checked": results.len(), "failed": failed }),
-        )?;
-        Ok(results)
+        for entry in fs::read_dir(self.root.join("evidence"))? {
+            let path = entry?.path();
+            if !recorded.contains(&path) {
+                report.unrecorded.push(
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+        }
+        report.unrecorded.sort();
+        Ok(report)
     }
 }
 

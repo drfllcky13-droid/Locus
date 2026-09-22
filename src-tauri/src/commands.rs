@@ -1,7 +1,7 @@
 //! Tauri commands: a thin layer over locus-core and locus-io. No logic lives here
 //! beyond argument checks and moving blocking work off the async runtime.
 
-use locus_core::{EvidenceRecord, EvidenceStatus, LinearUnit, Project};
+use locus_core::{EvidenceRecord, IntegrityReport, LinearUnit, Project};
 use locus_io::{Preview, Progress};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -41,9 +41,11 @@ pub struct ProjectInfo {
     audit_entries: i64,
     /// Hash of the newest audit entry; recording it outside the project anchors the log.
     audit_head: String,
+    /// Latest evidence re-hash (on open, or from Verify Evidence); None for a new project.
+    integrity: Option<IntegrityReport>,
 }
 
-fn info(p: &Project) -> CmdResult<ProjectInfo> {
+fn info(p: &Project, integrity: Option<IntegrityReport>) -> CmdResult<ProjectInfo> {
     let log = p.audit_log().map_err(err)?;
     let head = log.last();
     Ok(ProjectInfo {
@@ -53,6 +55,7 @@ fn info(p: &Project) -> CmdResult<ProjectInfo> {
         evidence: p.evidence().map_err(err)?,
         audit_entries: head.map_or(0, |e| e.seq),
         audit_head: head.map(|e| e.hash.clone()).unwrap_or_default(),
+        integrity,
     })
 }
 
@@ -89,7 +92,7 @@ pub async fn project_create(
     let root = parent.join(format!("{folder}.locus"));
     blocking(app, move |s| {
         let p = Project::create(&root, &name, &examiner).map_err(err)?;
-        let i = info(&p)?;
+        let i = info(&p, None)?;
         *s.project.lock().unwrap() = Some(p);
         Ok(i)
     })
@@ -101,11 +104,15 @@ pub async fn project_open(
     app: AppHandle,
     root: PathBuf,
     examiner_name: String,
+    on_progress: Channel<u64>,
 ) -> CmdResult<ProjectInfo> {
     let examiner = examiner(&examiner_name)?;
     blocking(app, move |s| {
-        let p = Project::open(&root, &examiner).map_err(err)?;
-        let i = info(&p)?;
+        let p = Project::open_with_progress(&root, &examiner, &mut |b| {
+            let _ = on_progress.send(b);
+        })
+        .map_err(err)?;
+        let i = info(&p, Some(p.integrity_on_open().clone()))?;
         *s.project.lock().unwrap() = Some(p);
         Ok(i)
     })
@@ -165,7 +172,7 @@ pub async fn import_commit(
             None
         };
         Ok(CommitResult {
-            project: info(project)?,
+            project: info(project, None)?,
             evidence_id: rec.id,
             warning,
         })
@@ -184,26 +191,17 @@ fn extract_panoramas(root: &Path, rec: &EvidenceRecord) -> Result<(), String> {
         .map_err(|e| format!("Imported, but its embedded images could not be extracted: {e}"))
 }
 
-#[derive(Serialize)]
-pub struct VerifyResult {
-    project: ProjectInfo,
-    results: Vec<(i64, EvidenceStatus)>,
-}
-
 #[tauri::command]
-pub async fn evidence_verify(app: AppHandle, on_progress: Channel<u64>) -> CmdResult<VerifyResult> {
+pub async fn evidence_verify(app: AppHandle, on_progress: Channel<u64>) -> CmdResult<ProjectInfo> {
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let project = guard.as_mut().ok_or("Open or create a project first.")?;
-        let results = project
+        let report = project
             .verify_evidence(&mut |b| {
                 let _ = on_progress.send(b);
             })
             .map_err(err)?;
-        Ok(VerifyResult {
-            project: info(project)?,
-            results,
-        })
+        info(project, Some(report))
     })
     .await
 }
