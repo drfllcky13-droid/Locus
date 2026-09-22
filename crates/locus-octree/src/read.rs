@@ -159,6 +159,29 @@ impl Octree {
         Ok((pts.index[s], pts.xyz[s]))
     }
 
+    /// Indices of every node whose cube intersects `[lo, hi]`, found by walking down from
+    /// the root.
+    pub fn nodes_in(&self, lo: [f64; 3], hi: [f64; 3]) -> Vec<usize> {
+        let mut out = vec![];
+        let mut stack: Vec<usize> = self.node("r").into_iter().collect();
+        while let Some(i) = stack.pop() {
+            let n = &self.nodes[i];
+            let max = n.max();
+            if (0..3).any(|d| max[d] < lo[d] || n.min[d] > hi[d]) {
+                continue;
+            }
+            out.push(i);
+            for o in 0..8 {
+                if n.children & (1 << o) != 0 {
+                    if let Some(c) = self.node(&format!("{}{o}", n.name)) {
+                        stack.push(c);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Visit every stored point inside the axis-aligned box `[lo, hi]` (scan-local meters).
     pub fn query(
         &self,
@@ -166,11 +189,7 @@ impl Octree {
         hi: [f64; 3],
         f: &mut dyn FnMut(&NodePoints, usize),
     ) -> Result<()> {
-        for (i, n) in self.nodes.iter().enumerate() {
-            let max = n.max();
-            if (0..3).any(|d| max[d] < lo[d] || n.min[d] > hi[d]) {
-                continue;
-            }
+        for i in self.nodes_in(lo, hi) {
             let pts = self.read(i)?;
             for (k, p) in pts.xyz.iter().enumerate() {
                 if (0..3).all(|d| p[d] >= lo[d] && p[d] <= hi[d]) {

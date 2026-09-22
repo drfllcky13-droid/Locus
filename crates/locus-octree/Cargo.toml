@@ -6,11 +6,16 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+kiddo = "6.3.0"
+locus-core = { version = "0.1.0", path = "../locus-core" }
+locus-io = { version = "0.1.0", path = "../locus-io" }
 roaring = "0.11.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.20"
 
 [dev-dependencies]
+las = { version = "0.11.1", features = ["laz"] }
 proptest = "1.11.0"
+serde_json = "1.0.151"
 tempfile = "3.27.0"

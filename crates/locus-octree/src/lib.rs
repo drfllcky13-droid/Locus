@@ -11,7 +11,9 @@
 //! scan has them. Positions stay f64 so picks and measurements never depend on GPU floats.
 
 mod build;
+pub mod cleanup;
 mod read;
+pub mod scene;
 
 pub use build::{build, BuildOptions, BuildProgress, BuildStage, Source};
 pub use read::{NodePoints, Octree, SERVE_HEADER};
