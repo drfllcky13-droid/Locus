@@ -1,0 +1,8 @@
+#!/bin/sh
+# Lint before anything leaves the machine: the same checks CI runs first.
+# Installed by tools/setup.sh. Bypass in an emergency with `git push --no-verify`.
+set -e
+echo "pre-push: cargo fmt --check"
+cargo fmt --all --check
+echo "pre-push: cargo clippy -D warnings"
+cargo clippy --workspace --all-targets --quiet -- -D warnings
