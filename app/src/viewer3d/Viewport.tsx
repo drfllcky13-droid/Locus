@@ -176,6 +176,10 @@ export function Viewport({
         onNotice("No point under the cursor. Zoom in, or move closer to the surface.");
         return;
       }
+      if ("refused" in hit) {
+        onNotice(hit.refused);
+        return;
+      }
       let at: Resolved;
       try {
         at = await api.pickResolve(hit);

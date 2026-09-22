@@ -1,7 +1,15 @@
 import { describe, expect, test } from "vitest";
 import { BUDGET_MAX, BUDGET_MIN, BUDGET_START, initialBudget, updateBudget } from "./budget";
 import { inFocus, selectNodes, type LodNode, type LodScan, type View } from "./lod";
-import { decode, encode, nearest } from "./pick";
+import {
+  MAX_POINTS_PER_NODE,
+  MAX_SLOTS,
+  UNPICKABLE_SLOT,
+  decode,
+  encode,
+  nearest,
+  slotFor,
+} from "./pick";
 
 describe("pick encoding", () => {
   test("round-trips slot and index", () => {
@@ -23,8 +31,40 @@ describe("pick encoding", () => {
     put(0, 0, 1, 10);
     put(3, 2, 2, 20); // one pixel right of centre
     put(4, 4, 3, 30);
-    expect(nearest(px, size)).toEqual({ slot: 2, index: 20 });
+    expect(nearest(px, size)).toEqual({ kind: "hit", slot: 2, index: 20 });
     expect(nearest(new Uint8Array(size * size * 4), size)).toBeNull();
+  });
+});
+
+describe("pick limits are refused, never guessed", () => {
+  test("a node past the slot limit is unpickable, and picking it is refused", () => {
+    // Fill every encodable slot, as with thousands of nodes loaded.
+    const slots: (string | null)[] = [null];
+    for (let i = 1; i <= MAX_SLOTS; i++) {
+      const s = slotFor(10, slots);
+      expect(s).toBe(i);
+      slots.push(`scan/${i}`);
+    }
+    const overflow = slotFor(10, slots);
+    expect(overflow).toBe(UNPICKABLE_SLOT);
+
+    // The overflow node is drawn nearest the cursor; a pickable node is further out.
+    const size = 5;
+    const px = new Uint8Array(size * size * 4);
+    px.set(encode(overflow, 7), (2 * size + 2) * 4);
+    px.set(encode(3, 9), (0 * size + 0) * 4);
+    const r = nearest(px, size);
+    expect(r?.kind).toBe("refused");
+  });
+
+  test("a node with more points than 20 bits can index is unpickable", () => {
+    expect(slotFor(MAX_POINTS_PER_NODE, [null])).toBe(1);
+    expect(slotFor(MAX_POINTS_PER_NODE + 1, [null])).toBe(UNPICKABLE_SLOT);
+  });
+
+  test("freed slots are reused before the limit is reached", () => {
+    const slots = [null, "a", null, "c"];
+    expect(slotFor(10, slots)).toBe(2);
   });
 });
 

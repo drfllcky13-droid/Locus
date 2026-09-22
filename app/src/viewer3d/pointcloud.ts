@@ -4,7 +4,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as THREE from "three";
 import { selectNodes, type LodScan, type View } from "./lod";
-import { MAX_SLOTS, PICK_GLSL, nearest } from "./pick";
+import { MAX_SLOTS, PICK_GLSL, REFUSED_REASON, UNPICKABLE_SLOT, nearest, slotFor } from "./pick";
 
 export interface NodeData {
   name: string;
@@ -41,6 +41,8 @@ export interface PickHit {
   k: number;
   revision: number;
 }
+
+export type PickOutcome = PickHit | { refused: string } | null;
 
 /** Most nodes kept in GPU memory: about 2× the largest budget. */
 const LOADED_POINTS_MAX = 60_000_000;
@@ -238,7 +240,7 @@ export class PointCloudLayer {
         entry.points.geometry.dispose();
         entry.material.dispose();
         entry.pickMaterial.dispose();
-        if (entry.slot) this.slots[entry.slot] = null;
+        if (entry.slot !== UNPICKABLE_SLOT) this.slots[entry.slot] = null;
       }
       return !stale;
     });
@@ -322,7 +324,7 @@ export class PointCloudLayer {
     const h = node.size / 2;
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(h, h, h), h * Math.sqrt(3));
 
-    const slot = this.takeSlot(key);
+    const slot = this.takeSlot(key, n);
     const own = {
       uSpacing: { value: node.spacing },
       uHasColor: { value: Boolean(flags & 1) },
@@ -358,15 +360,13 @@ export class PointCloudLayer {
     });
   }
 
-  private takeSlot(key: string): number {
-    let i = this.slots.indexOf(null, 1);
-    if (i < 0) {
-      if (this.slots.length > MAX_SLOTS) return 0; // not pickable; eviction frees slots
-      i = this.slots.length;
-      this.slots.push(null);
-    }
-    this.slots[i] = key;
-    return i;
+  /** A pick slot for a node, or the unpickable slot when it can't be encoded safely. */
+  private takeSlot(key: string, points: number): number {
+    const slot = slotFor(points, this.slots);
+    if (slot === UNPICKABLE_SLOT) return slot; // drawn, but picks on it are refused
+    if (slot === this.slots.length) this.slots.push(null);
+    this.slots[slot] = key;
+    return slot;
   }
 
   private unload(key: string) {
@@ -376,7 +376,7 @@ export class PointCloudLayer {
     e.points.geometry.dispose();
     e.material.dispose();
     e.pickMaterial.dispose();
-    if (e.slot) this.slots[e.slot] = null;
+    if (e.slot !== UNPICKABLE_SLOT) this.slots[e.slot] = null;
     this.loaded.delete(key);
   }
 
@@ -411,7 +411,7 @@ export class PointCloudLayer {
     x: number,
     y: number,
     radius: number,
-  ): PickHit | null {
+  ): PickOutcome {
     const dpr = renderer.getPixelRatio();
     const size = Math.round(radius * dpr) * 2 + 1;
     const full = renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -454,9 +454,11 @@ export class PointCloudLayer {
       );
     const hit = nearest(flipped, size);
     if (!hit) return null;
+    if (hit.kind === "refused") return { refused: hit.reason };
     const key = this.slots[hit.slot];
     const entry = key ? this.loaded.get(key) : undefined;
-    if (!key || !entry) return null;
+    // Anything that doesn't line up exactly with a loaded node is refused, not guessed.
+    if (!key || !entry || hit.index >= entry.count) return { refused: REFUSED_REASON };
     const [scan, node] = key.split("/");
     return { scan, node: Number(node), k: hit.index, revision: entry.revision };
   }

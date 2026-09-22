@@ -9,7 +9,7 @@ import { initialBudget, updateBudget, type BudgetState } from "./budget";
 import { EdlPass } from "./edl";
 import type { View } from "./lod";
 import { formatMeasurement } from "./measureFormat";
-import { PointCloudLayer, type ColorMode, type PickHit, type SceneData } from "./pointcloud";
+import { PointCloudLayer, type ColorMode, type PickOutcome, type SceneData } from "./pointcloud";
 import { createScene } from "./scene";
 
 export interface Stats {
@@ -225,7 +225,7 @@ export class Engine {
 
   // ---------- picking ----------
 
-  pick(x: number, y: number): PickHit | null {
+  pick(x: number, y: number): PickOutcome {
     return this.layer
       ? this.layer.pick(this.renderer, this.scene, this.camera, x, y, SNAP_PX)
       : null;
