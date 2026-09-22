@@ -2014,6 +2014,10 @@ dependencies = [
 [[package]]
 name = "locus-analysis"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+]
 
 [[package]]
 name = "locus-core"
