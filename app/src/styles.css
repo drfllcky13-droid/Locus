@@ -46,6 +46,139 @@ body,
   min-width: 0;
 }
 
+.viewer {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  height: 100%;
+}
+
+.viewer .viewport {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.viewport.tool-distance,
+.viewport.tool-angle,
+.viewport.tool-area,
+.viewport.tool-height {
+  cursor: crosshair;
+}
+
+.viewport .labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.measure-label {
+  background: rgb(20 22 26 / 85%);
+  border: 1px solid #58a6ff;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tool-hint,
+.stats {
+  position: absolute;
+  left: 12px;
+  background: rgb(20 22 26 / 85%);
+  border-radius: 4px;
+  padding: 4px 8px;
+  pointer-events: none;
+}
+
+.tool-hint {
+  top: 12px;
+}
+
+.tool-hint.busy {
+  top: 44px;
+  color: var(--accent);
+}
+
+.stats {
+  bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lasso {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.lasso polyline {
+  fill: rgb(242 165 58 / 12%);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.scene-panel {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.scene-panel h2 {
+  margin: 14px 0 6px;
+}
+
+.scene-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.scene-panel li {
+  margin: 4px 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.toolbar button {
+  padding: 4px 8px;
+}
+
+label.inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+label.inline input[type="number"] {
+  width: 64px;
+}
+
+.measurements li {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+}
+
+.coord {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
 h1 {
   font-size: 18px;
   margin: 0 0 4px;

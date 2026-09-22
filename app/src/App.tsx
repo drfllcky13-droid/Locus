@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { api, type EvidenceRecord, type ProjectInfo } from "./api";
 import { formatBytes, formatCount, integrityProblems, unitSymbol } from "./format";
+import { AboutDialog } from "./AboutDialog";
 import { ImportDialog } from "./ImportDialog";
 import { ProjectDialog } from "./ProjectDialog";
 import { Viewport } from "./viewer3d/Viewport";
@@ -22,7 +23,8 @@ const IMPORT_EXTENSIONS = [
   "png",
 ];
 
-type Dialog = { kind: "new" } | { kind: "open" } | { kind: "import"; path: string } | null;
+type Dialog =
+  { kind: "new" } | { kind: "open" } | { kind: "about" } | { kind: "import"; path: string } | null;
 
 export function App() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -68,6 +70,7 @@ export function App() {
       else if (payload === "open_project") setDialog({ kind: "open" });
       else if (payload === "import") void startImport();
       else if (payload === "verify_evidence") void verify();
+      else if (payload === "about") setDialog({ kind: "about" });
     });
     return () => {
       void unlisten.then((f) => f());
@@ -96,7 +99,7 @@ export function App() {
         )}
       </aside>
       <main className="main">
-        <Viewport />
+        <Viewport project={project} onNotice={setNotice} />
       </main>
 
       {(dialog?.kind === "new" || dialog?.kind === "open") && (
@@ -121,6 +124,7 @@ export function App() {
           }}
         />
       )}
+      {dialog?.kind === "about" && <AboutDialog onClose={() => setDialog(null)} />}
       {notice && (
         <div className="notice" role="status">
           <span>{notice}</span>
