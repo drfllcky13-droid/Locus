@@ -32,7 +32,21 @@ function run(cmd, args) {
 }
 
 let child;
+let exited;
 let failed = false;
+
+// When the webview never answers: is the app alive, and did WebView2 get our arguments?
+function diagnose() {
+  console.error(`app ${exited === undefined ? "still running" : `exited with ${exited}`}`);
+  if (process.platform !== "win32") return;
+  const ps = (cmd) => spawnSync("powershell", ["-NoProfile", "-Command", cmd], { encoding: "utf8" }).stdout;
+  console.error(
+    ps(
+      "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'locus|msedgewebview2' } | ForEach-Object { $_.Name + ' ' + $_.CommandLine.Substring(0, [Math]::Min(400, $_.CommandLine.Length)) }",
+    ),
+  );
+  console.error(ps("Get-NetTCPConnection -State Listen | Where-Object LocalPort -gt 9000 | Format-Table -AutoSize | Out-String"));
+}
 try {
   run(validate, ["gen-scene", "--scans", "2", "--points-per-scan", "300000", "--out", scene]);
   run(validate, ["import", "--project", project, "--examiner", "Smoke test", scene]);
@@ -47,8 +61,12 @@ try {
     },
     stdio: "inherit",
   });
+  child.on("exit", (code) => (exited = code));
 
-  const cdp = await connect(port, 120_000);
+  const cdp = await connect(port, 120_000).catch((err) => {
+    diagnose();
+    throw err;
+  });
   const problems = [];
   cdp.on((m) => {
     if (m.method === "Console.messageAdded") {
