@@ -143,7 +143,7 @@ Accept: area of origin mean error under 10 cm on clean synthetic data; trajector
 Also: write a protocol in `docs/methods/validation-protocol.md` for physical validation studies (staged scenes, multiple blind examiners), since synthetic tests alone will not satisfy a court.
 
 ### Phase 14: Polish, onboarding, licensing
-Build: guided workflow panel (step-by-step for each common job: indoor crime scene, fatal crash, fire scene); contextual help per tool; sample project; license tiers as feature flags with an offline license file; local crash logs (never uploaded automatically; the user can review one and choose to send it); installer (MSI) and signed update packages the user downloads and installs manually. The app never checks for updates itself.
+Build: guided workflow panel (step-by-step for each common job: indoor crime scene, fatal crash, fire scene); contextual help per tool; sample project; license tiers as feature flags with an offline license file; crash reporting that never uploads case data; installer (MSI) and auto-update with signed builds.
 Accept: a new user can complete the sample indoor crime scene workflow in under 30 minutes following the in-app guide.
 
 ## 5. Known hard problems (decide early, log in DECISIONS.md)
