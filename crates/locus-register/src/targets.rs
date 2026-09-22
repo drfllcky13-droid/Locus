@@ -33,6 +33,9 @@ pub struct Correspondence {
     pub ambiguous: bool,
 }
 
+/// Inlier pairs, fit rms and the fit itself.
+type Hypothesis = (Vec<(usize, usize)>, f64, RigidFit);
+
 fn p(t: &Target) -> Point3<f64> {
     Point3::from(t.position)
 }
@@ -44,7 +47,7 @@ pub fn correspond(from: &[Target], to: &[Target], tolerance: f64) -> Option<Corr
     let d = |a: &Target, b: &Target| (p(a) - p(b)).norm();
     let same = |a: &Target, b: &Target| a.kind == b.kind;
     // Hypotheses: (inlier pairs, rms, transform).
-    let mut hyps: Vec<(Vec<(usize, usize)>, f64, RigidFit)> = vec![];
+    let mut hyps: Vec<Hypothesis> = vec![];
     let (n, m) = (from.len(), to.len());
     for i in 0..n {
         for j in i + 1..n {
@@ -104,7 +107,7 @@ fn hypothesis(
     to: &[Target],
     seed: &[(usize, usize)],
     tol: f64,
-) -> Option<(Vec<(usize, usize)>, f64, RigidFit)> {
+) -> Option<Hypothesis> {
     let fit = |pairs: &[(usize, usize)]| {
         let a: Vec<_> = pairs.iter().map(|&(i, _)| p(&from[i])).collect();
         let b: Vec<_> = pairs.iter().map(|&(_, k)| p(&to[k])).collect();
