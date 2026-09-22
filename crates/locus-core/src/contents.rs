@@ -52,7 +52,8 @@ pub struct ScanInfo {
 pub struct MeshInfo {
     pub name: String,
     pub vertex_count: u64,
-    pub triangle_count: u64,
+    /// Faces as stored (triangles, quads or polygons).
+    pub face_count: u64,
     pub bounds: Option<Bounds>,
 }
 
@@ -93,6 +94,9 @@ pub struct Contents {
     pub format: String,
     /// Unit stated by the file itself, if the format has a way to state one.
     pub declared_unit: Option<LinearUnit>,
+    /// Coordinate reference system as stated by the file (EPSG code or WKT), verbatim.
+    #[serde(default)]
+    pub crs: Option<String>,
     /// True when the source coordinates are Y-up (glTF); the project frame is Z-up.
     #[serde(default)]
     pub y_up: bool,
@@ -108,6 +112,7 @@ impl Contents {
         Self {
             format: format.into(),
             declared_unit: None,
+            crs: None,
             y_up: false,
             scans: vec![],
             meshes: vec![],
