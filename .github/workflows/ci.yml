@@ -55,3 +55,10 @@ jobs:
 
       # Release compile embeds app/dist, proving the frontend and shell build together.
       - run: pnpm tauri build --no-bundle
+      # Viewer smoke test on software WebGL (SwiftShader): fails on any shader or console
+      # error. Windows only, since WebView2 is the shipping webview. See tools/smoke/README.md.
+      - name: Viewer smoke test
+        if: runner.os == 'Windows'
+        run: |
+          cargo build --release -p locus-validate
+          node tools/smoke/smoke.mjs
