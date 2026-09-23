@@ -5,6 +5,7 @@
 import type { Part, ExtrudeParams } from "./extrude";
 import type { Asset, Slot } from "./library";
 import type { RoofParams } from "./roof";
+import type { Animation } from "../animation/model";
 
 /** A diagram revision something was built from (id, revision id and hash). */
 export interface DiagramRef {
@@ -108,6 +109,8 @@ export interface SceneDoc {
   sun: Sun;
   /** Soft fill so unlit sides aren't black (0 for none). */
   ambient: number;
+  /** Movers, time zero and views (locus-analysis animation). */
+  animation?: Animation;
 }
 
 export const EMPTY_SCENE: SceneDoc = {

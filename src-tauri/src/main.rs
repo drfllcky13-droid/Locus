@@ -75,6 +75,7 @@ fn main() {
             scene3d_cmds::diagram_revision,
             scene3d_cmds::surface_at,
             scene3d_cmds::sun_position,
+            scene3d_cmds::animation_evaluate,
             analysis_cmds::trajectory_preview,
             analysis_cmds::trajectory_save,
             bloodstain_cmds::bloodstain_align,

@@ -863,3 +863,134 @@ input.derived {
   align-items: center;
   gap: 4px;
 }
+
+/* ---------- animation timeline ---------- */
+
+.anim-timeline {
+  position: relative;
+  margin-top: 8px;
+  padding-top: 18px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.anim-ruler {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 18px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.anim-ruler span {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+}
+
+.anim-ruler span.zero {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.anim-row {
+  position: relative;
+  height: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.anim-row-name {
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Measured segments solid blue; assumed ones hatched orange (illustrative). */
+.anim-seg {
+  position: absolute;
+  top: 4px;
+  height: 12px;
+  background: #2f8fc0;
+  border-right: 1px solid var(--bg);
+}
+
+.anim-seg.assumed {
+  background: repeating-linear-gradient(135deg, #b8742a 0 4px, #6a4418 4px 8px);
+}
+
+.anim-flag {
+  position: absolute;
+  bottom: 0;
+  height: 4px;
+  background: var(--error);
+}
+
+.anim-flag.friction_limit,
+.anim-flag.no_friction {
+  background: var(--accent);
+}
+
+.anim-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  pointer-events: none;
+}
+
+.anim-clock {
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.anim-readout {
+  margin: 2px 0;
+}
+
+.anim-segment {
+  border-left: 3px solid #2f8fc0;
+  padding-left: 8px;
+  margin: 8px 0;
+}
+
+.anim-segment.assumed {
+  border-left-color: #b8742a;
+}
+
+.anim-attention {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--error);
+  border-radius: 4px;
+}
+
+.anim-attention ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+input.anim-missing {
+  border-color: var(--accent);
+}
+
+.anim label:not(.inline) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.anim .row label {
+  flex: 1;
+  margin-top: 0;
+}

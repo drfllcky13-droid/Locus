@@ -405,11 +405,33 @@ export class Engine {
     }
     this.built = group;
     if (group) this.scene.add(group);
+    this.applyPoses();
     if (moving) this.attachModel(moving, this.modelGizmo.mode as "translate" | "rotate");
     this.requestRender();
   }
 
-  /** Replace the analysis overlay (null to clear it). */
+  /** Animated objects' matrices (column-major, relative to `origin`), over their stored ones. */
+  private poses = new Map<string, number[]>();
+
+  /** Pose built objects by id for playback; an object left out returns to its stored matrix
+   * at the next rebuild. */
+  setPoses(poses: Map<string, number[]>) {
+    this.poses = poses;
+    this.applyPoses();
+    this.requestRender();
+  }
+
+  private applyPoses() {
+    for (const c of this.built?.children ?? []) {
+      const m = this.poses.get(c.userData.sceneObject);
+      if (m && c.userData.sceneObject !== this.moving) {
+        c.matrixAutoUpdate = false;
+        c.matrix.fromArray(m);
+        c.matrixWorldNeedsUpdate = true;
+      }
+    }
+  }
+
   /** Replace one tool's analysis overlay (null removes it). */
   setAnalysisOverlay(key: string, group: THREE.Group | null) {
     const old = this.analysis.get(key);

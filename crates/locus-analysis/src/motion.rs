@@ -221,9 +221,14 @@ pub enum Profile {
     Phases { speed: f64, phases: Vec<Phase> },
     /// Distance along the path (m) at times (s), increasing: an EDR record's distances, or
     /// keyframes. Interpolated monotonically (Fritsch–Carlson), so it never runs backwards.
+    /// With `speeds` (m/s) at the rows, as an EDR record has, those are the slopes instead
+    /// (cubic Hermite): where the distances are the speeds' trapezoidal sums, each interval is
+    /// then exactly constant acceleration, (v₁ − v₀)/Δt, rather than the interpolant's own.
     Table {
         times: Vec<f64>,
         distances: Vec<f64>,
+        #[serde(default)]
+        speeds: Option<Vec<f64>>,
     },
 }
 
@@ -250,9 +255,18 @@ impl Profile {
                 }
                 Ok(())
             }
-            Profile::Table { times, distances } => {
+            Profile::Table {
+                times,
+                distances,
+                speeds,
+            } => {
                 if times.len() < 2 || times.len() != distances.len() {
                     return err("a time–distance table needs at least two rows");
+                }
+                if let Some(v) = speeds {
+                    if v.len() != times.len() || v.iter().any(|v| !(v.is_finite() && *v >= 0.0)) {
+                        return err("the table's speeds must be one per row, 0 or more");
+                    }
                 }
                 if times.iter().any(|t| !t.is_finite()) || times.windows(2).any(|w| w[1] <= w[0]) {
                     return err("the table's times must increase");
@@ -291,7 +305,11 @@ impl Profile {
                 }
                 (s + v * left, v, 0.0)
             }
-            Profile::Table { times, distances } => pchip(times, distances, t),
+            Profile::Table {
+                times,
+                distances,
+                speeds,
+            } => pchip(times, distances, speeds.as_deref(), t),
         }
     }
 
@@ -318,7 +336,7 @@ fn phase(v: f64, a: f64, dt: f64) -> (f64, f64, f64) {
 
 /// Monotone cubic interpolation (Fritsch & Carlson 1980) of s(t), clamped outside the table
 /// (holding the last distance): distance, speed, acceleration.
-fn pchip(t: &[f64], s: &[f64], x: f64) -> (f64, f64, f64) {
+fn pchip(t: &[f64], s: &[f64], slopes: Option<&[f64]>, x: f64) -> (f64, f64, f64) {
     let n = t.len();
     if x >= t[n - 1] {
         return (s[n - 1], 0.0, 0.0);
@@ -326,15 +344,19 @@ fn pchip(t: &[f64], s: &[f64], x: f64) -> (f64, f64, f64) {
     let h: Vec<f64> = t.windows(2).map(|w| w[1] - w[0]).collect();
     let d: Vec<f64> = (0..n - 1).map(|k| (s[k + 1] - s[k]) / h[k]).collect();
     let mut m = vec![0.0; n];
-    m[0] = d[0];
-    m[n - 1] = d[n - 2];
-    for k in 1..n - 1 {
-        if d[k - 1] * d[k] <= 0.0 {
-            m[k] = 0.0;
-        } else {
-            // Weighted harmonic mean (Fritsch–Butland), which keeps monotonicity.
-            let (w1, w2) = (2.0 * h[k] + h[k - 1], h[k] + 2.0 * h[k - 1]);
-            m[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k]);
+    if let Some(v) = slopes {
+        m.copy_from_slice(v);
+    } else {
+        m[0] = d[0];
+        m[n - 1] = d[n - 2];
+        for k in 1..n - 1 {
+            if d[k - 1] * d[k] <= 0.0 {
+                m[k] = 0.0;
+            } else {
+                // Weighted harmonic mean (Fritsch–Butland), which keeps monotonicity.
+                let (w1, w2) = (2.0 * h[k] + h[k - 1], h[k] + 2.0 * h[k - 1]);
+                m[k] = (w1 + w2) / (w1 / d[k - 1] + w2 / d[k]);
+            }
         }
     }
     let k = t.windows(2).position(|w| x < w[1]).unwrap_or(n - 2);
@@ -579,6 +601,7 @@ mod tests {
         let p = Profile::Table {
             times: times.clone(),
             distances: distances.clone(),
+            speeds: None,
         };
         p.check().unwrap();
         for (t, s) in times.iter().zip(&distances) {
@@ -594,9 +617,24 @@ mod tests {
         assert_eq!(p.at(5.0), (35.5, 0.0, 0.0));
         assert!(Profile::Table {
             times: vec![0.0, 1.0],
-            distances: vec![5.0, 4.0]
+            distances: vec![5.0, 4.0],
+            speeds: None,
         }
         .check()
         .is_err());
+        // With the record's speeds as slopes, each interval is its constant deceleration.
+        let p = Profile::Table {
+            times,
+            distances,
+            speeds: Some(vec![20.0, 20.0, 18.0, 16.0, 14.0]),
+        };
+        p.check().unwrap();
+        for k in 0..20 {
+            let t = 0.5 + 1.5 * (k as f64 + 0.5) / 20.0;
+            let (_, v, a) = p.at(t);
+            assert!((a + 4.0).abs() < 1e-9, "{t}: {a}");
+            assert!((v - (20.0 - 4.0 * (t - 0.5))).abs() < 1e-9);
+        }
+        assert!(p.at(0.25).2.abs() < 1e-9);
     }
 }

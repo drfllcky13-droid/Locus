@@ -76,10 +76,13 @@ pub enum SegmentMotion {
         start_speed: Option<f64>,
     },
     /// Distances along the path (m, from the segment's start) at times (s, from its start):
-    /// an EDR record's, or keyframes.
+    /// an EDR record's, or keyframes; with the speeds at those times when known (an EDR
+    /// record's), which then set the interpolation's slopes.
     Table {
         times: Vec<f64>,
         distances: Vec<f64>,
+        #[serde(default)]
+        speeds: Option<Vec<f64>>,
     },
 }
 
@@ -263,9 +266,14 @@ fn profile(m: &SegmentMotion, entry_speed: f64) -> Profile {
                 acceleration: *acceleration,
             }],
         },
-        SegmentMotion::Table { times, distances } => Profile::Table {
+        SegmentMotion::Table {
+            times,
+            distances,
+            speeds,
+        } => Profile::Table {
             times: times.iter().map(|t| t - times[0]).collect(),
             distances: distances.iter().map(|d| d - distances[0]).collect(),
+            speeds: speeds.clone(),
         },
     }
 }
@@ -433,6 +441,23 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
             }
         }
     }
+    if a.time_zero.event.trim().is_empty() || a.time_zero.basis.trim().is_empty() {
+        warnings.push(
+            "Time zero isn't stated: give the event it stands for and how that is known.".into(),
+        );
+    }
+    for m in &a.movers {
+        let segs = m.segments.iter().map(|g| &g.source);
+        for s in std::iter::once(&m.path_source).chain(segs) {
+            if matches!(s, Source::Assumption { note } if note.trim().is_empty()) {
+                warnings.push(format!(
+                    "{}: an assumption without its reason; state why it is assumed.",
+                    m.name
+                ));
+                break;
+            }
+        }
+    }
     let mut limitations = vec![
         "Positions between the stated inputs are interpolated: a path is a smooth curve (or straight segments) through picked points, and motion within a segment follows its stated profile exactly; real motion between those inputs is not known.".to_string(),
         "Segments marked as assumed are the examiner's assumptions, not measurements; they are illustrative.".to_string(),
@@ -537,20 +562,31 @@ fn check(p: &Prepared, from: f64, to: f64) -> Vec<Flag> {
             });
         }
     }
-    // Heading: a turn of more than 2° within 0.01 s while moving (a corner in a straight path).
-    for w in states.windows(2) {
-        let dh = (w[1].heading - w[0].heading + std::f64::consts::PI)
-            .rem_euclid(std::f64::consts::TAU)
-            - std::f64::consts::PI;
-        if w[1].speed > 0.1 && dh.abs().to_degrees() > 2.0 {
+    // Heading: a turn of more than 2° within one 0.01 s step while moving, and more than three
+    // times the steps either side: a corner in the path. A tight but smooth curve turns about
+    // as much every step, and isn't flagged.
+    let turn = |a: &Sample, b: &Sample| {
+        (b.heading - a.heading + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI
+    };
+    let dh: Vec<f64> = states.windows(2).map(|w| turn(&w[0], &w[1])).collect();
+    for k in 0..dh.len() {
+        let near = [k.checked_sub(1), Some(k + 1)]
+            .iter()
+            .flatten()
+            .filter_map(|&j| dh.get(j))
+            .map(|d| d.abs())
+            .fold(0.0, f64::max);
+        let s = &states[k + 1];
+        if s.speed > 0.1 && dh[k].abs().to_degrees() > 2.0 && dh[k].abs() > 3.0 * near {
             flags.push(Flag {
                 mover: m.name.clone(),
                 kind: "heading_jump".into(),
-                from: w[1].t,
-                to: w[1].t,
-                peak: dh.to_degrees(),
+                from: s.t,
+                to: s.t,
+                peak: dh[k].to_degrees(),
                 limit: 2.0,
-                message: format!("{}: at {:.2} s the heading turns {:.1}° at once (a corner in its path) while moving at {:.1} m/s.", m.name, w[1].t, dh.to_degrees(), w[1].speed),
+                message: format!("{}: at {:.2} s the heading turns {:.1}° at once (a corner in its path) while moving at {:.1} m/s.", m.name, s.t, dh[k].to_degrees(), s.speed),
             });
         }
     }
@@ -754,9 +790,44 @@ mod tests {
             vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 10.0, 0.0]],
             Shape::Straight,
         );
-        let e = evaluate(&anim(vec![m], Lighting::Daylight), 0.1).unwrap();
-        assert!(e.flags.iter().any(|f| f.kind == "heading_jump"));
+        let e = evaluate(&anim(vec![m.clone()], Lighting::Daylight), 0.1).unwrap();
         assert!(e.flags.iter().any(|f| f.kind == "no_friction"));
+        // A vehicle's chord heading turns through a corner over a wheelbase, not at once; a
+        // person's tangent heading jumps there.
+        assert!(!e.flags.iter().any(|f| f.kind == "heading_jump"));
+        let person = Mover {
+            kind: MoverKind::Person,
+            ..m
+        };
+        let e = evaluate(&anim(vec![person], Lighting::Daylight), 0.1).unwrap();
+        let j: Vec<_> = e
+            .flags
+            .iter()
+            .filter(|f| f.kind == "heading_jump")
+            .collect();
+        assert_eq!(j.len(), 1, "{j:?}");
+        assert!(
+            (j[0].peak - 90.0).abs() < 1e-6 && (j[0].from - (-1.0)).abs() < 0.011,
+            "{j:?}"
+        );
+        // A tight but smooth curve turns steadily, and isn't a jump.
+        let mut curve = car(
+            vec![Segment {
+                duration: None,
+                motion: SegmentMotion::Speed { speed: 10.0 },
+                source: assume("c"),
+            }],
+            None,
+            vec![[1.0, 3.0, 0.0], [4.0, 3.5, 0.0], [6.0, 2.0, 0.0]],
+            Shape::Smooth,
+        );
+        curve.kind = MoverKind::Person;
+        let e = evaluate(&anim(vec![curve], Lighting::Daylight), 0.1).unwrap();
+        assert!(
+            !e.flags.iter().any(|f| f.kind == "heading_jump"),
+            "{:?}",
+            e.flags
+        );
     }
 
     #[test]

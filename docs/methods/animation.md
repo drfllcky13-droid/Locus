@@ -18,7 +18,7 @@ Positions are found by exact arc length: a Gauss–Legendre table per segment, t
 **Segments.** A mover's motion is a sequence of segments. Each is one of:
 - constant speed;
 - constant acceleration, from a stated speed or from the previous segment's end speed. Braking stops at zero and never reverses;
-- a table of times and distances, such as an EDR record's (Phase 7) or keyframes, interpolated monotonically (Fritsch–Carlson).
+- a table of times and distances, such as an EDR record's (Phase 7) or keyframes, interpolated monotonically (Fritsch–Carlson). When the speeds at those times are known, as an EDR record's are, they set the curve's slopes instead (cubic Hermite). An EDR record's distances are its speeds' trapezoidal sums, so each interval is then exactly constant acceleration, (v₁ − v₀)/Δt: the plausibility checks see the record's own decelerations, not the interpolation's ripple (which reached about 1.8 times the true value on a test record).
 
 Each segment has a duration; the last may run to the end of the timeline. Before its first segment a mover waits at its start; after its last timed segment it stays where it stopped.
 
@@ -66,7 +66,7 @@ The curvature is the drawn path's own. A spline through points on a circle rippl
 
 **Speed jumps.** A change of more than 0.1 m/s between one segment's end and the next one's start is flagged as instantaneous.
 
-**Heading jumps.** A turn of more than 2° within 0.01 s while moving is flagged. It comes from a corner in a straight-segment path.
+**Heading jumps.** A turn of more than 2° within one 0.01 s step while moving, and more than three times the turn in the steps either side, is flagged. It comes from a corner in a straight-segment path. A tight but smooth curve turns about as much every step, so it isn't flagged here; the friction check covers whether it can be driven.
 
 ## Views
 

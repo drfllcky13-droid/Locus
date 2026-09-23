@@ -5,6 +5,7 @@ import type { PickHit, SceneData } from "./viewer3d/pointcloud";
 import type { MeasurementRecord } from "./viewer3d/measureFormat";
 import type { Diagram } from "./diagram2d/model";
 import type { SceneDoc } from "./scene3d/model";
+import type { Animation, Evaluation } from "./animation/model";
 
 export type LinearUnit = "meter" | "centimeter" | "millimeter" | "foot" | "us_survey_foot" | "inch";
 
@@ -344,6 +345,8 @@ export const api = {
     }>("underlay_slice", { zMin, zMax, resolution }),
   underlayCalibrated: (details: unknown) => invoke<void>("underlay_calibrated", { details }),
   scenes: () => invoke<SceneRevision[]>("scenes"),
+  animationEvaluate: (animation: Animation, step: number) =>
+    invoke<Evaluation>("animation_evaluate", { animation, step }),
   sceneCreate: (name: string, document: SceneDoc) =>
     invoke<SceneRevision>("scene_create", { name, document }),
   sceneSave: (sceneId: number, name: string, document: SceneDoc) =>

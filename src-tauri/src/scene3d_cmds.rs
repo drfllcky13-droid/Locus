@@ -107,3 +107,21 @@ pub fn sun_position(lat: f64, lon: f64, unix: f64) -> CmdResult<locus_analysis::
     }
     Ok(locus_analysis::sun::sun_position(lat, lon, unix))
 }
+
+/// Evaluate an animation: every mover's state at each `step` (s), the plausibility flags, the
+/// assumed segments, warnings and limitations (locus-analysis animation). Nothing is stored;
+/// the animation is saved with its scene.
+#[tauri::command]
+pub async fn animation_evaluate(
+    app: AppHandle,
+    animation: locus_analysis::animation::Animation,
+    step: f64,
+) -> CmdResult<locus_analysis::animation::Evaluation> {
+    blocking(app, move |_| {
+        locus_analysis::animation::evaluate(&animation, step).map_err(|e| {
+            let e = e.to_string();
+            e[..1].to_uppercase() + &e[1..] + "."
+        })
+    })
+    .await
+}

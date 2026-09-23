@@ -34,6 +34,8 @@ import {
 import { buildScene, type Diagrams } from "./render";
 import { DEFAULT_ROOF, rectangle, type RoofType } from "./roof";
 import { walls } from "../diagram2d/builders";
+import { AnimationPanel } from "../animation/AnimationPanel";
+import type { EvidenceRecord } from "../api";
 
 const AUTOSAVE_MS = 1500;
 const newId = () => crypto.randomUUID();
@@ -117,8 +119,10 @@ export function SceneBuilder({
   origin,
   requestPick,
   onNotice,
+  evidence,
 }: {
   engine: () => Engine | null;
+  evidence: EvidenceRecord[];
   /** The project's diagrams at their newest revisions. */
   diagramList: DiagramRevision[];
   /** The view's render origin; geometry is rebuilt relative to it when it changes. */
@@ -703,6 +707,14 @@ export function SceneBuilder({
         Revision {rev.number}
         {dirty ? " (saving…)" : ""} · SHA-256 {rev.sha256.slice(0, 16)}…
       </p>
+      <AnimationPanel
+        engine={engine}
+        doc={doc}
+        setAnimation={(f) => setDoc((d) => ({ ...d, animation: f(d.animation) }))}
+        evidence={evidence}
+        requestPick={requestPick}
+        onNotice={onNotice}
+      />
     </section>
   );
 }

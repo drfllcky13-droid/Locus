@@ -414,6 +414,7 @@ export function Viewport({
           <SceneBuilder
             key={project.root}
             engine={getEngine}
+            evidence={project.evidence}
             diagramList={diagrams}
             origin={shownScene?.origin.join() ?? ""}
             requestPick={(hint, then) => {

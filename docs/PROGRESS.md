@@ -318,7 +318,17 @@ Acceptance criteria (SPEC):
 - [ ] An object moving at a set speed shows the correct position at every frame (tested).
 - [ ] Rendered video frame count and duration match the timeline.
 
-Status (2026-09-23): item 1 done. `motion` has the paths, profiles and tracks. `animation` has the movers with sourced segments, the time zero, lighting, driver and witness views (60° default, wider warned), the plausibility checks (friction bands, speed and heading jumps), the assumed-segment list and the render log type; all tested. The requirements from the Phase 9 review are written up in `docs/methods/animation.md`. Next: the timeline UI.
+Status (2026-09-23): item 1 done. `motion` has the paths, profiles and tracks. `animation` has the movers with sourced segments, the time zero, lighting, driver and witness views (60° default, wider warned), the plausibility checks (friction bands, speed and heading jumps), the assumed-segment list and the render log type; all tested. The requirements from the Phase 9 review are written up in `docs/methods/animation.md`.
+
+Item 2 built (`app/src/animation/`), stored in the scene document so every edit is a scene revision:
+- time zero (event and basis, flagged until both are given), range and lighting;
+- movers linked to scene models, paths picked on the cloud (vehicles by the rear axle), each segment and the path and friction with a source; an EDR record adds its time–distance table, its speeds and its own path in one step;
+- the timeline: ruler, playhead, play, pause and scrub; measured segments solid, assumed hatched; flags marked; a live speed and distance readout; "Needs attention" and the assumed list;
+- in the view: models follow their movers, others show as markers, and each path is drawn blue (measured), orange (assumed) or red (flagged).
+
+Found and fixed in the app: an EDR table interpolated from distances alone rippled the acceleration to 1.8× the record's (0.72 against 0.40 m/s²), which would raise false friction flags; the record's speeds now set the slopes, giving its exact per-interval deceleration. The heading-jump check flagged a tight smooth curve at every step; it now needs a step well above its neighbours (a real corner). Checked in the app: an EDR-driven car at −1.00 s is at 6.20 m, 1.20 m/s, and its model 1.35 m ahead of the axle as its wheelbase puts it.
+
+Next: camera rigs and the driver and witness views (item 3).
 
 ## Blocked
 
