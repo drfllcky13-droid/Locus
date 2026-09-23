@@ -116,6 +116,12 @@ fn main() {
                     )?,
                     &Submenu::with_items(
                         app,
+                        "Scans",
+                        true,
+                        &[&item("register", "Register Scans…", Some("CmdOrCtrl+R"))?],
+                    )?,
+                    &Submenu::with_items(
+                        app,
                         "Help",
                         true,
                         &[&item("about", "About Locus", None)?],

@@ -173,6 +173,71 @@ export type CleanupRequest =
   | { kind: "outliers"; k: number; std_mult: number; region: Region | null }
   | { kind: "voxel"; size: number; region: Region | null };
 
+/** Settings for a registration run (src-tauri/src/register_cmds.rs `RunParams`). SI units. */
+export interface RegistrationParams {
+  sphere_radius: number | null;
+  board_size: number | null;
+  cloud: boolean;
+  use_file_poses: boolean;
+  cloud_sigma: number;
+  target_tolerance: number;
+  max_points: number;
+  control: {
+    name: string;
+    kind: "sphere" | "board";
+    position: [number, number, number];
+    sigma: number;
+  }[];
+}
+
+export type LinkKind = "Target" | "Cloud" | "Control";
+export type LinkStatus = "Ok" | "Flagged" | "Untested";
+
+export interface RegLink {
+  kind: LinkKind;
+  a: number;
+  b: number | null;
+  pairs: unknown[];
+  forced: boolean;
+  shape_only: boolean;
+}
+
+export interface RegLinkReport {
+  status: LinkStatus;
+  rms: number;
+  max: number;
+  chi2_per_dof: number;
+  limit_per_dof: number;
+}
+
+export interface RegistrationRecord {
+  id: number;
+  parent: number | null;
+  params: Record<string, unknown>;
+  result: {
+    scans: { evidence_id: number; scan_idx: number; name: string; points_used: number }[];
+    links: RegLink[];
+    reports: RegLinkReport[];
+    verified: boolean[];
+    iterations: number;
+    summary: {
+      links: number;
+      ok: number;
+      flagged: number;
+      untested: number;
+      shape_only: number;
+      target_rms_mean_m: number | null;
+      target_residual_max_m: number | null;
+      unverified_scans: number;
+    };
+    extra: { overlap?: (number | null)[] };
+  };
+  poses: { evidence_id: number; scan_idx: number; pose: number[]; verified: boolean }[];
+  applied: boolean;
+  created_at: string;
+  created_by: string;
+}
+
 export const api = {
   projectCreate: (parent: string, name: string, examinerName: string) =>
     invoke<ProjectInfo>("project_create", { parent, name, examinerName }),
@@ -201,4 +266,11 @@ export const api = {
     invoke<StateView>("cleanup_set_active", { id, active }),
   appInfo: () => invoke<{ version: string; webview: string }>("app_info"),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),
+  registrations: () => invoke<RegistrationRecord[]>("registrations"),
+  registrationRun: (params: RegistrationParams) =>
+    invoke<RegistrationRecord[]>("registration_run", { params }),
+  registrationEdit: (id: number, del: number[], force: number[]) =>
+    invoke<RegistrationRecord[]>("registration_edit", { id, delete: del, force }),
+  registrationApply: (id: number | null) =>
+    invoke<RegistrationRecord[]>("registration_apply", { id }),
 };

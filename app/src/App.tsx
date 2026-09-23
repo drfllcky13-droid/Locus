@@ -6,6 +6,7 @@ import { formatBytes, formatCount, integrityProblems, unitSymbol } from "./forma
 import { AboutDialog } from "./AboutDialog";
 import { ImportDialog } from "./ImportDialog";
 import { ProjectDialog } from "./ProjectDialog";
+import { RegistrationDialog } from "./registration/RegistrationDialog";
 import { Viewport } from "./viewer3d/Viewport";
 
 const IMPORT_EXTENSIONS = [
@@ -24,7 +25,12 @@ const IMPORT_EXTENSIONS = [
 ];
 
 type Dialog =
-  { kind: "new" } | { kind: "open" } | { kind: "about" } | { kind: "import"; path: string } | null;
+  | { kind: "new" }
+  | { kind: "open" }
+  | { kind: "about" }
+  | { kind: "register" }
+  | { kind: "import"; path: string }
+  | null;
 
 export function App() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -82,6 +88,7 @@ export function App() {
       else if (payload === "import") void startImport();
       else if (payload === "verify_evidence") void verify();
       else if (payload === "about") setDialog({ kind: "about" });
+      else if (payload === "register") setDialog({ kind: "register" });
     });
     return () => {
       void unlisten.then((f) => f());
@@ -136,6 +143,9 @@ export function App() {
         />
       )}
       {dialog?.kind === "about" && <AboutDialog onClose={() => setDialog(null)} />}
+      {dialog?.kind === "register" && project && (
+        <RegistrationDialog onClose={() => setDialog(null)} onNotice={setNotice} />
+      )}
       {notice && (
         <div className="notice" role="status">
           <span>{notice}</span>

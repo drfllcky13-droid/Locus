@@ -453,3 +453,73 @@ td.num {
   color: var(--text);
   margin: 0;
 }
+
+.reg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reg-form input[type="number"] {
+  width: 70px;
+}
+
+.reg-body {
+  display: grid;
+  grid-template-columns: minmax(0, 420px) 1fr;
+  gap: 16px;
+}
+
+.reg-graph {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.reg-edge {
+  cursor: pointer;
+}
+
+.reg-node {
+  fill: var(--raised);
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
+.reg-node.unverified {
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+
+.reg-label {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+.reg-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reg-link {
+  background: var(--raised);
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+@media (max-width: 720px) {
+  .reg-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.reg-form label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
