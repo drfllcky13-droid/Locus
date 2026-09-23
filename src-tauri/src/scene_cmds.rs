@@ -263,7 +263,7 @@ pub struct Pick {
     pub scan: String,
     node: usize,
     k: usize,
-    revision: u64,
+    pub revision: u64,
 }
 
 pub fn resolve(scene: &Scene, pick: &Pick) -> CmdResult<Resolved> {

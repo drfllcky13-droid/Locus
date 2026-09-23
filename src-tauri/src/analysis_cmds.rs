@@ -4,8 +4,11 @@
 
 use crate::commands::{blocking, err, CmdResult};
 use crate::scene_cmds::{resolve, Pick};
+use locus_analysis::defect::fit_defect;
 use locus_analysis::surface;
-use locus_analysis::trajectory::{self, FittedPlane, InputPoint, Parameters, Run};
+use locus_analysis::trajectory::{
+    self, FittedPlane, InputPoint, Parameters, PhotoRef, PointSource, Run,
+};
 use locus_core::{AnalysisRecord, Project};
 use locus_octree::scene::Scene;
 use serde::Deserialize;
@@ -18,8 +21,25 @@ pub struct TrajectoryPick {
     /// "entry", "exit" or "rod".
     pub kind: String,
     pub surface: String,
-    /// 1σ of this point (m).
+    /// 1σ of this point (m), when the picked point itself is used.
     pub sigma: f64,
+    /// For defects: "fitted" (the hole's centre from its rim; the default) or "manual" (the
+    /// picked point, with `override_reason`).
+    #[serde(default = "fitted")]
+    pub centre: String,
+    #[serde(default)]
+    pub override_reason: Option<String>,
+    /// A photograph of this defect (an image in the evidence).
+    #[serde(default)]
+    pub photo: Option<i64>,
+}
+
+fn fitted() -> String {
+    "fitted".into()
+}
+
+fn hole_radius() -> f64 {
+    0.03
 }
 
 #[derive(Deserialize)]
@@ -28,42 +48,110 @@ pub struct TrajectoryRequest {
     pub parameters: Parameters,
     /// Radius of the plane fitted around each defect, for angles to its surface (m).
     pub plane_radius: f64,
+    /// Radius around a click searched for the hole and its rim (m).
+    #[serde(default = "hole_radius")]
+    pub hole_radius: f64,
 }
 
-fn trajectory_run(scene: &Scene, req: &TrajectoryRequest) -> CmdResult<Run> {
+fn trajectory_run(scene: &Scene, project: &Project, req: &TrajectoryRequest) -> CmdResult<Run> {
     if req.points.len() < 2 {
         return Err(
             "Pick at least two points: entry and exit defects, or both ends of a rod.".into(),
         );
     }
+    let evidence = project.evidence().map_err(err)?;
     let inputs = req
         .points
         .iter()
-        .map(|p| {
-            if !(p.sigma.is_finite() && p.sigma > 0.0) {
-                return Err("Every point needs a positive uncertainty.".to_string());
-            }
-            let at = resolve(scene, &p.pick)?.project;
-            // Defects get the plane of their surface; rod ends don't lie on one.
-            let plane = if p.kind == "rod" {
-                None
-            } else {
-                let near = scene.points_within(at, req.plane_radius).map_err(err)?;
-                surface::surface_at(at, &near, at)
-                    .ok()
-                    .map(|s| FittedPlane {
-                        point: s.point,
-                        normal: s.normal,
-                        rms: s.rms,
-                        points: s.points,
+        .enumerate()
+        .map(|(n, p)| {
+            let label = format!("Point {} ({} on {})", n + 1, p.kind, p.surface);
+            let r = resolve(scene, &p.pick)?;
+            let at = r.project;
+            let source = Some(PointSource {
+                scan: p.pick.scan.clone(),
+                index: r.index,
+                revision: p.pick.revision,
+            });
+            let photo = match p.photo {
+                None => None,
+                Some(id) => {
+                    let e = evidence
+                        .iter()
+                        .find(|e| e.id == id && !e.contents.images.is_empty())
+                        .ok_or(format!("{label}: evidence item {id} is not an image."))?;
+                    Some(PhotoRef {
+                        evidence_id: id,
+                        name: e.contents.images[0].name.clone(),
+                        file: e.stored_path.clone(),
+                        sha256: e.sha256.clone(),
                     })
+                }
             };
-            Ok(InputPoint {
+            if p.kind == "rod" {
+                if !(p.sigma.is_finite() && p.sigma > 0.0) {
+                    return Err(format!("{label}: give a positive uncertainty."));
+                }
+                return Ok(InputPoint {
+                    kind: p.kind.clone(),
+                    surface: p.surface.clone(),
+                    point: at,
+                    sigma: p.sigma,
+                    centre: "rod".into(),
+                    source,
+                    photo,
+                    ..Default::default()
+                });
+            }
+            // The surface's plane (for angles to it).
+            let near = scene.points_within(at, req.plane_radius).map_err(err)?;
+            let plane = surface::surface_at(at, &near, at)
+                .ok()
+                .map(|s| FittedPlane {
+                    point: s.point,
+                    normal: s.normal,
+                    rms: s.rms,
+                    points: s.points,
+                });
+            let base = InputPoint {
                 kind: p.kind.clone(),
                 surface: p.surface.clone(),
-                point: at,
-                sigma: p.sigma,
                 plane,
+                picked: Some(at),
+                source,
+                photo,
+                ..Default::default()
+            };
+            if p.centre == "manual" {
+                let reason = p.override_reason.as_deref().unwrap_or("").trim();
+                if reason.is_empty() {
+                    return Err(format!(
+                        "{label}: a manual centre needs a reason (it is stored with the analysis)."
+                    ));
+                }
+                if !(p.sigma.is_finite() && p.sigma > 0.0) {
+                    return Err(format!("{label}: give a positive uncertainty."));
+                }
+                return Ok(InputPoint {
+                    point: at,
+                    sigma: p.sigma,
+                    centre: "manual".into(),
+                    override_reason: Some(reason.into()),
+                    ..base
+                });
+            }
+            let around = scene.points_within(at, req.hole_radius).map_err(err)?;
+            let f = fit_defect(at, &around).map_err(|e| {
+                format!(
+                    "{label}: no hole centre ({e}). Click nearer the hole, or use the picked point as a manual centre with a reason."
+                )
+            })?;
+            Ok(InputPoint {
+                point: f.centre,
+                sigma: f.centre_sigma,
+                centre: "fitted".into(),
+                defect: Some(f),
+                ..base
             })
         })
         .collect::<CmdResult<Vec<_>>>()?;
@@ -83,7 +171,9 @@ fn trajectory_run(scene: &Scene, req: &TrajectoryRequest) -> CmdResult<Run> {
 #[tauri::command]
 pub async fn trajectory_preview(app: AppHandle, request: TrajectoryRequest) -> CmdResult<Run> {
     blocking(app, move |s| {
-        trajectory_run(&s.scene.read().unwrap(), &request)
+        let guard = s.project.lock().unwrap();
+        let p = guard.as_ref().ok_or("Open or create a project first.")?;
+        trajectory_run(&s.scene.read().unwrap(), p, &request)
     })
     .await
 }
@@ -97,10 +187,10 @@ pub async fn trajectory_save(
     revises: Option<i64>,
 ) -> CmdResult<AnalysisRecord> {
     blocking(app, move |s| {
-        let run = trajectory_run(&s.scene.read().unwrap(), &request)?;
-        let record = serde_json::to_value(&run).map_err(err)?;
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        let run = trajectory_run(&s.scene.read().unwrap(), p, &request)?;
+        let record = serde_json::to_value(&run).map_err(err)?;
         p.add_analysis("trajectory", trajectory::METHOD, &name, &record, revises)
             .map_err(err)
     })
@@ -158,6 +248,7 @@ fn meta(p: &Project, a: &AnalysisRecord) -> CmdResult<locus_report::analysis::Me
             .last()
             .map(|e| e.hash.clone())
             .unwrap_or_default(),
+        case_number: p.setting("case_number").map_err(err)?,
     })
 }
 
@@ -174,17 +265,59 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
         let report = match a.tool.as_str() {
             "trajectory" => {
                 let run: Run = serde_json::from_value(a.record.clone()).map_err(err)?;
-                locus_report::trajectory::report(&meta(p, &a)?, &run)
+                // Defect photos, each checked against the hash recorded in the run.
+                let images = locus_report::trajectory::photo_files(&run)
+                    .into_iter()
+                    .map(|(file, sha)| {
+                        Ok((
+                            file.clone(),
+                            crate::diagram_cmds::read_checked(p.root(), &file, &sha)?,
+                        ))
+                    })
+                    .collect::<CmdResult<Vec<_>>>()?;
+                (
+                    locus_report::trajectory::report(&meta(p, &a)?, &run),
+                    images,
+                )
             }
             t => return Err(format!("No report for {t} analyses yet.")),
         };
-        let out = locus_report::analysis::pdf(&report)?;
+        let (report, images) = report;
+        let out = locus_report::analysis::pdf(&report, images)?;
         std::fs::write(&path, &out.pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
         let (sha256, bytes) =
             locus_core::hash::sha256_reader(out.pdf.as_slice(), &mut |_| {}).map_err(err)?;
         p.record_analysis_report(id, &path, &sha256, bytes)
             .map_err(err)?;
         Ok(sha256)
+    })
+    .await
+}
+
+/// The project's case number (printed on every report), if set.
+#[tauri::command]
+pub async fn case_number(app: AppHandle) -> CmdResult<Option<String>> {
+    blocking(app, move |s| {
+        let guard = s.project.lock().unwrap();
+        guard
+            .as_ref()
+            .ok_or("Open or create a project first.")?
+            .setting("case_number")
+            .map_err(err)
+    })
+    .await
+}
+
+/// Set the project's case number (audit-logged as a setting change).
+#[tauri::command]
+pub async fn case_number_set(app: AppHandle, value: String) -> CmdResult<()> {
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        guard
+            .as_mut()
+            .ok_or("Open or create a project first.")?
+            .set_setting("case_number", value.trim())
+            .map_err(err)
     })
     .await
 }

@@ -76,6 +76,8 @@ fn main() {
             analysis_cmds::analyses,
             analysis_cmds::analysis_withdraw,
             analysis_cmds::analysis_report,
+            analysis_cmds::case_number,
+            analysis_cmds::case_number_set,
             diagram_cmds::underlay_images,
             diagram_cmds::underlay_bytes,
             diagram_cmds::underlay_slice,

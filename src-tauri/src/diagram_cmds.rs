@@ -167,7 +167,7 @@ pub async fn diagram_pdf(
 // ---------- underlays ----------
 
 /// Read a project file named by a diagram (relative, inside the project) and check its hash.
-fn read_checked(root: &Path, file: &str, sha256: &str) -> CmdResult<Vec<u8>> {
+pub(crate) fn read_checked(root: &Path, file: &str, sha256: &str) -> CmdResult<Vec<u8>> {
     let rel = Path::new(file);
     if !rel.components().all(|c| matches!(c, Component::Normal(_))) {
         return Err(format!("Not a project file: {file}"));

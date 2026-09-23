@@ -4,7 +4,7 @@
 //! stored run into a [`Report`] (see `trajectory.rs`); the template lays it out and
 //! computes nothing, so every number printed is one the tool formatted.
 
-use crate::{render, Rendered};
+use crate::{render_with, Rendered};
 use serde::Serialize;
 
 pub const TEMPLATE: &str = include_str!("../templates/analysis.typ");
@@ -27,6 +27,8 @@ pub struct Meta {
     pub app_version: String,
     /// Hash of the newest audit entry when the report was made.
     pub audit_head: String,
+    /// The project's case number, if set.
+    pub case_number: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -64,6 +66,16 @@ pub enum Block {
         items: Vec<String>,
     },
     Figure(Figure),
+    /// An image passed in with the report (`file`), `width` mm wide.
+    Image {
+        file: String,
+        width: f64,
+        caption: String,
+    },
+    /// Lines to sign: a label and blank space for each.
+    SignOff {
+        rows: Vec<String>,
+    },
 }
 
 /// A drawing in its own box, millimetres from its top left (y down).
@@ -72,13 +84,23 @@ pub struct Figure {
     pub width: f64,
     pub height: f64,
     pub caption: String,
-    /// [x1, y1, x2, y2, stroke width mm, dashed (0/1)].
-    pub lines: Vec<[f64; 6]>,
+    pub lines: Vec<Line>,
     /// Filled outlines: points and a fill colour ("#rrggbb").
     pub areas: Vec<Area>,
     /// [x, y, radius mm].
     pub dots: Vec<[f64; 3]>,
     pub labels: Vec<Label>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Line {
+    pub a: [f64; 2],
+    pub b: [f64; 2],
+    /// Stroke width (mm).
+    pub width: f64,
+    pub dashed: bool,
+    /// "#rrggbb".
+    pub colour: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -137,8 +159,16 @@ impl Frame {
 
 impl Figure {
     pub fn line(&mut self, a: [f64; 2], b: [f64; 2], w: f64, dashed: bool) {
-        self.lines
-            .push([a[0], a[1], b[0], b[1], w, dashed as u8 as f64]);
+        self.coloured(a, b, w, dashed, "#000000");
+    }
+    pub fn coloured(&mut self, a: [f64; 2], b: [f64; 2], width: f64, dashed: bool, colour: &str) {
+        self.lines.push(Line {
+            a,
+            b,
+            width,
+            dashed,
+            colour: colour.into(),
+        });
     }
     /// A scale bar in the bottom left corner.
     pub fn scale_bar(&mut self, f: &Frame) {
@@ -159,14 +189,22 @@ impl Figure {
     }
 }
 
-/// Lay a report out as a PDF.
-pub fn pdf(r: &Report) -> Result<Rendered, String> {
-    render(TEMPLATE, serde_json::to_vec(r).map_err(|e| e.to_string())?)
+/// Lay a report out as a PDF, with the image files its `Image` blocks name.
+pub fn pdf(r: &Report, images: Vec<(String, Vec<u8>)>) -> Result<Rendered, String> {
+    render_with(
+        TEMPLATE,
+        serde_json::to_vec(r).map_err(|e| e.to_string())?,
+        images,
+    )
 }
 
 /// Title-block rows every analysis report starts with.
 pub fn details(m: &Meta) -> Vec<[String; 2]> {
     let mut d = vec![
+        [
+            "Case number".into(),
+            m.case_number.clone().unwrap_or_else(|| "(not set)".into()),
+        ],
         ["Project".into(), m.project.clone()],
         [
             "Record".into(),

@@ -50,9 +50,9 @@
       }
       #for l in f.lines {
         place(top + left, line(
-          start: (l.at(0) * mm, l.at(1) * mm),
-          end: (l.at(2) * mm, l.at(3) * mm),
-          stroke: (paint: black, thickness: l.at(4) * mm, dash: if l.at(5) > 0 { "dashed" } else { none }),
+          start: (l.a.at(0) * mm, l.a.at(1) * mm),
+          end: (l.b.at(0) * mm, l.b.at(1) * mm),
+          stroke: (paint: rgb(l.colour), thickness: l.width * mm, dash: if l.dashed { "dashed" } else { none }),
         ))
       }
       #for p in f.dots {
@@ -93,5 +93,21 @@
       ]
     ]
     else if b.kind == "figure" { figure-box(b) }
+    else if b.kind == "image" {
+      block(breakable: false)[
+        #image(b.file, width: b.width * 1mm)
+        #v(2pt)
+        #text(size: 8pt, fill: luma(70))[#b.caption]
+      ]
+    }
+    else if b.kind == "sign_off" {
+      v(6mm)
+      for r in b.rows {
+        grid(columns: (45mm, 1fr, 18mm, 40mm), column-gutter: 3mm, align: bottom,
+          text(fill: luma(70))[#r], line(length: 100%, stroke: 0.4pt),
+          text(fill: luma(70))[Date], line(length: 100%, stroke: 0.4pt))
+        v(8mm)
+      }
+    }
   }
 ]
