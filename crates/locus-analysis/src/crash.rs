@@ -62,7 +62,7 @@ impl Input {
             normal: false,
         }
     }
-    fn check(&self, name: &str) -> Result<(), CrashError> {
+    pub(crate) fn check(&self, name: &str) -> Result<(), CrashError> {
         if !(self.value.is_finite() && self.low.is_finite() && self.high.is_finite()) {
             return err(format!("{name}: give a value"));
         }
@@ -124,7 +124,7 @@ pub const DRAWS: usize = 20_000;
 
 /// Evaluate `f` over the inputs: at their values, at every corner of their ranges (up to 16
 /// ranged inputs; beyond that the Monte Carlo's extremes stand in), and by Monte Carlo.
-fn spread(
+pub(crate) fn spread(
     inputs: &[Input],
     f: &dyn Fn(&[f64]) -> Option<f64>,
     draws: usize,

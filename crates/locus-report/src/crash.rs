@@ -1,9 +1,11 @@
 //! Crash reconstruction reports (skid, yaw, momentum, crush), built only from the stored runs.
 
-use crate::analysis::{details, Block, Figure, Frame, Label, Meta, Report, Section};
+use crate::analysis::{details, Area, Block, Figure, Frame, Label, Meta, Report, Section};
 use locus_analysis::crash::{
     CrushRun, Input, MomentumRun, SkidRun, Spread, YawRadius, YawRun, G, MIN_ARC_DEG,
 };
+use locus_analysis::crush_volume::VolumeRun;
+use locus_analysis::edr::EdrRun;
 
 const MARK: &str = "#2f6fbf";
 const FIT: &str = "#c0392b";
@@ -709,6 +711,476 @@ fn crush_figure(r: &CrushRun) -> Figure {
     }
     fig.scale_bar(&f);
     fig
+}
+
+const REFS_VOLUME: &[&str] = &[
+    "P. J. Besl and N. D. McKay, \"A method for registration of 3-D shapes\", IEEE Transactions on Pattern Analysis and Machine Intelligence 14(2), 1992: iterative closest point registration.",
+    "Y. Chen and G. Medioni, \"Object modelling by registration of multiple range images\", Image and Vision Computing 10(3), 1992: the point-to-plane distance.",
+    "K. S. Arun, T. S. Huang and S. D. Blostein, \"Least-squares fitting of two 3-D point sets\", IEEE Transactions on Pattern Analysis and Machine Intelligence 9(5), 1987: the rigid fit to picked pairs.",
+];
+
+/// A depth as a colour: red inward, blue outward, white at 0, full at `scale`.
+fn depth_colour(d: f64, scale: f64) -> String {
+    let t = (d / scale).clamp(-1.0, 1.0);
+    let (r, g, b) = if t >= 0.0 {
+        (1.0, 1.0 - 0.8 * t, 1.0 - 0.85 * t)
+    } else {
+        (1.0 + 0.8 * t, 1.0 + 0.55 * t, 1.0)
+    };
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        (r * 255.0) as u8,
+        (g * 255.0) as u8,
+        (b * 255.0) as u8
+    )
+}
+
+fn volume_figure(r: &VolumeRun) -> Figure {
+    let v = &r.result;
+    let h = v.cell;
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for c in &v.cells {
+        lo = [lo[0].min(c.i as f64 * h), lo[1].min(c.j as f64 * h)];
+        hi = [
+            hi[0].max((c.i + 1) as f64 * h),
+            hi[1].max((c.j + 1) as f64 * h),
+        ];
+    }
+    let f = Frame::new(lo, hi, 150.0, 90.0, 6.0);
+    let scale = v.max_depth.max(0.01);
+    let mut fig = Figure {
+        width: 150.0,
+        height: 90.0,
+        caption: format!(
+            "Crush depth over the face's plane: each {:.0} mm cell red where crushed inward (full red at {:.0} mm), blue where pushed outward, white where unchanged; true to scale.",
+            h * 1000.0,
+            scale * 1000.0
+        ),
+        ..Figure::default()
+    };
+    for c in &v.cells {
+        let (x, y) = (c.i as f64 * h, c.j as f64 * h);
+        fig.areas.push(Area {
+            points: [[x, y], [x + h, y], [x + h, y + h], [x, y + h]]
+                .iter()
+                .map(|p| f.at(*p))
+                .collect(),
+            fill: depth_colour(c.depth, scale),
+        });
+    }
+    fig.scale_bar(&f);
+    fig
+}
+
+pub fn volume(meta: &Meta, r: &VolumeRun) -> Report {
+    let v = &r.result;
+    let l = |x: f64| format!("{:.2} L", x * 1000.0);
+    let reg = &r.registration;
+    let result = vec![
+        [
+            "Crush volume".into(),
+            format!(
+                "{}; Monte Carlo 95 % {} to {} (mean {}, 1σ {}; {} draws)",
+                l(v.inward.value),
+                l(v.inward.interval95[0]),
+                l(v.inward.interval95[1]),
+                l(v.inward.mean),
+                l(v.inward.sd),
+                v.inward.draws
+            ),
+        ],
+        ["Pushed outward".into(), l(v.outward)],
+        [
+            "Deepest cell".into(),
+            format!("{:.0} mm", v.max_depth * 1000.0),
+        ],
+        [
+            "Area crushed (deeper than 3σ)".into(),
+            format!("{:.3} m²", v.crushed_area),
+        ],
+        [
+            "Cells".into(),
+            format!(
+                "{} of {:.0} mm with both surfaces; {} with no damaged-scan surface",
+                v.cells.len(),
+                v.cell * 1000.0,
+                v.uncovered
+            ),
+        ],
+    ];
+    let inputs = vec![
+        ["Face".into(), r.label.clone()],
+        ["Damaged vehicle's scan".into(), r.damaged_scan.clone()],
+        [
+            "Reference (undamaged) scan".into(),
+            r.reference_scan.clone(),
+        ],
+        [
+            "Damage region (scene frame)".into(),
+            format!(
+                "{:.3}, {:.3}, {:.3} to {:.3}, {:.3}, {:.3} m",
+                r.lo[0], r.lo[1], r.lo[2], r.hi[0], r.hi[1], r.hi[2]
+            ),
+        ],
+    ];
+    let src = |p: &locus_analysis::trajectory::PointSource| {
+        format!("{} #{} r{}", p.scan, p.index, p.revision)
+    };
+    let rows = reg
+        .pairs
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            vec![
+                (k + 1).to_string(),
+                format!(
+                    "{:.3}, {:.3}, {:.3} ({})",
+                    p.reference[0],
+                    p.reference[1],
+                    p.reference[2],
+                    src(&p.reference_source)
+                ),
+                format!(
+                    "{:.3}, {:.3}, {:.3} ({})",
+                    p.damaged[0],
+                    p.damaged[1],
+                    p.damaged[2],
+                    src(&p.damaged_source)
+                ),
+                format!("{:.1}", p.residual * 1000.0),
+            ]
+        })
+        .collect();
+    let registration =
+        vec![
+            [
+                "Picked pairs".into(),
+                format!(
+                    "{}, fitted to {:.1} mm RMS",
+                    reg.pairs.len(),
+                    reg.pairs_rms * 1000.0
+                ),
+            ],
+            [
+                "ICP (point-to-plane, outside the damage region)".into(),
+                format!(
+                "{:.1} mm RMS over {} pairs; {:.0} % overlap; conditioning {:.3}; {} iterations{}",
+                reg.icp_rms * 1000.0,
+                reg.icp_pairs,
+                reg.overlap * 100.0,
+                reg.conditioning,
+                reg.iterations,
+                if reg.converged { "" } else { " (not converged)" }
+            ),
+            ],
+            [
+                "Registration 1σ".into(),
+                format!(
+                "{:.1} mm, {:.3}° (the formal covariance × {:.0}: one observation per 10 cm patch)",
+                reg.sigma_translation * 1000.0,
+                reg.sigma_rotation_deg,
+                reg.inflation
+            ),
+            ],
+        ];
+    let mut sections = vec![
+        Section {
+            heading: "Result".into(),
+            blocks: vec![
+                Block::Pairs { rows: result },
+                Block::Figure(volume_figure(r)),
+            ],
+        },
+        Section {
+            heading: "Inputs".into(),
+            blocks: vec![Block::Pairs { rows: inputs }],
+        },
+        Section {
+            heading: "Registration".into(),
+            blocks: vec![
+                Block::Pairs { rows: registration },
+                Block::Table {
+                    widths: ["auto", "1fr", "1fr", "auto"].map(String::from).to_vec(),
+                    head: ["Pair", "Reference (m)", "Damaged (m)", "Residual (mm)"]
+                        .map(String::from)
+                        .to_vec(),
+                    rows,
+                },
+            ],
+        },
+        Section {
+            heading: "Method".into(),
+            blocks: vec![
+                Block::Text {
+                    text: format!("The reference (an undamaged vehicle of the same make and model) is fitted to the damaged vehicle's scan by the picked pairs, then refined by point-to-plane ICP on both scans' surfaces within 1 m of the pairs and the damage region, leaving the damage region out. Inside the region, the plane fitted to the reference's points is divided into {:.0} mm cells. In each cell both surfaces' heights above the plane are the median of their points, and the crush depth is the reference's minus the damaged's. A cell counts as crushed when its eight neighbours' mean depth is positive; the crush volume is those cells' depths × cell area, and the rest is the volume pushed outward. Classing each cell by its neighbours keeps its own noise from biasing either sum. The 95 % interval is a {}-draw Monte Carlo (seeded): each draw moves the reference by the registration's covariance, rebuilds the cells, and draws each cell's depth about its value with its 1σ (1.2533 × the points' spread / √n for each median). See docs/methods/crash-volume.md.", v.cell * 1000.0, v.inward.draws),
+                },
+                Block::List {
+                    items: REFS_VOLUME.iter().map(|s| s.to_string()).collect(),
+                },
+            ],
+        },
+    ];
+    for (heading, items) in [
+        ("Assumptions", &r.assumptions),
+        ("Limitations", &r.limitations),
+    ] {
+        sections.push(Section {
+            heading: heading.into(),
+            blocks: vec![Block::List {
+                items: items.to_vec(),
+            }],
+        });
+    }
+    sections.push(Section {
+        heading: "Sign-off".into(),
+        blocks: vec![Block::SignOff {
+            rows: vec!["Examiner".into(), "Technical review".into()],
+        }],
+    });
+    report(meta, "Crush volume", r.warnings.clone(), sections)
+}
+
+const REFS_EDR: &[&str] = &[
+    "US Code of Federal Regulations, 49 CFR Part 563, Event Data Recorders: the pre-crash data elements, their sample rates and required accuracy (speed ±1 km/h).",
+    "SAE J1698, Vehicle Event Data Interface: the output data definitions for event data recorders.",
+];
+
+/// Speed against time: the recorded speeds (dots, joined), axes labelled.
+fn edr_speed_figure(r: &EdrRun) -> Figure {
+    let (w, h, m) = (150.0, 60.0, 10.0);
+    let (t0, t1) = (
+        r.samples[0].t,
+        r.end_time.max(r.samples[r.samples.len() - 1].t),
+    );
+    let vmax = r
+        .samples
+        .iter()
+        .map(|s| s.speed)
+        .fold(0.0, f64::max)
+        .max(1.0)
+        * 3.6;
+    let top = (vmax / 10.0).ceil() * 10.0;
+    let at = |t: f64, v: f64| -> [f64; 2] {
+        [
+            m + (t - t0) / (t1 - t0).max(1e-9) * (w - 2.0 * m),
+            h - m - v / top * (h - 2.0 * m),
+        ]
+    };
+    let mut fig = Figure {
+        width: w,
+        height: h,
+        caption: "Recorded speed (km/h) against time (s), as imported.".into(),
+        ..Figure::default()
+    };
+    fig.line(at(t0, 0.0), at(t1, 0.0), 0.3, false);
+    fig.line(at(t0, 0.0), at(t0, top), 0.3, false);
+    let pts: Vec<[f64; 2]> = r.samples.iter().map(|s| at(s.t, s.speed * 3.6)).collect();
+    for win in pts.windows(2) {
+        fig.coloured(win[0], win[1], 0.4, false, FIT);
+    }
+    for p in &pts {
+        fig.dots.push([p[0], p[1], 0.6]);
+    }
+    for (t, v, text) in [
+        (t0, 0.0, format!("{t0:.1} s")),
+        (t1, 0.0, format!("{t1:.1} s")),
+        (t0, top, format!("{top:.0} km/h")),
+    ] {
+        let p = at(t, v);
+        fig.labels.push(Label {
+            x: p[0] - 3.0,
+            y: p[1] + 4.0,
+            text,
+        });
+    }
+    fig
+}
+
+/// The path in plan and the vehicle's position at each sample.
+fn edr_path_figure(r: &EdrRun) -> Figure {
+    let mut pts: Vec<[f64; 2]> = r.path.iter().map(|p| [p[0], p[1]]).collect();
+    pts.extend(
+        r.stations
+            .iter()
+            .filter_map(|s| s.position)
+            .map(|p| [p[0], p[1]]),
+    );
+    let lo = pts
+        .iter()
+        .fold([f64::INFINITY; 2], |a, p| [a[0].min(p[0]), a[1].min(p[1])]);
+    let hi = pts.iter().fold([f64::NEG_INFINITY; 2], |a, p| {
+        [a[0].max(p[0]), a[1].max(p[1])]
+    });
+    let f = Frame::new(lo, hi, 150.0, 90.0, 8.0);
+    let mut fig = Figure {
+        width: 150.0,
+        height: 90.0,
+        caption: "Plan view: the path picked in the scene (line) and the vehicle's reference point at each sample (dots), with the range of each position along the path (red); true to scale.".into(),
+        ..Figure::default()
+    };
+    for w in r.path.windows(2) {
+        fig.line(
+            f.at([w[0][0], w[0][1]]),
+            f.at([w[1][0], w[1][1]]),
+            0.4,
+            false,
+        );
+    }
+    for s in &r.stations {
+        if let (Some(p), Some([a, b])) = (s.position, s.span) {
+            fig.coloured(f.at([a[0], a[1]]), f.at([b[0], b[1]]), 0.8, false, FIT);
+            let q = f.at([p[0], p[1]]);
+            fig.dots.push([q[0], q[1], 0.7]);
+            fig.labels.push(Label {
+                x: q[0] + 1.5,
+                y: q[1] - 1.5,
+                text: format!("{:.1}", s.t),
+            });
+        }
+    }
+    fig.scale_bar(&f);
+    fig
+}
+
+pub fn edr(meta: &Meta, r: &EdrRun) -> Report {
+    let opt = |v: Option<f64>, d: usize| v.map(|x| format!("{x:.d$}")).unwrap_or_default();
+    let rows = r
+        .samples
+        .iter()
+        .zip(&r.stations)
+        .map(|(s, st)| {
+            vec![
+                format!("{:.2}", s.t),
+                format!("{:.1}", s.speed * 3.6),
+                opt(s.accelerator, 0),
+                match s.brake {
+                    Some(true) => "on".into(),
+                    Some(false) => "off".into(),
+                    None => String::new(),
+                },
+                opt(s.steering, 0),
+                opt(s.yaw_rate, 1),
+                opt(s.long_accel, 2),
+                format!(
+                    "{:.2} ({:.2}–{:.2})",
+                    st.distance.value, st.distance.low, st.distance.high
+                ),
+            ]
+        })
+        .collect();
+    let columns = r
+        .columns
+        .iter()
+        .map(|c| {
+            format!(
+                "\"{}\": {}{}",
+                c.header,
+                if c.field == "unused" {
+                    "not used"
+                } else {
+                    c.field.as_str()
+                },
+                if c.unit.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", c.unit)
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let first = &r.stations[0].distance;
+    let result = vec![
+        [
+            format!("Distance from {:.2} s to {:.2} s", r.samples[0].t, r.end_time),
+            format!(
+                "{:.2} m; range method {:.2} to {:.2} m; Monte Carlo 95 % {:.2} to {:.2} m ({} draws)",
+                first.value, first.low, first.high, first.interval95[0], first.interval95[1], first.draws
+            ),
+        ],
+        [
+            "Speed accuracy".into(),
+            format!(
+                "±{:.1} % and ±{:.1} km/h, systematic",
+                r.scale_tolerance * 100.0,
+                r.offset_tolerance * 3.6
+            ),
+        ],
+    ];
+    let inputs = vec![
+        ["Vehicle".into(), r.label.clone()],
+        ["Source".into(), r.source.clone()],
+        ["Data SHA-256".into(), r.csv_sha256.clone()],
+        ["Columns".into(), columns],
+        [
+            "Path".into(),
+            if r.path.len() >= 2 {
+                format!(
+                    "{} points picked in the scene ({}), ending at the vehicle's position at {:.2} s",
+                    r.path.len(),
+                    r.path_sources
+                        .iter()
+                        .map(|p| format!("{} #{} r{}", p.scan, p.index, p.revision))
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    r.end_time
+                )
+            } else {
+                "none".into()
+            },
+        ],
+    ];
+    let mut blocks = vec![
+        Block::Pairs { rows: result },
+        Block::Figure(edr_speed_figure(r)),
+    ];
+    if r.path.len() >= 2 {
+        blocks.push(Block::Figure(edr_path_figure(r)));
+    }
+    let mut sections = vec![
+        Section {
+            heading: "Result".into(),
+            blocks,
+        },
+        Section {
+            heading: "Inputs".into(),
+            blocks: vec![Block::Pairs { rows: inputs }],
+        },
+        Section {
+            heading: "Pre-crash data".into(),
+            blocks: vec![
+                Block::Text {
+                    text: "As imported, in SI units except speed (km/h). The last column is the distance travelled from each sample to the end time: its value (trapezoid rule) and range (the left and right sums with the speed tolerance at its extremes).".into(),
+                },
+                Block::Table {
+                    widths: ["auto", "auto", "auto", "auto", "auto", "auto", "auto", "1fr"]
+                        .map(String::from)
+                        .to_vec(),
+                    head: [
+                        "t (s)",
+                        "Speed",
+                        "Accel. %",
+                        "Brake",
+                        "Steer °",
+                        "Yaw °/s",
+                        "Accel. m/s²",
+                        "Distance to end (m)",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                    rows,
+                },
+            ],
+        },
+    ];
+    tail(
+        &mut sections,
+        "The distance from each sample to the end time is the integral of speed over time. Between samples the speed lies between its two recorded values, so the integral lies between the left and right Riemann sums; the value is their mean (the trapezoid rule), and the rule is an input ranging from left to right. The speed tolerance is systematic: every speed scaled by one factor and shifted by one offset within the stated ranges. A gap between the last sample and the end time is covered at the last speed, braking at anything from 0 to 1 g. With a path, each sample's position is that distance back along the path from its end.",
+        REFS_EDR,
+        &r.assumptions,
+        &r.limitations,
+    );
+    report(meta, "EDR pre-crash data", r.warnings.clone(), sections)
 }
 
 #[cfg(test)]

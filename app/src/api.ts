@@ -548,7 +548,7 @@ export type AnalysisRecord = AnalysisBase &
     | { tool: "bloodstain"; record: BloodstainRun }
     | { tool: "camera"; record: CameraRun }
     | { tool: "witness"; record: WitnessRun }
-    | { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume"; record: CrashRun }
+    | { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume" | "edr"; record: CrashRun }
   );
 export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
 export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
@@ -556,7 +556,7 @@ export type CameraRecord = Extract<AnalysisRecord, { tool: "camera" }>;
 export type WitnessRecord = Extract<AnalysisRecord, { tool: "witness" }>;
 export type CrashRecord = Extract<
   AnalysisRecord,
-  { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume" }
+  { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume" | "edr" }
 >;
 
 /** A crash tool's input: a value and the range it could be in (uniform, or normal with the
@@ -636,6 +636,19 @@ export type CrashRequest =
       lo: P3;
       hi: P3;
       cell: number;
+    }
+  | {
+      /** EDR pre-crash data as CSV (imported or from the form), with its source. */
+      tool: "edr";
+      label: string;
+      source: string;
+      csv: string;
+      speed_unit: "kmh" | "mph" | "ms";
+      /** The speed's accuracy: a fraction and m/s, systematic. */
+      scale_tolerance: number;
+      offset_tolerance: number;
+      end_time: number | null;
+      path: PickHit[];
     };
 
 /** Volumetric crush (locus-analysis crush_volume::CrushVolume). */
@@ -695,6 +708,15 @@ export interface CrashRun {
   radius_from?: { kind: "chord" } | { kind: "points"; points: P3[] };
   profile?: CrushProfile | null;
   result?: CrushVolume;
+  /** EDR: the path, and each sample's distance to the end time and place on the path. */
+  path?: P3[];
+  samples?: { t: number; speed: number }[];
+  stations?: {
+    t: number;
+    distance: Spread;
+    position: P3 | null;
+    span: [P3, P3] | null;
+  }[];
   registration?: {
     pairs_rms: number;
     icp_rms: number;

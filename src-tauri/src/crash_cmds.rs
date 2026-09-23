@@ -135,6 +135,20 @@ pub enum CrashRequest {
         hi: P3,
         cell: f64,
     },
+    /// EDR pre-crash data as CSV (imported or built from the form), its source, the speed's
+    /// tolerance (a fraction and m/s) and, optionally, a path picked in the scene.
+    Edr {
+        label: String,
+        source: String,
+        csv: String,
+        speed_unit: locus_analysis::edr::SpeedUnit,
+        scale_tolerance: f64,
+        offset_tolerance: f64,
+        #[serde(default)]
+        end_time: Option<f64>,
+        #[serde(default)]
+        path: Vec<Pick>,
+    },
 }
 
 /// Points of the vehicle this far around the pairs and the damage region are used (m).
@@ -496,6 +510,43 @@ fn crash_run(
             r.table_entry = entry;
             r.profile = measured;
             ("crush", CRUSH_METHOD, serde_json::to_value(r).map_err(err)?)
+        }
+        CrashRequest::Edr {
+            label,
+            source,
+            csv,
+            speed_unit,
+            scale_tolerance,
+            offset_tolerance,
+            end_time,
+            path,
+        } => {
+            use locus_analysis::edr;
+            let (samples, columns) = edr::parse_csv(csv, *speed_unit).map_err(e)?;
+            let (points, sources) = resolve_all(scene, path)?;
+            let mut r = edr::edr(
+                label,
+                source,
+                csv,
+                columns,
+                samples,
+                *scale_tolerance,
+                *offset_tolerance,
+                *end_time,
+                points,
+                sources,
+                DRAWS,
+                seed,
+            )
+            .map_err(e)?;
+            r.csv_sha256 = locus_core::hash::sha256_reader(csv.as_bytes(), &mut |_| {})
+                .map_err(err)?
+                .0;
+            (
+                "edr",
+                edr::EDR_METHOD,
+                serde_json::to_value(r).map_err(err)?,
+            )
         }
         CrashRequest::Volume {
             label,

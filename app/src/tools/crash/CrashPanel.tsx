@@ -20,7 +20,25 @@ import type { Engine } from "../../viewer3d/engine";
 import type { PickHit } from "../../viewer3d/pointcloud";
 import { RecordButtons } from "../camera/CameraPanel";
 
-type Tool = "skid" | "yaw" | "momentum" | "crush" | "volume";
+type Tool = "skid" | "yaw" | "momentum" | "crush" | "volume" | "edr";
+
+/** A row of the EDR form, as typed. */
+interface EdrRow {
+  t: string;
+  speed: string;
+  accel: string;
+  brake: "" | "on" | "off";
+  steer: string;
+}
+/** The usual pre-crash table: 5 s before the trigger at 2 samples a second. */
+const edrRows = (): EdrRow[] =>
+  Array.from({ length: 11 }, (_, k) => ({
+    t: (-5 + k * 0.5).toFixed(1),
+    speed: "",
+    accel: "",
+    brake: "",
+    steer: "",
+  }));
 type V3 = [number, number, number];
 
 /** A value and a symmetric tolerance, as typed. */
@@ -186,6 +204,33 @@ function crashOverlay(run: CrashRun, origin: V3): THREE.Group {
     m.renderOrder = 10;
     g.add(m);
   }
+  // EDR: the path, each sample's place on it, and the range of that place along the path.
+  if (run.stations && run.path && run.path.length >= 2) {
+    const l = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(run.path.map(rel)),
+      new THREE.LineBasicMaterial({ color: 0x3fa9ff, depthTest: false }),
+    );
+    l.renderOrder = 10;
+    g.add(l);
+    const spans: THREE.Vector3[] = [];
+    for (const s of run.stations) {
+      if (s.span) spans.push(rel(s.span[0]), rel(s.span[1]));
+      if (!s.position) continue;
+      const d = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 12, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff9f0a, depthTest: false }),
+      );
+      d.position.copy(rel(s.position));
+      d.renderOrder = 11;
+      g.add(d);
+    }
+    const sl = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(spans),
+      new THREE.LineBasicMaterial({ color: 0xff453a, depthTest: false }),
+    );
+    sl.renderOrder = 10;
+    g.add(sl);
+  }
   // A crush profile: the face line, and each station to the damaged surface behind it.
   if (run.profile) {
     const p = run.profile;
@@ -256,6 +301,17 @@ export function CrashPanel({
   const [volPairs, setVolPairs] = useState<[PickHit, PickHit][]>([]);
   const [region, setRegion] = useState<{ min: V3; max: V3 } | null>(null);
   const [cell, setCell] = useState("0.02");
+  // EDR: the data (a CSV, or the form's rows), its source, the speed's accuracy and a path.
+  const [edrLabel, setEdrLabel] = useState("Vehicle 1");
+  const [edrSource, setEdrSource] = useState("");
+  const [edrMode, setEdrMode] = useState<"csv" | "form">("form");
+  const [edrCsv, setEdrCsv] = useState("");
+  const [rows, setRows] = useState<EdrRow[]>(edrRows);
+  const [unit, setUnit] = useState<"kmh" | "mph" | "ms">("kmh");
+  const [scaleTol, setScaleTol] = useState("0");
+  const [offsetTol, setOffsetTol] = useState("1");
+  const [endTime, setEndTime] = useState("");
+  const [edrPath, setEdrPath] = useState<PickHit[]>([]);
   const [pdof, setPdof] = useState(val(0));
   const [mass, setMass] = useState(val(""));
   const [result, setResult] = useState<CrashRun | null>(null);
@@ -359,6 +415,38 @@ export function CrashPanel({
         ? { ...rest, table: null, a: ai, b: bi, stiffness_source: source }
         : null;
     }
+    if (tool === "edr") {
+      const unitName = { kmh: "km/h", mph: "mph", ms: "m/s" }[unit];
+      const csv =
+        edrMode === "csv"
+          ? edrCsv
+          : [
+              `time (s),speed (${unitName}),accelerator (%),brake,steering (deg)`,
+              ...rows
+                .filter((r) => r.speed.trim() !== "")
+                .map((r) => [r.t, r.speed, r.accel, r.brake, r.steer].join(",")),
+            ].join("\n");
+      const [st, ot] = [Number(scaleTol || 0) / 100, Number(offsetTol || 0)];
+      const toMs = { kmh: 1 / 3.6, mph: 0.44704, ms: 1 }[unit];
+      const end = endTime.trim() === "" ? null : Number(endTime);
+      return edrSource.trim() &&
+        csv.trim() &&
+        st >= 0 &&
+        ot >= 0 &&
+        (end === null || Number.isFinite(end))
+        ? {
+            tool,
+            label: edrLabel,
+            source: edrSource,
+            csv,
+            speed_unit: unit,
+            scale_tolerance: st,
+            offset_tolerance: ot * toMs,
+            end_time: end,
+            path: edrPath,
+          }
+        : null;
+    }
     if (tool === "volume") {
       return volDamaged &&
         volReference &&
@@ -400,7 +488,7 @@ export function CrashPanel({
   }, [reqKey]);
   const preview = tool && request ? result : null;
   const crashes = records.filter((r): r is CrashRecord =>
-    ["skid", "yaw", "momentum", "crush", "crush_volume"].includes(r.tool),
+    ["skid", "yaw", "momentum", "crush", "crush_volume", "edr"].includes(r.tool),
   );
   const drawn = tool ? preview : (crashes.find((r) => r.id === shown)?.record ?? null);
 
@@ -452,6 +540,7 @@ export function CrashPanel({
     momentum: "Linear momentum (two vehicles)",
     crush: "Crush energy (CRASH3)",
     volume: "Crush volume (against a reference scan)",
+    edr: "EDR pre-crash data",
   };
   return (
     <section className="panel-section crash">
@@ -808,6 +897,191 @@ export function CrashPanel({
               <ValField label="Mass" v={mass} set={setMass} unit="kg" />
             </>
           )}
+          {tool === "edr" && (
+            <>
+              <label>
+                Vehicle
+                <input value={edrLabel} onChange={(e) => setEdrLabel(e.target.value)} />
+              </label>
+              <label>
+                Source (in the report; required)
+                <input
+                  value={edrSource}
+                  placeholder="Retrieval report, VIN, retrieved by, date"
+                  onChange={(e) => setEdrSource(e.target.value)}
+                />
+              </label>
+              <label>
+                Data
+                <select
+                  value={edrMode}
+                  onChange={(e) => setEdrMode(e.target.value as "csv" | "form")}
+                >
+                  <option value="form">entered from the pre-crash table</option>
+                  <option value="csv">imported from a CSV file</option>
+                </select>
+              </label>
+              <label>
+                Speed unit{edrMode === "csv" ? " (where a header gives none)" : ""}
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value as "kmh" | "mph" | "ms")}
+                >
+                  <option value="kmh">km/h</option>
+                  <option value="mph">mph</option>
+                  <option value="ms">m/s</option>
+                </select>
+              </label>
+              {edrMode === "csv" && (
+                <>
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void f.text().then(setEdrCsv);
+                    }}
+                  />
+                  <textarea
+                    rows={6}
+                    value={edrCsv}
+                    placeholder="Time (s), Speed (km/h), Accelerator (%), Brake, Steering (deg)"
+                    onChange={(e) => setEdrCsv(e.target.value)}
+                  />
+                </>
+              )}
+              {edrMode === "form" && (
+                <table className="edr-form">
+                  <thead>
+                    <tr>
+                      <th>t (s)</th>
+                      <th>Speed</th>
+                      <th>Accel. %</th>
+                      <th>Brake</th>
+                      <th>Steer °</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, k) => {
+                      const set = (p: Partial<EdrRow>) =>
+                        setRows((rs) => rs.map((x, j) => (j === k ? { ...x, ...p } : x)));
+                      return (
+                        <tr key={k}>
+                          <td>
+                            <input
+                              className="narrow"
+                              value={r.t}
+                              onChange={(e) => set({ t: e.target.value })}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              className="narrow"
+                              value={r.speed}
+                              onChange={(e) => set({ speed: e.target.value })}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              className="narrow"
+                              value={r.accel}
+                              onChange={(e) => set({ accel: e.target.value })}
+                            />
+                          </td>
+                          <td>
+                            <select
+                              value={r.brake}
+                              onChange={(e) => set({ brake: e.target.value as EdrRow["brake"] })}
+                            >
+                              <option value=""></option>
+                              <option value="on">on</option>
+                              <option value="off">off</option>
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              className="narrow"
+                              value={r.steer}
+                              onChange={(e) => set({ steer: e.target.value })}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              {edrMode === "form" && (
+                <div className="buttons">
+                  <button
+                    onClick={() =>
+                      setRows((rs) => [
+                        ...rs,
+                        {
+                          t: (Number(rs[rs.length - 1]?.t ?? -0.5) + 0.5).toFixed(1),
+                          speed: "",
+                          accel: "",
+                          brake: "",
+                          steer: "",
+                        },
+                      ])
+                    }
+                  >
+                    Add a row
+                  </button>
+                  <button onClick={() => setRows((rs) => rs.slice(0, -1))}>
+                    Remove the last row
+                  </button>
+                </div>
+              )}
+              <label>
+                Speed accuracy ± %
+                <input
+                  className="narrow"
+                  inputMode="decimal"
+                  value={scaleTol}
+                  onChange={(e) => setScaleTol(e.target.value)}
+                />
+              </label>
+              <label>
+                and ± (in the speed unit)
+                <input
+                  className="narrow"
+                  inputMode="decimal"
+                  value={offsetTol}
+                  onChange={(e) => setOffsetTol(e.target.value)}
+                />
+              </label>
+              <label>
+                End time (s; blank for the last sample)
+                <input
+                  className="narrow"
+                  inputMode="decimal"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                />
+              </label>
+              <p className="muted">
+                Optionally, pick the path the vehicle took, in order, ending where its reference
+                point was at the end time.
+              </p>
+              <div className="buttons">
+                <button
+                  onClick={() =>
+                    requestPick(
+                      "Click the next point along the path (the last at the end time).",
+                      (h) => setEdrPath((p) => [...p, h]),
+                    )
+                  }
+                >
+                  {edrPath.length ? `Add a path point (${edrPath.length})` : "Pick the path"}
+                </button>
+                {edrPath.length > 0 && (
+                  <button onClick={() => setEdrPath([])}>Clear the path</button>
+                )}
+              </div>
+            </>
+          )}
           {tool === "volume" && (
             <>
               <label>
@@ -905,6 +1179,14 @@ export function CrashPanel({
                 <div>
                   Energy {(preview.energy.value / 1000).toFixed(1)} kJ; equivalent barrier speed{" "}
                   <strong>{fmtSpeed(preview.ebs!)}</strong>
+                </div>
+              )}
+              {preview.stations && preview.stations.length > 0 && (
+                <div>
+                  Distance from {preview.stations[0].t.toFixed(1)} s to the end:{" "}
+                  <strong>{preview.stations[0].distance.value.toFixed(2)} m</strong> (range{" "}
+                  {preview.stations[0].distance.low.toFixed(2)}–
+                  {preview.stations[0].distance.high.toFixed(2)} m)
                 </div>
               )}
               {preview.result && (

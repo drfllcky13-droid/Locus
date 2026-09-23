@@ -341,6 +341,13 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                 };
                 (doc, vec![])
             }
+            "edr" => (
+                locus_report::crash::edr(
+                    &meta(p, &a)?,
+                    &serde_json::from_value(a.record.clone()).map_err(err)?,
+                ),
+                vec![],
+            ),
             "crush_volume" => (
                 locus_report::crash::volume(
                     &meta(p, &a)?,

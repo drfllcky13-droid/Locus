@@ -7,6 +7,7 @@ pub mod camera;
 pub mod crash;
 pub mod crush_volume;
 pub mod defect;
+pub mod edr;
 pub mod handmeasure;
 pub mod measure;
 pub mod stiffness;
