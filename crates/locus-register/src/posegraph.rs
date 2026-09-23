@@ -155,7 +155,11 @@ fn chi2_quantile(k: f64, z: f64) -> f64 {
 }
 
 /// Residual and weight of a pair under the current poses.
-fn residual(link: &Link, pair: &Pair, poses: &[Isometry3<f64>]) -> (Vector3<f64>, Matrix3<f64>) {
+pub(crate) fn residual(
+    link: &Link,
+    pair: &Pair,
+    poses: &[Isometry3<f64>],
+) -> (Vector3<f64>, Matrix3<f64>) {
     let ta = &poses[link.a];
     let ra = ta.rotation.to_rotation_matrix();
     let qa = ta * Point3::from(pair.pa);

@@ -8,6 +8,7 @@ pub mod icp;
 pub mod normals;
 pub mod pipeline;
 pub mod posegraph;
+pub mod report;
 pub mod rigid;
 pub mod sphere;
 pub mod targets;
