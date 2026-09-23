@@ -368,6 +368,15 @@ export const api = {
       equation_of_time: number;
       uncertainty: number;
     }>("sun_position", { lat, lon, unix }),
+  trajectoryPreview: (request: TrajectoryRequest) =>
+    invoke<TrajectoryRun>("trajectory_preview", { request }),
+  trajectorySave: (name: string, request: TrajectoryRequest, revises: number | null) =>
+    invoke<AnalysisRecord>("trajectory_save", { name, request, revises }),
+  analyses: () => invoke<AnalysisRecord[]>("analyses"),
+  analysisWithdraw: (id: number, reason: string) =>
+    invoke<AnalysisRecord[]>("analysis_withdraw", { id, reason }),
+  /** Writes the PDF (from the stored record) and returns its SHA-256 (also logged). */
+  analysisReport: (id: number, path: string) => invoke<string>("analysis_report", { id, path }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
     invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),
@@ -382,3 +391,72 @@ export const api = {
   registrationReport: (id: number, path: string) =>
     invoke<string>("registration_report", { id, path }),
 };
+
+/** A value with its 1σ uncertainty. */
+export interface Measured {
+  value: number;
+  sigma: number;
+}
+
+export interface TrajectoryParameters {
+  cone_deg: number;
+  rod_play_deg: number;
+  band: [number, number];
+  floor_z: number;
+  max_range: number;
+}
+
+export interface TrajectoryRequest {
+  points: { pick: PickHit; kind: "entry" | "exit" | "rod"; surface: string; sigma: number }[];
+  parameters: TrajectoryParameters;
+  plane_radius: number;
+}
+
+type P3 = [number, number, number];
+
+/** A stored or previewed trajectory run (locus-analysis trajectory::Run). */
+export interface TrajectoryRun {
+  method: string;
+  inputs: {
+    kind: string;
+    surface: string;
+    point: P3;
+    sigma: number;
+    plane: { point: P3; normal: P3; rms: number; points: number } | null;
+  }[];
+  parameters: TrajectoryParameters;
+  line: {
+    point: P3;
+    direction: P3;
+    bearing: Measured;
+    elevation: Measured;
+    cone: { major_deg: number; minor_deg: number; major_axis: P3 };
+    residuals: number[];
+    chi2: number;
+    dof: number;
+    inflation: number;
+  };
+  surfaces: {
+    surface: string;
+    angles: { impact: Measured; horizontal: Measured; vertical: Measured };
+    plane_rms: number;
+  }[];
+  band: { centre: [[number, number], [P3, P3]] | null; footprint: [number, number][] };
+  cone_narrower_than_fit: boolean;
+  summary: string;
+  assumptions: string[];
+  limitations: string[];
+}
+
+export interface AnalysisRecord {
+  id: number;
+  tool: string;
+  method: string;
+  name: string;
+  record: TrajectoryRun;
+  sha256: string;
+  revises: number | null;
+  created_at: string;
+  created_by: string;
+  withdrawn: { at: string; by: string; reason: string } | null;
+}

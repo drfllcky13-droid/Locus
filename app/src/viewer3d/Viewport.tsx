@@ -7,6 +7,7 @@ import { TOOL_POINTS, type MeasurementRecord } from "./measureFormat";
 import type { ColorMode, PickHit, SceneData } from "./pointcloud";
 import { ScenePanel, type BuildStatus } from "./ScenePanel";
 import { SceneBuilder } from "../scene3d/SceneBuilder";
+import { TrajectoryPanel } from "../tools/trajectory/TrajectoryPanel";
 
 export type Tool = "orbit" | MeasurementRecord["kind"] | "lasso";
 
@@ -409,6 +410,16 @@ export function Viewport({
             key={project.root}
             engine={getEngine}
             diagramList={diagrams}
+            origin={shownScene?.origin.join() ?? ""}
+            requestPick={(hint, then) => {
+              setTool("orbit");
+              setPickRequest({ hint, then });
+            }}
+            onNotice={onNotice}
+          />
+          <TrajectoryPanel
+            key={`t${project.root}`}
+            engine={getEngine}
             origin={shownScene?.origin.join() ?? ""}
             requestPick={(hint, then) => {
               setTool("orbit");

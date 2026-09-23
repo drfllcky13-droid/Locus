@@ -40,6 +40,8 @@ export class Engine {
   private gizmo: TransformControls;
   /** Built 3D scene objects (scene3d/render.ts), and the gizmo that moves a placed model. */
   private built: THREE.Group | null = null;
+  /** An analysis drawn over the scene (a trajectory), relative to the origin. */
+  private analysis: THREE.Group | null = null;
   private modelGizmo: TransformControls;
   private moving: string | null = null;
   /** A placed model was moved with the gizmo: its new model-to-project matrix (f64). */
@@ -204,6 +206,22 @@ export class Engine {
     this.built = group;
     if (group) this.scene.add(group);
     if (moving) this.attachModel(moving, this.modelGizmo.mode as "translate" | "rotate");
+    this.requestRender();
+  }
+
+  /** Replace the analysis overlay (null to clear it). */
+  setAnalysisOverlay(group: THREE.Group | null) {
+    if (this.analysis) {
+      this.scene.remove(this.analysis);
+      this.analysis.traverse((o) => {
+        if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
+    }
+    this.analysis = group;
+    if (group) this.scene.add(group);
     this.requestRender();
   }
 

@@ -14,19 +14,22 @@ function run(cmd, args) {
 }
 
 /**
- * Generate `scans` × `points` synthetic scans (`genArgs`: extra `gen-scene` flags), import
+ * Generate `scans` × `points` synthetic scans (`genArgs`: extra `gen-scene` flags; `room: false`
+ * to skip them), import
  * them (with any `extra` evidence files), start the app on the project and connect over CDP. `webviewArgs` are extra WebView2
  * browser arguments. Returns
  * `{ cdp, child, project, close() }`; `close` kills the app and removes the temp folder.
  */
-export async function launchApp({ scans = 2, points = 300_000, port = 9223, webviewArgs = "", genArgs = [], extra = [] } = {}) {
+export async function launchApp({ scans = 2, points = 300_000, port = 9223, webviewArgs = "", genArgs = [], extra = [], room = true } = {}) {
   const app = resolve(`target/release/locus${exe}`);
   const validate = resolve(`target/release/locus-validate${exe}`);
   const work = mkdtempSync(join(tmpdir(), "locus-smoke-"));
   const scene = join(work, "room.e57");
   const project = join(work, "smoke.locus");
-  run(validate, ["gen-scene", "--scans", String(scans), "--points-per-scan", String(points), "--out", scene, ...genArgs]);
-  run(validate, ["import", "--project", project, "--examiner", "Smoke test", scene, ...extra]);
+  // `room: false` skips the synthetic room: only the `extra` files are imported, and `scans`
+  // is how many point clouds they hold (what the viewer waits for).
+  if (room) run(validate, ["gen-scene", "--scans", String(scans), "--points-per-scan", String(points), "--out", scene, ...genArgs]);
+  run(validate, ["import", "--project", project, "--examiner", "Smoke test", ...(room ? [scene] : []), ...extra]);
   const child = spawn(app, [], {
     env: {
       ...process.env,
