@@ -18,6 +18,8 @@ try {
       project_open: await inv("project_open", { root: startup.open, examinerName: startup.examiner, onProgress: "__CHANNEL__:" + window.__TAURI_INTERNALS__.transformCallback(() => {}) }).catch(() => null),
       scene_view: await inv("scene_view"),
       analysis_state: await inv("analysis_state"),
+      diagrams: await inv("diagrams"),
+      scenes: await inv("scenes"),
     };
   })()`);
   if (!ipc.project_open) throw new Error("project_open could not be recorded");
