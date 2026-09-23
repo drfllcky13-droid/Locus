@@ -1,15 +1,17 @@
 name: CI
 
-# Per push and pull request: lint, the fast tests on Windows and Linux, the heavy tests and
-# the app build on Linux (target: under 15 minutes). Nightly, on demand and for release tags
-# (v*): the heavy tests and the app build on Windows too.
+# Sized for the free plan's 2,000 private-repo minutes a month (Windows minutes count
+# double). Per push and pull request, Linux only: lint, the fast tests and the app build;
+# pushes that change only docs are skipped. On demand and for release tags (v*): Windows too,
+# and the heavy tests. The heavy tests are otherwise run locally before a push that touches
+# the code they cover (docs/DECISIONS.md).
 on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore: ["docs/**", "**.md", "**.txt"]
   pull_request:
-  schedule:
-    - cron: "0 6 * * *"
+    paths-ignore: ["docs/**", "**.md", "**.txt"]
   workflow_dispatch:
 
 # A newer push to the same branch supersedes a run still in progress.
@@ -19,8 +21,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Every OS on nightly, manual and release runs; Linux only otherwise.
-  FULL: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   lint:
@@ -63,7 +63,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # Windows only on manual and release runs.
+        os: ${{ fromJSON((github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -82,13 +83,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run --workspace --profile ci
-      # Windows-only code paths get linted on the full runs.
-      - if: runner.os == 'Windows' && env.FULL == 'true'
+      # Windows-only code paths get linted.
+      - if: runner.os == 'Windows'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   # The heavy group, split across runners so no one runner takes much over ten minutes: each
   # registration acceptance test takes about that long on four cores.
   heavy:
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,31 +105,22 @@ jobs:
     name: heavy (${{ matrix.os }}, ${{ matrix.part.name }})
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Skip Windows except on full runs
-        id: go
-        shell: bash
-        run: echo "run=${{ runner.os == 'Linux' || env.FULL == 'true' }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
-        if: steps.go.outputs.run == 'true'
       # The runner's preinstalled toolchains we don't use; the 1 GB E57 fixture and the
       # release build need the room.
       - name: Free disk space
-        if: steps.go.outputs.run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.go.outputs.run == 'true'
       # One release build cache for all parts; the first part saves it.
       - uses: Swatinem/rust-cache@v2
-        if: steps.go.outputs.run == 'true'
         with:
           shared-key: heavy
           save-if: ${{ matrix.part.name == 'hybrid' }}
       - uses: taiki-e/install-action@nextest
-        if: steps.go.outputs.run == 'true'
       # Registration accuracy (Phase 3) and the 100M-point E57 import under 4 GB (Phase 1).
-      - if: steps.go.outputs.run == 'true'
-        # The app crate (Tauri) has no heavy tests and would need the GUI libraries.
-        run: >-
+      # The app crate (Tauri) has no heavy tests and would need the GUI libraries.
+      - run: >-
           cargo nextest run --workspace --exclude locus --release --run-ignored only
           --profile ci -E "${{ matrix.part.filter }}"
 
@@ -135,41 +128,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Windows only on manual and release runs.
+        os: ${{ fromJSON((github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Skip Windows except on full runs
-        id: go
-        shell: bash
-        run: echo "run=${{ runner.os == 'Linux' || env.FULL == 'true' }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
-        if: steps.go.outputs.run == 'true'
       - name: Linux system deps for Tauri
-        if: steps.go.outputs.run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.go.outputs.run == 'true'
       - uses: Swatinem/rust-cache@v2
-        if: steps.go.outputs.run == 'true'
       - uses: pnpm/action-setup@v4
-        if: steps.go.outputs.run == 'true'
       - uses: actions/setup-node@v4
-        if: steps.go.outputs.run == 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        if: steps.go.outputs.run == 'true'
       # Release compile embeds app/dist, proving the frontend and shell build together.
       - run: pnpm tauri build --no-bundle
-        if: steps.go.outputs.run == 'true'
       # The built viewer in headless Chromium on software WebGL (SwiftShader), with the
       # backend answered from a recorded fixture: fails on shader or console errors and on a
       # blank canvas. See tools/smoke/README.md.
       - name: Viewer smoke test
-        if: steps.go.outputs.run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         run: |
           pnpm -C app exec playwright install --with-deps chromium
           node tools/smoke/viewer-smoke.mjs
