@@ -12,8 +12,12 @@ import type { Engine } from "../viewer3d/engine";
 import type { PickHit } from "../viewer3d/pointcloud";
 import {
   assumption,
+  cameraAt,
+  defaultDriverEye,
   describe,
   edrSegment,
+  HUMAN_HFOV_DEG,
+  humanView,
   NEW_ANIMATION,
   poseMatrix,
   sampleAt,
@@ -24,6 +28,7 @@ import {
   type Sample,
   type Segment,
   type Source,
+  type View,
 } from "./model";
 
 type Model = Extract<SceneObject, { kind: "model" }>;
@@ -481,6 +486,160 @@ function MoverEdit({
   );
 }
 
+function ViewEdit({
+  view,
+  movers,
+  onChange,
+  onRemove,
+  analyses,
+  evidence,
+  pickPoint,
+}: {
+  view: View;
+  movers: Mover[];
+  onChange: (v: View) => void;
+  onRemove: () => void;
+  analyses: AnalysisRecord[];
+  evidence: EvidenceRecord[];
+  pickPoint: (hint: string, then: (p: P3) => void) => void;
+}) {
+  const v = view;
+  const k = v.kind;
+  const set = (kind: View["kind"]) => onChange({ ...v, kind });
+  const xyz = (label: string, p: P3, to: (p: P3) => void, names: [string, string, string]) =>
+    names.map((n, i) =>
+      num(`${label} ${n} (m)`, p[i], (x) => to(p.map((y, j) => (j === i ? x : y)) as P3), 0.05),
+    );
+  const moverSelect = (label: string, value: string, to: (id: string) => void, only?: string) => (
+    <label>
+      {label}
+      <select value={value} onChange={(e) => to(e.target.value)}>
+        {movers
+          .filter((m) => !only || m.kind.kind === only)
+          .map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+      </select>
+    </label>
+  );
+  const human = humanView(k);
+  return (
+    <div className="dg-built">
+      <label>
+        Name
+        <input value={v.name} onChange={(e) => onChange({ ...v, name: e.target.value })} />
+      </label>
+      {k.kind === "driver" && (
+        <>
+          {moverSelect("Vehicle", k.mover, (mover) => set({ ...k, mover }), "vehicle")}
+          {xyz("Eye", k.eye, (eye) => set({ ...k, eye }), [
+            "forward of the rear axle",
+            "left of centre",
+            "up from the ground",
+          ])}
+        </>
+      )}
+      {k.kind === "witness" && (
+        <>
+          <p className="muted">Standing at {k.floor.map((x) => x.toFixed(2)).join(", ")}.</p>
+          <button
+            onClick={() =>
+              pickPoint("Click where the witness stood.", (floor) => set({ ...k, floor }))
+            }
+          >
+            Pick where they stood
+          </button>
+          {num(
+            "Eye height (m)",
+            k.eye_height,
+            (eye_height) => eye_height > 0 && set({ ...k, eye_height }),
+            0.01,
+          )}
+          <label>
+            Looking at
+            <select
+              value={k.target_mover ?? ""}
+              onChange={(e) => set({ ...k, target_mover: e.target.value || null })}
+            >
+              <option value="">A point</option>
+              {movers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} (tracked)
+                </option>
+              ))}
+            </select>
+          </label>
+          {k.target_mover === null && (
+            <button
+              onClick={() =>
+                pickPoint("Click what the witness looked at.", (target) => set({ ...k, target }))
+              }
+            >
+              Pick the point
+            </button>
+          )}
+        </>
+      )}
+      {k.kind === "orbit" && (
+        <>
+          <button
+            onClick={() =>
+              pickPoint("Click the orbit's centre.", (centre) => set({ ...k, centre }))
+            }
+          >
+            Pick the centre
+          </button>
+          {num("Radius (m)", k.radius, (radius) => radius > 0 && set({ ...k, radius }), 0.5)}
+          {num("Height (m)", k.height, (height) => set({ ...k, height }), 0.5)}
+          {num(
+            "Once around every (s)",
+            k.period,
+            (period) => period > 0 && set({ ...k, period }),
+            1,
+          )}
+        </>
+      )}
+      {k.kind === "follow" && (
+        <>
+          {moverSelect("Mover", k.mover, (mover) => set({ ...k, mover }))}
+          {xyz("Camera", k.offset, (offset) => set({ ...k, offset }), [
+            "forward (− behind)",
+            "left",
+            "up",
+          ])}
+          {num("Looking ahead (m)", k.look_ahead, (look_ahead) => set({ ...k, look_ahead }), 0.5)}
+        </>
+      )}
+      {num(
+        "Horizontal field of view (°)",
+        v.hfov_deg,
+        (hfov_deg) => hfov_deg > 1 && hfov_deg < 179 && onChange({ ...v, hfov_deg }),
+        1,
+      )}
+      {human && v.hfov_deg > HUMAN_HFOV_DEG && (
+        <p className="error">
+          Wider than the {HUMAN_HFOV_DEG}° human-like default: things look farther away and smaller
+          than a person there would see them.
+        </p>
+      )}
+      {human ? (
+        <SourceEdit
+          label="Eye position source"
+          value={v.source}
+          onChange={(source) => onChange({ ...v, source })}
+          analyses={analyses}
+          evidence={evidence}
+        />
+      ) : (
+        <p className="muted">A presentation camera: nobody&apos;s point of view.</p>
+      )}
+      <button onClick={onRemove}>Remove {v.name}</button>
+    </div>
+  );
+}
+
 /** Runs of consecutive samples in one segment: [from, to, segment, assumed]. */
 function runs(samples: Sample[]): [number, number, number | null, boolean][] {
   const out: [number, number, number | null, boolean][] = [];
@@ -598,11 +757,24 @@ export function AnimationPanel({
   }, [onNotice]);
 
   // Movers still being built (no path or motion yet) are left out of the evaluation.
-  const ready = useMemo(
-    () =>
-      a ? { ...a, movers: a.movers.filter((m) => m.path.length >= 2 && m.segments.length) } : null,
-    [a],
-  );
+  // Views tied to such a mover wait for it too.
+  const ready = useMemo(() => {
+    if (!a) return null;
+    const movers = a.movers.filter((m) => m.path.length >= 2 && m.segments.length);
+    const ok = (id: string | null) => id === null || movers.some((m) => m.id === id);
+    const views = a.views.filter((v) =>
+      ok(
+        v.kind.kind === "driver" || v.kind.kind === "follow"
+          ? v.kind.mover
+          : v.kind.kind === "witness"
+            ? v.kind.target_mover
+            : null,
+      ),
+    );
+    return { ...a, movers, views };
+  }, [a]);
+  const [through, setThrough] = useState<string>("");
+  const [editingView, setEditingView] = useState<string | null>(null);
   useEffect(() => {
     if (!ready) return setEv(null);
     const h = setTimeout(
@@ -645,6 +817,22 @@ export function AnimationPanel({
     [ev, a, t],
   );
 
+  // Looking through a view: the camera follows it; leaving restores the normal lens.
+  const cams = ev?.cameras.find(([id]) => id === through)?.[1];
+  const hfov = a?.views.find((v) => v.id === through)?.hfov_deg;
+  useEffect(() => {
+    const e = engine();
+    if (!e || !a || !ev || !cams || hfov === undefined) return;
+    const c = cameraAt(cams, a.from, ev.step, t);
+    e.setView(c.eye, c.target, hfov);
+  }, [engine, a, ev, cams, hfov, t]);
+  useEffect(() => {
+    if (through) return;
+    const e = engine();
+    const c = e?.cameraProject();
+    if (e && c) e.setView(c.eye, c.target, null);
+  }, [engine, through]);
+
   // Linked scene objects follow their mover; the rest show as markers.
   useEffect(() => {
     const e = engine();
@@ -670,9 +858,12 @@ export function AnimationPanel({
         marks.add(b);
       }
     }
-    e.setPoses(poses);
+    // From the driver's seat, the driver's own vehicle isn't drawn (its interior isn't modelled).
+    const seat = a.views.find((v) => v.id === through)?.kind;
+    const own = seat?.kind === "driver" ? a.movers.find((m) => m.id === seat.mover)?.object : null;
+    e.setPoses(poses, new Set(own ? [own] : []));
     e.setAnalysisOverlay("animation-now", marks.children.length ? marks : null);
-  }, [now, a, models, engine]);
+  }, [now, a, models, engine, through]);
 
   // Each mover's path as travelled: measured blue, assumed orange, flagged stretches red.
   useEffect(() => {
@@ -815,8 +1006,8 @@ export function AnimationPanel({
             {ev.assumed.map((x, i) => (
               <li key={i}>
                 {x.mover}
-                {x.segment === null ? ", path" : `, segment ${x.segment + 1}`} ({x.from.toFixed(2)}{" "}
-                to {x.to.toFixed(2)} s): {x.note || "no reason stated"}
+                {x.segment === null ? "" : `, segment ${x.segment + 1}`} ({x.from.toFixed(2)} to{" "}
+                {x.to.toFixed(2)} s): {x.note || "no reason stated"}
               </li>
             ))}
           </ul>
@@ -888,6 +1079,122 @@ export function AnimationPanel({
           }
         />
       )}
+      <h4>Views</h4>
+      <label>
+        Look through
+        <select value={through} onChange={(e) => setThrough(e.target.value)}>
+          <option value="">The normal camera</option>
+          {a.views
+            .filter((v) => ev?.cameras.some(([id]) => id === v.id))
+            .map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name} ({v.hfov_deg.toFixed(0)}° horizontal)
+              </option>
+            ))}
+        </select>
+      </label>
+      {a.views.map((v) => (
+        <button
+          key={v.id}
+          className={v.id === editingView ? "primary" : ""}
+          onClick={() => setEditingView(v.id === editingView ? null : v.id)}
+        >
+          {v.name}
+        </button>
+      ))}
+      <label>
+        Add a view
+        <select
+          value=""
+          onChange={(e) => {
+            const kind = e.target.value;
+            const id = crypto.randomUUID();
+            const cam = engine()?.cameraProject();
+            const here = (cam?.target ?? [0, 0, 0]) as P3;
+            const vehicle = a.movers.find((m) => m.kind.kind === "vehicle");
+            const first = a.movers[0];
+            const n = a.views.length + 1;
+            let v: View | null = null;
+            if (kind === "driver" && vehicle && vehicle.kind.kind === "vehicle") {
+              const eye = defaultDriverEye(vehicle.kind.wheelbase);
+              v = {
+                id,
+                name: `Driver of ${vehicle.name}`,
+                kind: { kind: "driver", mover: vehicle.id, eye },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption(
+                  `default eye position (${eye.map((x) => x.toFixed(2)).join(", ")} m forward, left, up from the rear axle): a typical driver's seat, not measured`,
+                ),
+              };
+            } else if (kind === "witness")
+              v = {
+                id,
+                name: `Witness ${n}`,
+                kind: {
+                  kind: "witness",
+                  floor: here,
+                  eye_height: 1.6,
+                  target: here,
+                  target_mover: first?.id ?? null,
+                },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption("default eye height 1.6 m, not measured"),
+              };
+            else if (kind === "orbit")
+              v = {
+                id,
+                name: `Orbit ${n}`,
+                kind: { kind: "orbit", centre: here, radius: 20, height: 10, period: 20 },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption("presentation camera"),
+              };
+            else if (kind === "follow" && first)
+              v = {
+                id,
+                name: `Following ${first.name}`,
+                kind: { kind: "follow", mover: first.id, offset: [-8, 0, 3], look_ahead: 5 },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption("presentation camera"),
+              };
+            if (!v) return onNotice("Add a mover (a vehicle, for a driver view) first.");
+            set({ ...a, views: [...a.views, v] });
+            setEditingView(id);
+          }}
+        >
+          <option value="">Choose…</option>
+          <option value="driver">Driver (from a vehicle)</option>
+          <option value="witness">Witness (standing at a point)</option>
+          <option value="orbit">Orbit (presentation)</option>
+          <option value="follow">Follow a mover (presentation)</option>
+        </select>
+      </label>
+      {(() => {
+        const v = a.views.find((x) => x.id === editingView);
+        return (
+          v && (
+            <ViewEdit
+              view={v}
+              movers={a.movers}
+              onChange={(nv) => set({ ...a, views: a.views.map((x) => (x.id === nv.id ? nv : x)) })}
+              onRemove={() => {
+                set({ ...a, views: a.views.filter((x) => x.id !== v.id) });
+                setEditingView(null);
+                if (through === v.id) setThrough("");
+              }}
+              analyses={analyses}
+              evidence={evidence}
+              pickPoint={(hint, then) =>
+                requestPick(hint, (hit) =>
+                  api.pickResolve(hit).then(
+                    (r) => then(r.project),
+                    (e) => onNotice(String(e)),
+                  ),
+                )
+              }
+            />
+          )
+        );
+      })()}
       {ev?.limitations.map((l, i) => (
         <p key={i} className="muted">
           {l}

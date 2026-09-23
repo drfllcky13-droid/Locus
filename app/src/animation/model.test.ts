@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CrashRecord } from "../api";
-import { edrSegment, poseMatrix, sampleAt, type Sample } from "./model";
+import { cameraAt, edrSegment, poseMatrix, sampleAt, type Sample } from "./model";
 
 const s = (t: number, x: number, heading: number): Sample => ({
   t,
@@ -61,5 +61,19 @@ describe("animation model", () => {
       speeds: [13, 11, 9],
     });
     expect(got.segment.source).toEqual({ kind: "edr", analysis_id: 7, name: "EDR 1" });
+  });
+
+  it("interpolates a view's camera between samples", () => {
+    const c = cameraAt(
+      [
+        { eye: [0, 0, 1], target: [10, 0, 1] },
+        { eye: [1, 0, 1], target: [10, 2, 1] },
+      ],
+      -1,
+      0.01,
+      -0.9975,
+    );
+    expect(c.eye[0]).toBeCloseTo(0.25, 12);
+    expect(c.target[1]).toBeCloseTo(0.5, 12);
   });
 });

@@ -163,12 +163,48 @@ pub enum ViewKind {
     /// From a vehicle: the eye's position in its frame (m: forward from the rear axle, left of
     /// centre, up from the ground).
     Driver { mover: String, eye: P3 },
-    /// A witness standing at a floor point with a stated eye height, looking toward a target.
+    /// A witness standing at a floor point with a stated eye height, looking toward a target
+    /// point, or toward a mover (tracked, at `LOOK_HEIGHT` above its path) when one is named.
     Witness {
         floor: P3,
         eye_height: f64,
         target: P3,
+        #[serde(default)]
+        target_mover: Option<String>,
     },
+    /// A presentation camera circling a centre (m) at a radius and height above it, once per
+    /// `period` seconds from the timeline's start. Nobody's point of view.
+    Orbit {
+        centre: P3,
+        radius: f64,
+        height: f64,
+        period: f64,
+    },
+    /// A presentation camera following a mover: `offset` in its frame (m: forward, left, up;
+    /// behind is negative), looking `look_ahead` m ahead of it. Nobody's point of view.
+    Follow {
+        mover: String,
+        offset: P3,
+        look_ahead: f64,
+    },
+}
+
+impl ViewKind {
+    /// A person's view (driver or witness): its field of view is held to a human-like one.
+    pub fn human(&self) -> bool {
+        matches!(self, ViewKind::Driver { .. } | ViewKind::Witness { .. })
+    }
+}
+
+/// Height above a mover's path (m) that witness and follow cameras look at: about a car's
+/// body or a person's chest.
+pub const LOOK_HEIGHT: f64 = 1.0;
+
+/// A camera's eye and the point it looks at, in the project frame (m).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Camera {
+    pub eye: P3,
+    pub target: P3,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -382,6 +418,69 @@ pub struct Evaluation {
     pub assumed: Vec<Assumed>,
     pub warnings: Vec<String>,
     pub limitations: Vec<String>,
+    /// Per view: its camera at the same times as the samples.
+    #[serde(default)]
+    pub cameras: Vec<(String, Vec<Camera>)>,
+}
+
+/// Where a view's camera is at time `t`, given its mover's sample then (for driver, follow
+/// and a tracking witness).
+pub fn camera(v: &ViewKind, t: f64, from: f64, mover: Option<&Sample>) -> Camera {
+    let add = |p: P3, q: P3| [p[0] + q[0], p[1] + q[1], p[2] + q[2]];
+    // A vector in a mover's frame (forward, left, up) to the project frame.
+    let frame = |s: &Sample, q: P3| {
+        let (c, n) = (s.heading.cos(), s.heading.sin());
+        [c * q[0] - n * q[1], n * q[0] + c * q[1], q[2]]
+    };
+    match v {
+        ViewKind::Driver { eye, .. } => {
+            let s = mover.expect("a driver view has its vehicle");
+            let e = add(s.position, frame(s, *eye));
+            Camera {
+                eye: e,
+                target: add(e, frame(s, [10.0, 0.0, 0.0])),
+            }
+        }
+        ViewKind::Witness {
+            floor,
+            eye_height,
+            target,
+            ..
+        } => Camera {
+            eye: add(*floor, [0.0, 0.0, *eye_height]),
+            target: mover.map_or(*target, |s| add(s.position, [0.0, 0.0, LOOK_HEIGHT])),
+        },
+        ViewKind::Orbit {
+            centre,
+            radius,
+            height,
+            period,
+        } => {
+            let a = std::f64::consts::TAU * (t - from) / period;
+            Camera {
+                eye: add(*centre, [radius * a.cos(), radius * a.sin(), *height]),
+                target: *centre,
+            }
+        }
+        ViewKind::Follow {
+            offset, look_ahead, ..
+        } => {
+            let s = mover.expect("a follow view has its mover");
+            Camera {
+                eye: add(s.position, frame(s, *offset)),
+                target: add(s.position, frame(s, [*look_ahead, 0.0, LOOK_HEIGHT])),
+            }
+        }
+    }
+}
+
+/// The mover a view is tied to, if any.
+fn view_mover(v: &ViewKind) -> Option<&String> {
+    match v {
+        ViewKind::Driver { mover, .. } | ViewKind::Follow { mover, .. } => Some(mover),
+        ViewKind::Witness { target_mover, .. } => target_mover.as_ref(),
+        ViewKind::Orbit { .. } => None,
+    }
 }
 
 /// Samples every `step` s for playback, and the checks at 100 Hz.
@@ -428,17 +527,60 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
             }
         }
     }
+    let mut cameras = vec![];
     for v in &a.views {
-        if v.hfov_deg > HUMAN_HFOV_DEG + 1e-9 {
+        if !(v.hfov_deg > 1.0 && v.hfov_deg < 179.0) {
+            return err(format!(
+                "{}: the field of view must be between 1° and 179°",
+                v.name
+            ));
+        }
+        if let ViewKind::Orbit { radius, period, .. } = &v.kind {
+            if !(*radius > 0.0 && *period > 0.0) {
+                return err(format!(
+                    "{}: the orbit needs a radius and a period over 0",
+                    v.name
+                ));
+            }
+        }
+        let track = match view_mover(&v.kind) {
+            Some(id) => {
+                let Some(k) = a.movers.iter().position(|m| &m.id == id) else {
+                    return err(format!("{}: its mover isn't in the animation", v.name));
+                };
+                if matches!(v.kind, ViewKind::Driver { .. })
+                    && !matches!(a.movers[k].kind, MoverKind::Vehicle { .. })
+                {
+                    return err(format!("{}: a driver view needs a vehicle", v.name));
+                }
+                Some(&samples[k].1)
+            }
+            None => None,
+        };
+        let n = ((a.to - a.from) / step).ceil() as usize;
+        cameras.push((
+            v.id.clone(),
+            (0..=n)
+                .map(|k| {
+                    let t = (a.from + k as f64 * step).min(a.to);
+                    camera(&v.kind, t, a.from, track.map(|s: &Vec<Sample>| &s[k]))
+                })
+                .collect(),
+        ));
+        if v.kind.human() && v.hfov_deg > HUMAN_HFOV_DEG + 1e-9 {
             warnings.push(format!(
                 "{}: a {:.0}° horizontal field of view is wider than the {:.0}° default for a human-like view; it makes things look farther away and smaller than a person there would see them.",
                 v.name, v.hfov_deg, HUMAN_HFOV_DEG
             ));
         }
-        if let ViewKind::Driver { mover, .. } = &v.kind {
-            if !a.movers.iter().any(|m| &m.id == mover) {
-                return err(format!("{}: its vehicle isn't in the animation", v.name));
-            }
+        if v.source.assumed() && v.kind.human() {
+            assumed.push(Assumed {
+                mover: v.name.clone(),
+                segment: None,
+                from: a.from,
+                to: a.to,
+                note: format!("view {}", v.source.describe()),
+            });
         }
     }
     if a.time_zero.event.trim().is_empty() || a.time_zero.basis.trim().is_empty() {
@@ -462,6 +604,12 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
         "Positions between the stated inputs are interpolated: a path is a smooth curve (or straight segments) through picked points, and motion within a segment follows its stated profile exactly; real motion between those inputs is not known.".to_string(),
         "Segments marked as assumed are the examiner's assumptions, not measurements; they are illustrative.".to_string(),
     ];
+    if a.views
+        .iter()
+        .any(|v| matches!(v.kind, ViewKind::Driver { .. }))
+    {
+        limitations.push("A driver view is drawn without the driver's own vehicle: its pillars, mirrors, dashboard and tint are not modelled, so the view shows none of the obstruction they cause.".into());
+    }
     if a.lighting == Lighting::LowLight {
         limitations.push("This is a night or low-light scene. The brightness and contrast of rendered images do not represent what a person could see: human visibility depends on adaptation, glare, headlamp patterns and contrast that a render does not reproduce. No conclusion about visibility is drawn from the renders.".into());
     }
@@ -472,6 +620,7 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
         assumed,
         warnings,
         limitations,
+        cameras,
     })
 }
 
@@ -840,6 +989,7 @@ mod tests {
                 floor: [0.0; 3],
                 eye_height: 1.6,
                 target: [10.0, 0.0, 1.0],
+                target_mover: None,
             },
             hfov_deg: 90.0,
             source: assume("stated by the witness"),
@@ -848,5 +998,94 @@ mod tests {
         assert!(e.warnings[0].contains("90°"));
         a.views[0].hfov_deg = HUMAN_HFOV_DEG;
         assert!(evaluate(&a, 0.1).unwrap().warnings.is_empty());
+        // A presentation camera isn't a person's view: no human field-of-view warning.
+        a.views[0].kind = ViewKind::Orbit {
+            centre: [0.0; 3],
+            radius: 10.0,
+            height: 5.0,
+            period: 8.0,
+        };
+        a.views[0].hfov_deg = 90.0;
+        assert!(evaluate(&a, 0.1).unwrap().warnings.is_empty());
+    }
+
+    #[test]
+    fn cameras_follow_their_movers() {
+        // A car at 10 m/s along +y from the origin, starting at t = -3 (timeline -4 to 3).
+        let m = car(
+            vec![Segment {
+                duration: None,
+                motion: SegmentMotion::Speed { speed: 10.0 },
+                source: assume("c"),
+            }],
+            None,
+            vec![[0.0, 0.0, 0.0], [0.0, 100.0, 0.0]],
+            Shape::Straight,
+        );
+        let id = m.id.clone();
+        let mut a = anim(vec![m], Lighting::Daylight);
+        let view = |name: &str, kind| View {
+            id: name.into(),
+            name: name.into(),
+            kind,
+            hfov_deg: HUMAN_HFOV_DEG,
+            source: assume("default"),
+        };
+        a.views = vec![
+            view(
+                "driver",
+                ViewKind::Driver {
+                    mover: id.clone(),
+                    eye: [1.2, 0.35, 1.2],
+                },
+            ),
+            view(
+                "witness",
+                ViewKind::Witness {
+                    floor: [5.0, 20.0, 0.0],
+                    eye_height: 1.6,
+                    target: [0.0; 3],
+                    target_mover: Some(id.clone()),
+                },
+            ),
+            view(
+                "orbit",
+                ViewKind::Orbit {
+                    centre: [0.0, 10.0, 0.0],
+                    radius: 20.0,
+                    height: 8.0,
+                    period: 7.0,
+                },
+            ),
+            view(
+                "follow",
+                ViewKind::Follow {
+                    mover: id,
+                    offset: [-8.0, 0.0, 3.0],
+                    look_ahead: 5.0,
+                },
+            ),
+        ];
+        let e = evaluate(&a, 0.5).unwrap();
+        let at = |v: usize, k: usize| e.cameras[v].1[k];
+        let close = |p: P3, q: P3| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-9);
+        // k = 4 is t = -2: the car's rear axle is 10 m along, heading +y (left is -x).
+        let c = at(0, 4);
+        assert!(close(c.eye, [-0.35, 11.2, 1.2]), "{c:?}");
+        assert!(close(c.target, [-0.35, 21.2, 1.2]), "{c:?}");
+        let c = at(1, 4);
+        assert!(close(c.eye, [5.0, 20.0, 1.6]), "{c:?}");
+        assert!(close(c.target, [0.0, 10.0, LOOK_HEIGHT]), "{c:?}");
+        // k = 7 is half a period in: the far side of the centre.
+        let c = at(2, 7);
+        assert!(close(c.eye, [-20.0, 10.0, 8.0]), "{c:?}");
+        let c = at(3, 4);
+        assert!(close(c.eye, [0.0, 2.0, 3.0]), "{c:?}");
+        assert!(close(c.target, [0.0, 15.0, LOOK_HEIGHT]), "{c:?}");
+        // Assumed driver and witness views are listed; a driver view of a person is refused.
+        let views = e.assumed.iter().filter(|x| x.note.starts_with("view"));
+        assert_eq!(views.count(), 2);
+        a.movers[0].kind = MoverKind::Person;
+        assert!(evaluate(&a, 0.5).is_err());
     }
 }

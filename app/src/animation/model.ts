@@ -48,9 +48,21 @@ export interface Mover {
   friction: Friction | null;
 }
 
+/** Driver and witness views are people's (a human-like field of view); orbit and follow are
+ * presentation cameras. Driver eye and follow offset are in the mover's frame: forward, left,
+ * up (m). */
 export type ViewKind =
   | { kind: "driver"; mover: string; eye: P3 }
-  | { kind: "witness"; floor: P3; eye_height: number; target: P3 };
+  | { kind: "witness"; floor: P3; eye_height: number; target: P3; target_mover: string | null }
+  | { kind: "orbit"; centre: P3; radius: number; height: number; period: number }
+  | { kind: "follow"; mover: string; offset: P3; look_ahead: number };
+
+export const humanView = (k: ViewKind) => k.kind === "driver" || k.kind === "witness";
+
+export interface Camera {
+  eye: P3;
+  target: P3;
+}
 
 export interface View {
   id: string;
@@ -99,6 +111,8 @@ export interface Evaluation {
   assumed: { mover: string; segment: number | null; from: number; to: number; note: string }[];
   warnings: string[];
   limitations: string[];
+  /** Per view id: its camera at the samples' times. */
+  cameras: [string, Camera[]][];
 }
 
 /** Playback and plausibility sampling interval (s): 100 Hz, as the checks use. */
@@ -149,6 +163,25 @@ export function sampleAt(samples: Sample[], from: number, step: number, t: numbe
     speed: lerp(a.speed, b.speed),
   };
 }
+
+/** A view's camera at time `t`, interpolated like `sampleAt`. */
+export function cameraAt(cams: Camera[], from: number, step: number, t: number): Camera {
+  const x = Math.min(Math.max((t - from) / step, 0), cams.length - 1);
+  const i = Math.min(Math.floor(x), cams.length - 2);
+  if (i < 0) return cams[0];
+  const u = x - i;
+  const lerp = (p: P3, q: P3) => [0, 1, 2].map((k) => p[k] + (q[k] - p[k]) * u) as P3;
+  return {
+    eye: lerp(cams[i].eye, cams[i + 1].eye),
+    target: lerp(cams[i].target, cams[i + 1].target),
+  };
+}
+
+/**
+ * A driver's eye in a vehicle's frame when not measured: a typical seat, forward of the rear
+ * axle by 45 % of the wheelbase, 0.35 m left of centre, 1.2 m up. Recorded as an assumption.
+ */
+export const defaultDriverEye = (wheelbase: number): P3 => [0.45 * wheelbase, 0.35, 1.2];
 
 /**
  * A model's matrix (column-major, project frame) for a sample. A vehicle's sample is its rear

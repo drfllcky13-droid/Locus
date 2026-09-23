@@ -70,9 +70,15 @@ The curvature is the drawn path's own. A spline through points on a circle rippl
 
 ## Views
 
-**Driver view.** The eye's position is stated in the vehicle's frame: forward of the rear axle, left of centre, and up from the ground.
+**Driver view.** The eye's position is stated in the vehicle's frame: forward of the rear axle, left of centre, and up from the ground. It looks straight ahead along the vehicle's heading. Until it is measured, it defaults to a typical driver's seat: 45 % of the wheelbase forward of the rear axle, 0.35 m left, 1.2 m up. That default is recorded as an assumption, so it is listed in the report with the view. The driver's own vehicle isn't drawn in this view, because its interior isn't modelled. The report says that the view therefore shows no obstruction by pillars, mirrors, dashboard or tint.
 
-**Witness view.** The witness stands at a picked floor point, with a stated eye height, looking toward a target.
+**Witness view.** The witness stands at a picked floor point, with a stated eye height (1.6 m until stated, recorded as an assumption). They look toward either a picked point, or a mover, which the view tracks at 1 m above its path (about a car's body or a person's chest).
+
+**Presentation cameras.** These are nobody's point of view, and the report says so. Their field of view isn't held to the human default.
+- An orbit circles a picked centre at a radius and height, once per stated period.
+- A follow camera rides with a mover, at an offset in its frame (8 m behind and 3 m up by default), looking a stated distance ahead of it.
+
+**One source of cameras.** Every view's camera is computed with the motion, at the same times, by `animation::camera` (tested). Playback's "look through" and renders use those cameras.
 
 **Field of view.**
 - Both default to a 60° horizontal field of view. That is about what a person attends to looking ahead, not the full extent of human vision, about 200°.

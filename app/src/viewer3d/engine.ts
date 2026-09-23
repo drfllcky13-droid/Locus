@@ -412,17 +412,21 @@ export class Engine {
 
   /** Animated objects' matrices (column-major, relative to `origin`), over their stored ones. */
   private poses = new Map<string, number[]>();
+  /** Built objects not drawn (a driver's own vehicle, seen from inside). */
+  private hidden = new Set<string>();
 
   /** Pose built objects by id for playback; an object left out returns to its stored matrix
    * at the next rebuild. */
-  setPoses(poses: Map<string, number[]>) {
+  setPoses(poses: Map<string, number[]>, hidden: Set<string> = new Set()) {
     this.poses = poses;
+    this.hidden = hidden;
     this.applyPoses();
     this.requestRender();
   }
 
   private applyPoses() {
     for (const c of this.built?.children ?? []) {
+      c.visible = !this.hidden.has(c.userData.sceneObject);
       const m = this.poses.get(c.userData.sceneObject);
       if (m && c.userData.sceneObject !== this.moving) {
         c.matrixAutoUpdate = false;

@@ -328,7 +328,14 @@ Item 2 built (`app/src/animation/`), stored in the scene document so every edit 
 
 Found and fixed in the app: an EDR table interpolated from distances alone rippled the acceleration to 1.8× the record's (0.72 against 0.40 m/s²), which would raise false friction flags; the record's speeds now set the slopes, giving its exact per-interval deceleration. The heading-jump check flagged a tight smooth curve at every step; it now needs a step well above its neighbours (a real corner). Checked in the app: an EDR-driven car at −1.00 s is at 6.20 m, 1.20 m/s, and its model 1.35 m ahead of the axle as its wheelbase puts it.
 
-Next: camera rigs and the driver and witness views (item 3).
+Item 3, first part (2026-09-23):
+- Views: driver (eye in the vehicle's frame; a typical seat by default, recorded as an assumption), witness (at a picked point, looking at a point or tracking a mover), orbit and follow.
+- Every view's camera is computed with the motion (`animation::camera`, tested), and played back with "look through".
+- Human views default to 60° and warn when wider. Presentation cameras are labelled as nobody's point of view.
+- The driver's own vehicle isn't drawn from the seat, and the report carries that as a limitation.
+- Checked in the app: the driver's eye at −1.00 s is 1.215 m ahead of the axle (45 % of the 2.7 m wheelbase), 0.35 m left and 1.2 m up, at 60°.
+
+Next: fly-through, mirror and 360° (after render, unless Chat reorders), then the time–distance–speed report (item 4).
 
 ## Blocked
 
