@@ -20,6 +20,7 @@ try {
       analysis_state: await inv("analysis_state"),
       diagrams: await inv("diagrams"),
       scenes: await inv("scenes"),
+      analyses: await inv("analyses"),
     };
   })()`);
   if (!ipc.project_open) throw new Error("project_open could not be recorded");
