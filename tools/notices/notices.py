@@ -18,7 +18,9 @@ OUT = os.path.join(REPO, 'THIRD_PARTY_NOTICES.txt')
 
 # CLAUDE.md rule 7: allowed only for data files bundled unmodified, never for code.
 # Any LPPL version and any W3C licence variant counts.
-DATA_ONLY = ('CC-BY-4.0', 'CC-BY-SA-3.0')
+# CLAUDE.md rule 7's data-file exception (never for code).
+DATA_ONLY = ('CC-BY-4.0', 'CC-BY-SA-3.0', 'FSFAP', 'LicenseRef-hyph-bg', 'LicenseRef-hyph-sa',
+             'LicenseRef-Sublime-Packages')
 DATA_ONLY_PREFIXES = ('LPPL', 'W3C')
 
 # ---------------------------------------------------------------- dependency graph
@@ -406,6 +408,20 @@ def check(data, meta, strict):
                 continue
             why = (f" (ignored only while feature '{live[0]['unless_feature']}' is off, and it is on)" if live else '')
             errors.append(f"{p['name']} {p['version']} embeds {f}, which no data.json entry covers{why}")
+
+    # Data excluded by decision must not come back (a hypher update without the patch, or a
+    # feature switched on).
+    for fb in data.get('forbidden', []):
+        for p, feats in graph:
+            if p['name'] != fb['crate']:
+                continue
+            d = os.path.dirname(p['manifest_path'])
+            for f in fb['files']:
+                if os.path.exists(os.path.join(d, f)) or f in scan(p):
+                    errors.append(f"{p['name']} {p['version']} contains forbidden {f}: {fb['reason']}")
+            for feat in fb['features']:
+                if feat in feats:
+                    errors.append(f"{p['name']} {p['version']} has forbidden feature '{feat}' on: {fb['reason']}")
 
     want = generate(data)
     have = open(OUT, encoding='utf-8').read() if os.path.exists(OUT) else ''

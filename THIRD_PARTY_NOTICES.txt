@@ -940,27 +940,6 @@ Verification:
   licences "include the LPPL, MPL, MIT, BSD-3").
 
 ==============================================================================
-[hypher-mpl-1-1-or-gpl-2-0-only-or-lgpl-2-1-only] Hyphenation patterns (MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-only)
-==============================================================================
-Crate:   hypher 0.1.8
-Licence: MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-only
-What:
-  Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
-  binary tries and embedded with include_bytes!. The embedded form is a
-  compiled trie, not the original .tex file.
-Files:
-  tries/hu.bin
-Attribution:
-  Hyphenation patterns from the hyph-utf8 project
-  (https://www.hyphenation.org/tex) unless noted.
-  tries/hu.bin <- patterns/hyph-hu.tex: Copyright (C) 2003 Bence Nagy.
-Verification:
-  Licence and copyright read from the pattern headers at
-  https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/
-  directory is not in the published crate; the crate README says pattern
-  licences "include the LPPL, MPL, MIT, BSD-3").
-
-==============================================================================
 [hypher-lppl-1-2] Hyphenation patterns (LPPL-1.2+)
 ==============================================================================
 Crate:   hypher 0.1.8
@@ -1073,27 +1052,6 @@ Attribution:
   tries/sa.bin <- patterns/hyph-sa.tex: Copyright (C) 2006-2011 Yves Codet.
   Licence text in the file: "You may freely use, copy, modify and/or
   distribute this file."
-Verification:
-  Licence and copyright read from the pattern headers at
-  https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/
-  directory is not in the published crate; the crate README says pattern
-  licences "include the LPPL, MPL, MIT, BSD-3").
-
-==============================================================================
-[hypher-gpl-2-0-or-later] Hyphenation patterns (GPL-2.0-or-later)
-==============================================================================
-Crate:   hypher 0.1.8
-Licence: GPL-2.0-or-later
-What:
-  Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
-  binary tries and embedded with include_bytes!. The embedded form is a
-  compiled trie, not the original .tex file.
-Files:
-  tries/sk.bin
-Attribution:
-  Hyphenation patterns from the hyph-utf8 project
-  (https://www.hyphenation.org/tex) unless noted.
-  tries/sk.bin <- patterns/hyph-sk.tex: Copyright (C) 1992 Jana Chlebíková.
 Verification:
   Licence and copyright read from the pattern headers at
   https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/
@@ -5138,13 +5096,6 @@ Canonical text: https://www.gnu.org/prep/maintain/html_node/License-Notices-for-
 FSF all-permissive licence; the exact notice from each file is quoted in the hypher entry's Attribution.
 
 ------------------------------------------------------------------------------
-GPL-2.0-or-later
-------------------------------------------------------------------------------
-Canonical text: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
-
-Full text not shipped in hypher; see the canonical URL.
-
-------------------------------------------------------------------------------
 LPPL
 ------------------------------------------------------------------------------
 Canonical text: https://www.latex-project.org/lppl/
@@ -5221,13 +5172,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-------------------------------------------------------------------------------
-MPL-1.1
-------------------------------------------------------------------------------
-Canonical text: https://www.mozilla.org/en-US/MPL/1.1/
-
-Full text not shipped in hypher; see the canonical URL.
 
 ------------------------------------------------------------------------------
 Unicode-3.0

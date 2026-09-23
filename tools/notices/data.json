@@ -1,5 +1,5 @@
 {
-  "_readme": "Hand-maintained manifest of third-party data compiled into the Locus binary. See tools/notices/notices.py. groups: one per licence/source unit; files are globs relative to the crate root ($OUT_DIR/ = build-script output; local = path in this repo). kind: data | code (the crate's own non-Rust source). verified: true, or a note saying what could not be verified. needs_owner_decision: licence outside CLAUDE.md rule 7, reported by check as a warning (fails with --strict). ignored: files the scan finds that are not compiled in (tests, or behind a feature that is off; unless_feature makes check fail if that feature is turned on). licences: where each licence text comes from.",
+  "_readme": "Hand-maintained manifest of third-party data compiled into the Locus binary. See tools/notices/notices.py. groups: one per licence/source unit; files are globs relative to the crate root ($OUT_DIR/ = build-script output; local = path in this repo). kind: data | code (the crate's own non-Rust source). verified: true, or a note saying what could not be verified. needs_owner_decision: licence outside CLAUDE.md rule 7, reported by check as a warning (fails with --strict). ignored: files the scan finds that are not compiled in (tests, or behind a feature that is off; unless_feature makes check fail if that feature is turned on). licences: where each licence text comes from. forbidden: data that must never be in the build (files present in the crate's source, embedded by the scan, or behind an enabled feature); check fails if any appears.",
   "groups": [
     {
       "id": "go-fonts",
@@ -265,8 +265,7 @@
       "what": "Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into binary tries and embedded with include_bytes!. The embedded form is a compiled trie, not the original .tex file.",
       "licence": "LicenseRef-hyph-bg",
       "attribution": "Hyphenation patterns from the hyph-utf8 project (https://www.hyphenation.org/tex) unless noted.\ntries/bg.bin <- patterns/hyph-bg.tex: Copyright (C) 2000, 2004, 2017 Anton Zinoviev. Licence text in the file (hyph-utf8 notes it \"seems equivalent to 3-clause BSD\"): \"This software may be used, modified, copied, distributed, and sold, both in source and binary form provided that the above copyright notice and these terms are retained. The name of the author may not be used to endorse or promote products derived from this software without prior permission. THIS SOFTWARE IS PROVIDES \\\"AS IS\\\" AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE.\"",
-      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\").",
-      "needs_owner_decision": "custom BSD-like licence, not an SPDX id on the allowlist"
+      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\")."
     },
     {
       "id": "hypher-lppl-1-0",
@@ -331,8 +330,7 @@
       "what": "Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into binary tries and embedded with include_bytes!. The embedded form is a compiled trie, not the original .tex file.",
       "licence": "FSFAP",
       "attribution": "Hyphenation patterns from the hyph-utf8 project (https://www.hyphenation.org/tex) unless noted.\ntries/en.bin <- patterns/hyph-en-us.tex: Copyright (C) 1990, 2004, 2005 Gerard D.C. Kuiken. Licence text in the file: \"Copying and distribution of this file, with or without modification, are permitted in any medium without royalty provided the copyright notice and this notice are preserved.\"\ntries/no.bin <- patterns/hyph-no.tex: Copyright (C) 2004, 2005 Rune Kleveland, Ole Michael Selberg. Licence text in the file: \"Copying and distribution of this file, with or without modification, is permitted in any medium without royalty provided the copyright notice and this notice are preserved.\"",
-      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\").",
-      "needs_owner_decision": "FSF all-permissive notice, not on the allowlist"
+      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\")."
     },
     {
       "id": "hypher-unlicense",
@@ -347,21 +345,6 @@
       "licence": "Unlicense",
       "attribution": "Hyphenation patterns from the hyph-utf8 project (https://www.hyphenation.org/tex) unless noted.\ntries/gl.bin <- patterns/hyph-gl.tex: Copyright (C) 2006, 2007, 2008, 2010 Javier A. Múgica.",
       "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\")."
-    },
-    {
-      "id": "hypher-mpl-1-1-or-gpl-2-0-only-or-lgpl-2-1-only",
-      "title": "Hyphenation patterns (MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-only)",
-      "kind": "data",
-      "crate": "hypher",
-      "version": "0.1.8",
-      "files": [
-        "tries/hu.bin"
-      ],
-      "what": "Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into binary tries and embedded with include_bytes!. The embedded form is a compiled trie, not the original .tex file.",
-      "licence": "MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-only",
-      "attribution": "Hyphenation patterns from the hyph-utf8 project (https://www.hyphenation.org/tex) unless noted.\ntries/hu.bin <- patterns/hyph-hu.tex: Copyright (C) 2003 Bence Nagy.",
-      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\").",
-      "needs_owner_decision": "best option is MPL-1.1, but only MPL-2.0 is allowed"
     },
     {
       "id": "hypher-lppl-1-2",
@@ -434,23 +417,7 @@
       "what": "Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into binary tries and embedded with include_bytes!. The embedded form is a compiled trie, not the original .tex file.",
       "licence": "LicenseRef-hyph-sa",
       "attribution": "Hyphenation patterns from the hyph-utf8 project (https://www.hyphenation.org/tex) unless noted.\ntries/sa.bin <- patterns/hyph-sa.tex: Copyright (C) 2006-2011 Yves Codet. Licence text in the file: \"You may freely use, copy, modify and/or distribute this file.\"",
-      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\").",
-      "needs_owner_decision": "one-line custom permissive grant, not on the allowlist"
-    },
-    {
-      "id": "hypher-gpl-2-0-or-later",
-      "title": "Hyphenation patterns (GPL-2.0-or-later)",
-      "kind": "data",
-      "crate": "hypher",
-      "version": "0.1.8",
-      "files": [
-        "tries/sk.bin"
-      ],
-      "what": "Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into binary tries and embedded with include_bytes!. The embedded form is a compiled trie, not the original .tex file.",
-      "licence": "GPL-2.0-or-later",
-      "attribution": "Hyphenation patterns from the hyph-utf8 project (https://www.hyphenation.org/tex) unless noted.\ntries/sk.bin <- patterns/hyph-sk.tex: Copyright (C) 1992 Jana Chlebíková.",
-      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\").",
-      "needs_owner_decision": "GPL-2.0-or-later only; the rule says ask before adding GPL"
+      "verified": "Licence and copyright read from the pattern headers at https://github.com/typst/hypher/tree/v0.1.8/patterns (the patterns/ directory is not in the published crate; the crate README says pattern licences \"include the LPPL, MPL, MIT, BSD-3\")."
     },
     {
       "id": "two-face-syntaxes",
@@ -469,8 +436,7 @@
       "what": "199 Sublime Text syntax definitions and 29 colour themes curated by the bat project, compiled to syntect dumps; used by Typst for raw-block highlighting. Also the acknowledgement listing itself.",
       "licence": "MIT AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND LicenseRef-Sublime-Packages",
       "attribution": "Most of the code for generating the dumps and the curation of syntaxes and themes is from the bat project (https://github.com/sharkdp/bat). Syntaxes from Sublime HQ's default packages (https://github.com/sublimehq/Packages) fall under that repository's licence unless a file says otherwise: \"Permission to copy, use, modify, sell and distribute this software is granted. This software is provided \\\"as is\\\" without express or implied warranty, and with no claim as to its suitability for any purpose.\" Per-package notices follow.",
-      "verified": "Per-package licences decoded from generated/acknowledgements_full.bin (59 syntax packages: 48 MIT, 8 Apache-2.0, 1 BSD-2-Clause, 1 BSD-2-Clause FreeBSD variant, 1 BSD-3-Clause; 11 themes: 10 MIT, 1 BSD-2-Clause). two-face only records licences that require acknowledgement; syntaxes/themes under the Sublime packages licence, Unlicense or WTFPL are embedded but not itemised, so which of those (if any WTFPL) are present is unverified. Sublime licence text from https://github.com/CosmicHorrorDev/two-face/blob/v0.4.5/xtask/resources/sublime_packages_license.",
-      "needs_owner_decision": "the Sublime HQ packages licence (and possibly WTFPL for unitemised grammars) is not on the allowlist or the data exception list"
+      "verified": "Per-package licences decoded from generated/acknowledgements_full.bin (59 syntax packages: 48 MIT, 8 Apache-2.0, 1 BSD-2-Clause, 1 BSD-2-Clause FreeBSD variant, 1 BSD-3-Clause; 11 themes: 10 MIT, 1 BSD-2-Clause). two-face only records licences that require acknowledgement; syntaxes/themes under the Sublime packages licence, Unlicense or WTFPL are embedded but not itemised, so which of those (if any WTFPL) are present is unverified. Sublime licence text from https://github.com/CosmicHorrorDev/two-face/blob/v0.4.5/xtask/resources/sublime_packages_license."
     },
     {
       "id": "icu4x-data",
@@ -965,5 +931,19 @@
       "url": "https://github.com/CosmicHorrorDev/two-face/blob/v0.4.5/xtask/resources/sublime_packages_license",
       "note": "Permission to copy, use, modify, sell and distribute this software is granted. This software is provided \"as is\" without express or implied warranty, and with no claim as to its suitability for any purpose.\n(Applies to files in https://github.com/sublimehq/Packages unless a file or an accompanying *-license file says otherwise.)"
     }
-  }
+  },
+  "forbidden": [
+    {
+      "crate": "hypher",
+      "files": [
+        "tries/sk.bin",
+        "tries/hu.bin"
+      ],
+      "features": [
+        "slovak",
+        "hungarian"
+      ],
+      "reason": "Slovak (GPL-2.0-or-later) and Hungarian (MPL-1.1/GPL/LGPL) hyphenation patterns are excluded by decision; hypher is patched in patches/hypher (see docs/DECISIONS.md)."
+    }
+  ]
 }

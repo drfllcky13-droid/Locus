@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "src-tauri"]
+# Patched third-party crates (see [patch.crates-io] below); not ours to lint or test.
+exclude = ["patches"]
 
 [workspace.package]
 version = "0.1.0"
@@ -18,3 +20,8 @@ opt-level = 2
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# hypher with the Slovak (GPL-2.0-or-later) and Hungarian (MPL-1.1/GPL/LGPL) hyphenation
+# patterns removed; see patches/hypher/PATCH.md and docs/DECISIONS.md.
+[patch.crates-io]
+hypher = { path = "patches/hypher" }
