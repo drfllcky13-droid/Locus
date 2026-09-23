@@ -5,13 +5,13 @@ hyphenation. Copied unchanged except:
 
 1. `tries/sk.bin` (Slovak patterns, GPL-2.0-or-later) and `tries/hu.bin` (Hungarian
    patterns, MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-only) are deleted.
-2. In `Cargo.toml`, `"hungarian"` and `"slovak"` are removed from the `full` feature, and
-   the `hungarian` and `slovak` features themselves are removed, so nothing can turn them
-   back on (asking for them is a build error).
+2. In `Cargo.toml`, `"hungarian"` and `"slovak"` are removed from the `full` feature (the
+   features themselves stay defined, so hypher's `#[cfg]`s still name real features).
 3. In `src/lang.rs`, the two `include_bytes!` match arms for `hu.bin` and `sk.bin` (with
-   their `#[cfg]` lines) are removed, so no code refers to the deleted files.
+   their `#[cfg]` lines) are removed. Turning either feature on is therefore a build error
+   (the match is no longer exhaustive), and CI's notices check rejects them too.
 
-The whole change, against the published crate: 8 deleted lines and 2 deleted files.
+The whole change, against the published crate: 6 deleted lines and 2 deleted files.
 
 Effect: Typst cannot hyphenate Slovak or Hungarian text. Locus reports are English.
 

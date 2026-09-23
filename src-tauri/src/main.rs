@@ -4,6 +4,7 @@
 #![cfg_attr(feature = "spike", allow(dead_code))]
 
 mod commands;
+mod diagram_cmds;
 mod register_cmds;
 mod scene_cmds;
 #[cfg(feature = "spike")]
@@ -55,6 +56,11 @@ fn main() {
             register_cmds::registrations,
             register_cmds::registration_apply,
             register_cmds::registration_report,
+            diagram_cmds::diagrams,
+            diagram_cmds::diagram_create,
+            diagram_cmds::diagram_save,
+            diagram_cmds::diagram_history,
+            diagram_cmds::hand_solve,
         ])
         .register_asynchronous_uri_scheme_protocol("locus", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
