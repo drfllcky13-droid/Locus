@@ -61,7 +61,7 @@ Open issues:
 - LAS files that name only an EPSG code make the examiner choose the unit; resolving it needs an EPSG table.
 - The `e57` simple-reader bug should be reported upstream.
 
-### Phase 2: Point cloud engine
+### Phase 2: Point cloud engine (approved 2026-09-22; CI green on c85b65d, with the viewer smoke test)
 
 Plan (step 1 gates the rest; results go to Addison before any feature work):
 
