@@ -11,3 +11,4 @@ pub mod ply;
 pub mod record;
 pub mod scale;
 pub mod video;
+pub mod video_dev;

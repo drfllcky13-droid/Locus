@@ -256,6 +256,9 @@ pub struct RunRequest {
     max_image_size: u32,
     #[serde(default)]
     dense_max_image_size: Option<u32>,
+    /// The camera's horizontal field of view (°), when the images carry no focal length.
+    #[serde(default)]
+    fov_deg: Option<f64>,
 }
 
 struct Job {
@@ -418,6 +421,7 @@ fn run_job(app: &AppHandle, req: RunRequest) -> CmdResult<Job> {
         );
     };
     let mut gps = BTreeMap::new();
+    let mut frame_size = None;
     let (source, matcher) = match &req.source {
         SourceRequest::Photos { evidence_ids } => {
             if evidence_ids.len() < 3 {
@@ -461,6 +465,7 @@ fn run_job(app: &AppHandle, req: RunRequest) -> CmdResult<Job> {
                 &cancel,
                 &mut |t, d| emit("frames", (t * 10.0) as u32, (d * 10.0) as u32, ""),
             )?;
+            frame_size = Some((s.width, s.height));
             (
                 Source::Video {
                     evidence_id: e.id,
@@ -486,6 +491,27 @@ fn run_job(app: &AppHandle, req: RunRequest) -> CmdResult<Job> {
             )
         }
     };
+    // The images' size, for a starting focal length from the field of view.
+    let first_size = match &req.source {
+        SourceRequest::Photos { evidence_ids } => evidence
+            .iter()
+            .find(|e| e.id == evidence_ids[0])
+            .and_then(|e| e.contents.images.first())
+            .map(|i| (i.width, i.height)),
+        SourceRequest::Video { .. } => frame_size,
+    };
+    let camera_params = match (req.fov_deg, first_size) {
+        (Some(fov), Some((w, h))) => {
+            Some(colmap::initial_params(&req.camera_model, w, h, fov).map_err(|e| capital(&e))?)
+        }
+        _ => None,
+    };
+    if camera_params.is_none()
+        && req.camera_model.contains("FISHEYE")
+        && matches!(req.source, SourceRequest::Video { .. })
+    {
+        return Err("A fisheye video needs the camera's field of view: its frames carry no focal length, and COLMAP can't find a fisheye focal length from matches alone.".into());
+    }
     let images_total = match &source {
         Source::Photos { items } => items.len(),
         Source::Video { frames, .. } => frames.len(),
@@ -499,6 +525,8 @@ fn run_job(app: &AppHandle, req: RunRequest) -> CmdResult<Job> {
         dense: req.dense,
         max_image_size: req.max_image_size,
         dense_max_image_size: req.dense_max_image_size.unwrap_or(2000),
+        camera_params,
+        fov_deg: req.fov_deg,
     };
     let mut last = (String::new(), (0u32, 0u32));
     let recon = colmap::reconstruct(
@@ -613,6 +641,9 @@ pub struct GcpRequest {
     pick: Option<Pick>,
     #[serde(default)]
     check: bool,
+    /// The coordinates' 1σ (m); for a point picked on a scan, the project's point uncertainty.
+    #[serde(default)]
+    sigma: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -629,12 +660,19 @@ fn scale_request(app: &AppHandle, s: ScaleIn) -> CmdResult<ScaleRequest> {
         ScaleIn::Distances { items } => ScaleRequest::Distances { items },
         ScaleIn::Gcps { items } => {
             let state = app.state::<AppState>();
+            let point_sigma = state
+                .project
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|p| p.point_sigma().ok())
+                .unwrap_or(0.002);
             let scene = state.scene.read().unwrap();
             let mut out = vec![];
             for it in items {
-                let world = match (it.world, &it.pick) {
-                    (_, Some(p)) => resolve(&scene, p)?.project,
-                    (Some(w), None) => w,
+                let (world, sigma) = match (it.world, &it.pick) {
+                    (_, Some(p)) => (resolve(&scene, p)?.project, it.sigma.unwrap_or(point_sigma)),
+                    (Some(w), None) => (w, it.sigma.unwrap_or(0.005)),
                     (None, None) => {
                         return Err(format!(
                             "{}: give its coordinates or pick it on a scan.",
@@ -647,6 +685,7 @@ fn scale_request(app: &AppHandle, s: ScaleIn) -> CmdResult<ScaleRequest> {
                     clicks: it.clicks,
                     world,
                     check: it.check,
+                    sigma,
                 });
             }
             ScaleRequest::Gcps { items: out }

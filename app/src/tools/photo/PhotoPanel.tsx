@@ -32,6 +32,7 @@ interface Distance {
   b: Target;
   length: string;
   sigma: string;
+  check: boolean;
 }
 interface Gcp {
   target: Target;
@@ -40,6 +41,7 @@ interface Gcp {
   z: string;
   pick: PickHit | null;
   check: boolean;
+  sigma: string;
 }
 
 const LICENCES = [
@@ -72,6 +74,7 @@ export function PhotoPanel({
   const [dense, setDense] = useState(true);
   const [size, setSize] = useState("4800");
   const [denseSize, setDenseSize] = useState("2000");
+  const [fov, setFov] = useState("");
   const [running, setRunning] = useState<{
     stage: string;
     done: number;
@@ -178,6 +181,7 @@ export function PhotoPanel({
         dense,
         max_image_size: Number(size) || 0,
         dense_max_image_size: Number(denseSize) || 0,
+        fov_deg: fov.trim() === "" ? null : Number(fov),
       });
     } catch (e) {
       setRunning(null);
@@ -222,6 +226,7 @@ export function PhotoPanel({
               b: d.b.clicks,
               length: Number(d.length),
               sigma: Number(d.sigma),
+              check: d.check,
             })),
           }
         : null;
@@ -234,6 +239,7 @@ export function PhotoPanel({
             world: g.pick ? null : [Number(g.x), Number(g.y), Number(g.z)],
             pick: g.pick,
             check: g.check,
+            sigma: g.pick || g.sigma.trim() === "" ? null : Number(g.sigma),
           })),
         }
       : null;
@@ -411,6 +417,19 @@ export function PhotoPanel({
             </>
           )}
           <label>
+            Horizontal field of view (°)
+            {kind === "video"
+              ? " (needed for fisheye video)"
+              : " (only if the photos have no EXIF focal length)"}
+            <input
+              className="narrow"
+              inputMode="decimal"
+              value={fov}
+              placeholder="optional"
+              onChange={(e) => setFov(e.target.value)}
+            />
+          </label>
+          <label>
             Camera model
             <select value={model} onChange={(e) => setModel(e.target.value)}>
               <option value="SIMPLE_RADIAL">SIMPLE_RADIAL (phone, little distortion)</option>
@@ -543,6 +562,18 @@ export function PhotoPanel({
                       <span className="muted"> m (1σ)</span>
                     </span>
                   </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={d.check}
+                      onChange={(e) =>
+                        setDistances((ds) =>
+                          ds.map((x, j) => (j === i ? { ...x, check: e.target.checked } : x)),
+                        )
+                      }
+                    />
+                    Check only (held out of the scaling)
+                  </label>
                 </fieldset>
               ))}
               <div className="buttons">
@@ -556,6 +587,7 @@ export function PhotoPanel({
                         b: { label: "second end", clicks: [] },
                         length: "",
                         sigma: "0.002",
+                        check: false,
                       },
                     ])
                   }
@@ -596,7 +628,14 @@ export function PhotoPanel({
                           value={g.z}
                           onChange={(e) => set({ z: e.target.value })}
                         />
-                        <span className="muted"> m</span>
+                        <span className="muted"> m ±</span>
+                        <input
+                          className="narrow"
+                          placeholder="σ"
+                          value={g.sigma}
+                          onChange={(e) => set({ sigma: e.target.value })}
+                        />
+                        <span className="muted"> m (1σ)</span>
                       </span>
                     )}
                     <div className="buttons">
@@ -634,6 +673,7 @@ export function PhotoPanel({
                         z: "",
                         pick: null,
                         check: false,
+                        sigma: "0.005",
                       },
                     ])
                   }
@@ -712,13 +752,21 @@ export function PhotoPanel({
                 {(checked.rms * 1000).toFixed(1)} mm
               </div>
               {checked.rows.map((r) => (
-                <div key={r.label} className="muted">
+                <div key={r.label} className={r.exceeds ? "error" : "muted"}>
                   {r.label}
-                  {r.check ? " (check)" : ""}: {r.target}; residual {(r.residual * 1000).toFixed(1)}{" "}
-                  mm
+                  {r.check ? " (check)" : ""}: known {r.target}
+                  {r.measured ? `, measured ${r.measured}` : ""}; residual{" "}
+                  {(r.residual * 1000).toFixed(1)} mm
+                  {r.check ? ` (95 % limit ${(r.limit * 1000).toFixed(1)} mm)` : ""}
                   {r.angle_deg > 0 ? `, rays ${r.angle_deg.toFixed(0)}° apart` : ""}
                 </div>
               ))}
+              <div className="muted">
+                Measurements on this cloud will take 1σ = max(
+                {(checked.uncertainty.percent * 100).toFixed(2)} % of the length,{" "}
+                {(checked.uncertainty.floor * 1000).toFixed(1)} mm), from{" "}
+                {checked.uncertainty.from_checks ? "the checks" : "the benchmark"}.
+              </div>
               {checked.warnings.map((w) => (
                 <p key={w} className="error">
                   {w}

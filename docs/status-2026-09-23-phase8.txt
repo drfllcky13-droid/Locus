@@ -1,0 +1,91 @@
+LOCUS STATUS, 2026-09-23 (latest commit 6c7634b)
+
+Everything below is built, tested and pushed.
+
+
+PHASE 7 ADDITIONS (as requested)
+
+1. Crush volume range
+   The method note and the report now say the range is deliberately conservative, with the 40/40 coverage figure.
+
+2. Mirrored opposite side as the crush-volume reference
+   - The centre plane is fitted from at least 3 picked symmetric pairs (left, then right).
+   - The vehicle's undamaged points are reflected across it and aligned by ICP.
+   - Asymmetry is measured where both sides are undamaged: the offset averaged per 5 cm patch, RMS over the patches, less the scan noise. It enters the Monte Carlo as one systematic offset of the whole reference surface.
+   - The report always warns about real-world asymmetry and lists it as a limitation. It also warns when the symmetry σ exceeds 5 mm, or when the pairs disagree on the plane by more than 20 mm or 5°.
+   - Synthetic tests with 0–2 mm real asymmetry: the range covered the true volume in 39 of 40 runs. Volumes read about 5 % high on average, because a side standing proud reads as crush.
+   - In the app: 8.16 L against a true 7.85 L; range 7.60–8.98 L.
+
+3. EDR
+   - The report and method note now carry the limitations:
+     - ±1 km/h is the recording accuracy of the indicated speed signal (49 CFR 563), not of the true ground speed;
+     - wheel slip under braking, ABS cycling, wheelspin and non-original tyres can make them differ;
+     - sample timing is uncertain.
+   - ±1 km/h is the minimum tolerance. Widening it requires a reason, which is stored and printed.
+
+Textbook cases for skid, yaw and momentum: still Blocked.
+
+
+PHASE 8: PHOTOGRAMMETRY (option A: the agency installs COLMAP)
+
+Setup panel
+- Detects COLMAP (on PATH or in the usual folders), checks the version (3.9 or later), and shows the official releases page.
+- A CPU-only setting runs COLMAP's own SIFT (VLFeat, BSD) and avoids SiftGPU (non-commercial terms).
+- A help section summarises COLMAP's component licences so the agency can decide for itself. The full review is in docs/phase8-colmap-licence-review.txt.
+- Every photogrammetry record stores COLMAP's path, version banner and executable SHA-256.
+- Nothing from COLMAP ships with Locus, so nothing goes into THIRD_PARTY_NOTICES. The decision is logged.
+- OpenMVG (MPL-2.0) is logged in DECISIONS as a possible future bundled sparse pipeline.
+
+Workflow
+- Input: photos already in the project as evidence, or a video in the project as evidence.
+  - MP4, MOV, M4V and AVI are now importable evidence.
+  - Frames are sampled at a chosen interval with Windows Media Foundation (part of the OS: no ffmpeg).
+- COLMAP runs as a separate process: features, matching, mapping, then dense when CUDA is available. It shows progress and can be cancelled. The largest model is kept; smaller disconnected ones are reported.
+- Without CUDA it runs sparse only, with a clear message.
+- Scaling, by one of:
+  - Known distances: each end clicked in 2 or more photos and triangulated. Scale only, levelled by the photos' mean up direction.
+  - Control points: clicked in the photos; coordinates typed or picked on a scan already in the project. A similarity fit, with check points held out.
+  - The photos' GPS/RTK from EXIF/XMP: a similarity to local east-north-up. Warned unless every photo has an RTK fixed position.
+- Output:
+  - The scaled cloud is written as E57 (double-precision metres) and imported as evidence with its own hash.
+  - The run is stored as an audit-logged analysis with full provenance: the input hashes (for video, the frame times), COLMAP's version and hash, every stage's command line, the reconstruction statistics, and every scaling target with its residual.
+  - A PDF report prints all of it.
+- Video on macOS and Linux: refused with a message. Logged under Blocked.
+
+Accuracy (acceptance)
+- Benchmark: ETH3D "pipes", with ground-truth poses registered to a laser scan. The data is CC BY-NC-SA 4.0, kept outside the repo, and its licence is noted in the test README.
+- Method:
+  1. Each reconstructed point is re-triangulated with the ground-truth cameras, which gives its true position.
+  2. The model is scaled by 3–4 known distances of 2–3 m.
+  3. Every other distance of at least 0.5 m is compared with the truth.
+- Heavy test (COLMAP 4.2, CPU features):
+  - 94,384 distances: median 0.16 %, 99th percentile 0.58 %, worst 1.01 %.
+  - Bound adopted: 99 % of distances within 1 %. The single worst distance is just over 1 %.
+- In the app, run through the panel:
+  - 416 check distances: median 0.21 %, worst 0.45 %.
+  - 294,005 dense points imported as evidence; report printed.
+- Camera positions themselves are only good to about 20 mm. Measure between scene points, not camera positions.
+
+Defaults that differ from COLMAP's
+- Features at 4800 px instead of COLMAP's 3200: at 3200 the 99th percentile was 1.02 %. At the full 6048 px, COLMAP's CPU SIFT crashed.
+- The dense cloud has its own size, 2000 px: PatchMatch at 4800 px took 26 minutes for 14 photos, against about 8 at 2000 px.
+
+Bugs found in the in-app run and fixed
+- COLMAP's dense cloud file has a Windows-style (CRLF) header, which the reader rejected.
+- PatchMatch progress wasn't shown.
+
+Not yet run in the app
+- A video source, and control points picked on a scan. Both are covered by unit tests only.
+- The viewer smoke test wasn't run locally, because it needs a Playwright browser download. CI installs it.
+
+
+STILL BLOCKED
+- Textbook worked examples for skid, yaw and momentum.
+- The 1:100 print ruler check.
+- The mid-range GPU run.
+- The bundle identifier.
+- Video import on macOS and Linux.
+
+
+NEXT
+Phase 9: animation and cameras.

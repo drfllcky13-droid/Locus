@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+locus-photo = { version = "0.1.0", path = "../locus-photo" }
 locus-synth = { version = "0.1.0", path = "../locus-synth" }
 locus-core = { version = "0.1.0", path = "../locus-core" }
 locus-io = { version = "0.1.0", path = "../locus-io" }

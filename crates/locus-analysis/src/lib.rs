@@ -10,6 +10,7 @@ pub mod defect;
 pub mod edr;
 pub mod handmeasure;
 pub mod measure;
+pub mod motion;
 pub mod stiffness;
 pub mod sun;
 pub mod surface;

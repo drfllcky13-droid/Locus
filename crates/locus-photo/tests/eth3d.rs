@@ -148,6 +148,22 @@ fn heavy_eth3d_pipes_distances_within_one_percent() {
             }
         }
     }
+    // For the measurement uncertainty model: the RMS relative error of those distances, and
+    // each point's error after the scaled model is placed on the truth (rotation and
+    // translation fitted, scale kept), per axis.
+    let rms_rel = (errs.iter().map(|e| e * e).sum::<f64>() / errs.len() as f64).sqrt();
+    let (mm, ww): (Vec<[f64; 3]>, Vec<[f64; 3]>) = sample
+        .iter()
+        .map(|(m, w)| (m.map(|v| v * s.scale), *w))
+        .unzip();
+    let place = scale::fit_gcps(&mm, &ww, &[]).unwrap();
+    let axis = place.rms / 3f64.sqrt();
+    println!(
+        "RMS relative distance error {rms_rel:.3} %; point error after placing (similarity fit scale {:.5}): RMS {:.2} mm, {:.2} mm per axis",
+        place.transform.scale,
+        place.rms * 1000.0,
+        axis * 1000.0
+    );
     errs.sort_by(f64::total_cmp);
     let q = |f: f64| errs[((errs.len() - 1) as f64 * f) as usize];
     let within = errs.iter().filter(|e| **e <= 1.0).count() as f64 / errs.len() as f64 * 100.0;

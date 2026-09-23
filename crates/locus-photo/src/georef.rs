@@ -71,6 +71,9 @@ pub struct DistanceItem {
     /// True length and its 1σ (m).
     pub length: f64,
     pub sigma: f64,
+    /// Held out of the scaling and reported as a check.
+    #[serde(default)]
+    pub check: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -82,6 +85,13 @@ pub struct GcpItem {
     /// Held out of the fit and reported as a check.
     #[serde(default)]
     pub check: bool,
+    /// The coordinates' 1σ per axis (m): a survey's stated accuracy, or a scan's.
+    #[serde(default = "gcp_sigma")]
+    pub sigma: f64,
+}
+
+fn gcp_sigma() -> f64 {
+    0.005
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -98,11 +108,80 @@ pub struct ScaleRow {
     /// Where it is in the model, where it should be (or its length), and the residual (m).
     pub model: P3,
     pub target: String,
+    /// What the scaled reconstruction measures there (a length, or coordinates).
+    #[serde(default)]
+    pub measured: String,
     pub residual: f64,
     #[serde(default)]
     pub check: bool,
     #[serde(default)]
     pub angle_deg: f64,
+    /// A check's 95 % limit (m), and whether its residual passes it.
+    #[serde(default)]
+    pub limit: f64,
+    #[serde(default)]
+    pub exceeds: bool,
+}
+
+/// Every measurement made on a photogrammetric point cloud takes the uncertainty
+/// max(percent × length, floor) (1σ): the percentage from the benchmark or the case's own checks
+/// (whichever is larger) with the scaling's own uncertainty, and an absolute floor so short
+/// distances don't get unrealistically tight bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MeasurementModel {
+    /// Relative 1σ (a fraction) and the floor (m, 1σ).
+    pub percent: f64,
+    pub floor: f64,
+    /// Whether the case's checks set either term (else the benchmark did).
+    pub from_checks: bool,
+}
+
+impl Default for MeasurementModel {
+    fn default() -> Self {
+        MeasurementModel {
+            percent: BENCH_PERCENT,
+            floor: BENCH_FLOOR,
+            from_checks: false,
+        }
+    }
+}
+
+impl MeasurementModel {
+    /// A length's 1σ (m).
+    pub fn sigma(&self, length: f64) -> f64 {
+        (self.percent * length.abs()).max(self.floor)
+    }
+    /// An angle's 1σ (rad) from the floor: each arm's far end displaced by it across the arm.
+    pub fn angle_sigma(&self, arm_a: f64, arm_b: f64) -> f64 {
+        self.floor * (arm_a.max(1e-9).powi(-2) + arm_b.max(1e-9).powi(-2)).sqrt()
+    }
+    /// An area's 1σ (m²): twice the percentage (area goes as length squared), or the floor
+    /// over half the perimeter, whichever is larger.
+    pub fn area_sigma(&self, area: f64, perimeter: f64) -> f64 {
+        (2.0 * self.percent * area.abs()).max(self.floor * perimeter / 2.0)
+    }
+}
+
+/// From ETH3D's pipes benchmark (docs/methods/photogrammetry.md): the RMS relative error of
+/// distances between scene points was 0.23–0.33 % over four runs, and a point's error 3.0–3.8 mm
+/// per axis; a distance's floor is √2 × 3.8 mm, rounded up.
+pub const BENCH_PERCENT: f64 = 0.0035;
+pub const BENCH_FLOOR: f64 = 0.006;
+
+/// A length's 1σ from the benchmark alone, with the scaling's relative uncertainty.
+fn benchmark_sigma(length: f64, scale_rel: f64) -> f64 {
+    (BENCH_PERCENT.hypot(scale_rel) * length).max(BENCH_FLOOR)
+}
+
+/// The model for a case: the benchmark's terms, raised by the checks' (relative RMS, absolute
+/// RMS) when they are larger, the percentage combined with the scaling's own uncertainty.
+fn model_from(scale_rel: f64, checks: Option<(f64, f64)>) -> MeasurementModel {
+    let (p, f) = checks.unwrap_or((0.0, 0.0));
+    MeasurementModel {
+        percent: BENCH_PERCENT.max(p).hypot(scale_rel),
+        floor: BENCH_FLOOR.max(f),
+        from_checks: p > BENCH_PERCENT || f > BENCH_FLOOR,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,6 +191,10 @@ pub struct ScaleRecord {
     pub transform: Similarity,
     pub scale_sigma_rel: f64,
     pub rows: Vec<ScaleRow>,
+    /// The uncertainty every measurement on the resulting cloud takes (runs stored before it
+    /// existed read as the benchmark's terms).
+    #[serde(default)]
+    pub uncertainty: MeasurementModel,
     /// RMS of the fit's residuals (m).
     pub rms: f64,
     /// The local east-north-up frame's origin (latitude °, longitude °, altitude m) when
@@ -213,14 +296,19 @@ pub fn solve(
                     label: w.0.name.clone(),
                     model: w.0.centre(),
                     target: format!("E {:.3}, N {:.3}, U {:.3} m", e[0], e[1], e[2]),
+                    measured: String::new(),
                     residual: *r,
                     check: false,
                     angle_deg: 0.0,
+                    limit: 0.0,
+                    exceeds: false,
                 })
                 .collect();
+            let scale_rel = fit_scale_sigma(&world, f.rms);
             Ok(ScaleRecord {
                 method: "gps".into(),
-                scale_sigma_rel: fit_scale_sigma(&world, f.rms),
+                uncertainty: model_from(scale_rel, None),
+                scale_sigma_rel: scale_rel,
                 transform: f.transform,
                 rows,
                 rms: f.rms,
@@ -230,8 +318,10 @@ pub fn solve(
             })
         }
         ScaleRequest::Distances { items } => {
-            if items.is_empty() {
-                return Err("give at least one known distance".into());
+            if !items.iter().any(|i| !i.check) {
+                return Err(
+                    "give at least one known distance to scale by (besides check distances)".into(),
+                );
             }
             let mut known = vec![];
             let mut ends = vec![];
@@ -248,7 +338,14 @@ pub fn solve(
                 });
                 ends.push((a, b));
             }
-            let s = scale_from_distances(&known)?;
+            let fit: Vec<KnownDistance> = items
+                .iter()
+                .zip(&known)
+                .filter(|(it, _)| !it.check)
+                .map(|(_, k)| *k)
+                .collect();
+            let s = scale_from_distances(&fit)?;
+            let scale_rel = s.sigma / s.scale;
             // Level by the photos' mean up, and centre on the sparse points.
             let r = rotation_between(photos_up(m), [0.0, 0.0, 1.0]);
             let c = centroid(m.points.iter().map(|p| p.xyz));
@@ -258,18 +355,38 @@ pub fn solve(
                 rotation: r,
                 translation: rc.map(|v| -s.scale * v),
             };
-            notes.push("Scaled by known distances; levelled by the photos' mean up direction (approximate: photos held tilted tilt it) and centred on the reconstruction. Its position and heading in the project are arbitrary: register it to a scan or place it by control points to relate it to other evidence.".into());
+            let nchecks = items.iter().filter(|i| i.check).count();
+            notes.push(format!(
+                "Scaled by {} known distance{}{}; levelled by the photos' mean up direction (approximate: photos held tilted tilt it) and centred on the reconstruction. Its position and heading in the project are arbitrary: register it to a scan or place it by control points to relate it to other evidence.",
+                fit.len(),
+                if fit.len() == 1 { "" } else { "s" },
+                if nchecks > 0 {
+                    format!(", with {nchecks} check distance{} held out", if nchecks == 1 { "" } else { "s" })
+                } else {
+                    String::new()
+                }
+            ));
             let rows: Vec<ScaleRow> = items
                 .iter()
                 .zip(&known)
                 .zip(&ends)
-                .map(|((it, k), (a, b))| ScaleRow {
-                    label: it.label.clone(),
-                    model: [0.0; 3],
-                    target: format!("{:.4} ± {:.4} m", it.length, it.sigma),
-                    residual: s.scale * dist(k.a, k.b) - it.length,
-                    check: false,
-                    angle_deg: a.angle_deg.min(b.angle_deg),
+                .map(|((it, k), (a, b))| {
+                    let measured = s.scale * dist(k.a, k.b);
+                    let residual = measured - it.length;
+                    // A check's 95 % limit: its stated tolerance and the measurement model's
+                    // (benchmark) uncertainty at that length.
+                    let limit = 2.0 * it.sigma.hypot(benchmark_sigma(it.length, scale_rel));
+                    ScaleRow {
+                        label: it.label.clone(),
+                        model: [0.0; 3],
+                        target: format!("{:.4} ± {:.4} m", it.length, it.sigma),
+                        measured: format!("{measured:.4} m"),
+                        residual,
+                        check: it.check,
+                        angle_deg: a.angle_deg.min(b.angle_deg),
+                        limit,
+                        exceeds: it.check && residual.abs() > limit,
+                    }
                 })
                 .collect();
             if s.deviations_pct.iter().any(|d| d.abs() > 1.0) {
@@ -280,11 +397,32 @@ pub fn solve(
                     warnings.push(format!("{}: an end is seen from photos less than 5° apart, so its position along the line of sight is weak.", row.label));
                 }
             }
-            let rms =
-                (rows.iter().map(|r| r.residual.powi(2)).sum::<f64>() / rows.len() as f64).sqrt();
+            check_warnings(&rows, &mut warnings);
+            if nchecks == 0 {
+                warnings.push("No check distances: nothing independent tests the scale. Mark one or more known distances as check only.".into());
+            }
+            let fitted: Vec<&ScaleRow> = rows.iter().filter(|r| !r.check).collect();
+            let rms = (fitted.iter().map(|r| r.residual.powi(2)).sum::<f64>()
+                / fitted.len() as f64)
+                .sqrt();
+            // The case's own checks, where there are any, may raise the model's terms.
+            let checks: Vec<(f64, f64)> = items
+                .iter()
+                .zip(&rows)
+                .filter(|(it, _)| it.check)
+                .map(|(it, r)| (r.residual, it.length))
+                .collect();
+            let case = (!checks.is_empty()).then(|| {
+                let n = checks.len() as f64;
+                (
+                    (checks.iter().map(|(e, l)| (e / l).powi(2)).sum::<f64>() / n).sqrt(),
+                    (checks.iter().map(|(e, _)| e * e).sum::<f64>() / n).sqrt(),
+                )
+            });
             Ok(ScaleRecord {
                 method: "distances".into(),
-                scale_sigma_rel: s.sigma / s.scale,
+                scale_sigma_rel: scale_rel,
+                uncertainty: model_from(scale_rel, case),
                 transform,
                 rows,
                 rms,
@@ -312,8 +450,10 @@ pub fn solve(
             }
             let (mm, ww): (Vec<P3>, Vec<P3>) = fit.iter().copied().unzip();
             let f = fit_gcps(&mm, &ww, &checks)?;
+            let scale_rel = fit_scale_sigma(&ww, f.rms);
+            let centre = centroid(ww.iter().copied());
             let (mut fi, mut ci) = (0, 0);
-            let rows = items
+            let rows: Vec<ScaleRow> = items
                 .iter()
                 .zip(&tri)
                 .map(|(it, t)| {
@@ -324,16 +464,28 @@ pub fn solve(
                         fi += 1;
                         f.residuals[fi - 1]
                     };
+                    let placed = f.transform.apply(t.point);
+                    // A check point's 95 % limit (3-D, χ² with 3 degrees of freedom, 2.80σ):
+                    // its stated coordinates' σ, a point's benchmark σ per axis, and the scale's
+                    // uncertainty at its distance from the control points' centre.
+                    let axis = it
+                        .sigma
+                        .hypot(BENCH_FLOOR / 2f64.sqrt())
+                        .hypot(scale_rel.max(BENCH_PERCENT) * dist(it.world, centre));
+                    let limit = 2.80 * axis;
                     ScaleRow {
                         label: it.label.clone(),
                         model: t.point,
                         target: format!(
-                            "{:.3}, {:.3}, {:.3} m",
-                            it.world[0], it.world[1], it.world[2]
+                            "{:.3}, {:.3}, {:.3} m (±{:.3})",
+                            it.world[0], it.world[1], it.world[2], it.sigma
                         ),
+                        measured: format!("{:.3}, {:.3}, {:.3} m", placed[0], placed[1], placed[2]),
                         residual,
                         check: it.check,
                         angle_deg: t.angle_deg,
+                        limit,
+                        exceeds: it.check && residual > limit,
                     }
                 })
                 .collect();
@@ -349,9 +501,17 @@ pub fn solve(
             if checks.is_empty() {
                 warnings.push("No check points: the fit's residuals can't show an error the control points share. Hold one or more out as checks.".into());
             }
+            check_warnings(&rows, &mut warnings);
+            // A check point's 3-D error, as a distance's: about √(2/3) of it.
+            let case = (!checks.is_empty()).then(|| {
+                let n = f.check_errors.len() as f64;
+                let rms = (f.check_errors.iter().map(|e| e * e).sum::<f64>() / n).sqrt();
+                (0.0, rms * (2.0f64 / 3.0).sqrt())
+            });
             Ok(ScaleRecord {
                 method: "gcps".into(),
-                scale_sigma_rel: fit_scale_sigma(&ww, f.rms),
+                scale_sigma_rel: scale_rel,
+                uncertainty: model_from(scale_rel, case),
                 transform: f.transform,
                 rows,
                 rms: f.rms,
@@ -360,6 +520,18 @@ pub fn solve(
                 warnings,
             })
         }
+    }
+}
+
+/// A warning for each check whose residual passes its 95 % limit.
+fn check_warnings(rows: &[ScaleRow], warnings: &mut Vec<String>) {
+    for r in rows.iter().filter(|r| r.exceeds) {
+        warnings.push(format!(
+            "Check {}: the residual, {:.1} mm, is more than its 95 % limit of {:.1} mm (its stated uncertainty with the measurement's). Check the clicks and the stated value; the reconstruction may be less accurate than the benchmark here.",
+            r.label,
+            r.residual.abs() * 1000.0,
+            r.limit * 1000.0
+        ));
     }
 }
 
@@ -424,6 +596,22 @@ mod tests {
     }
 
     #[test]
+    fn measurements_take_the_larger_term() {
+        let m = MeasurementModel {
+            percent: 0.0035,
+            floor: 0.006,
+            from_checks: false,
+        };
+        // 1 m: the floor (3.5 mm < 6 mm); 10 m: the percentage (35 mm).
+        assert_eq!(m.sigma(1.0), 0.006);
+        assert!((m.sigma(10.0) - 0.035).abs() < 1e-12);
+        // Arms of 1 m and 2 m: 6 mm × √(1 + 1/4) rad.
+        assert!((m.angle_sigma(1.0, 2.0) - 0.006 * 1.25f64.sqrt()).abs() < 1e-12);
+        // 4 m² with a 8 m perimeter: max(2.8e-2, 2.4e-2).
+        assert!((m.area_sigma(4.0, 8.0) - 0.028).abs() < 1e-12);
+    }
+
+    #[test]
     fn a_clicked_target_is_triangulated() {
         let (m, pts) = model();
         let t = triangulate_clicks(&m, &clicks(&m, pts[1])).unwrap();
@@ -437,42 +625,115 @@ mod tests {
         let (m, pts) = model();
         // The model is at 1/3 scale: a model distance d is 3d in the world.
         let d = |a: P3, b: P3| dist(a, b);
+        let item = |label: &str, a: usize, b: usize, length: f64, check: bool| DistanceItem {
+            label: label.into(),
+            a: clicks(&m, pts[a]),
+            b: clicks(&m, pts[b]),
+            length,
+            sigma: 0.002,
+            check,
+        };
         let req = ScaleRequest::Distances {
-            items: vec![DistanceItem {
-                label: "tape".into(),
-                a: clicks(&m, pts[0]),
-                b: clicks(&m, pts[1]),
-                length: 3.0 * d(pts[0], pts[1]),
-                sigma: 0.002,
-            }],
+            items: vec![item("tape", 0, 1, 3.0 * d(pts[0], pts[1]), false)],
         };
         let r = solve(&m, &req, &BTreeMap::new()).unwrap();
         assert!((r.transform.scale - 3.0).abs() < 1e-9);
         assert!(r.rows[0].residual.abs() < 1e-9);
+        assert!(r.warnings.iter().any(|w| w.contains("No check distances")));
+        // No checks: the benchmark's terms, with the scaling's own σ (2 mm over 6.8 m).
+        assert!(!r.uncertainty.from_checks);
+        assert_eq!(r.uncertainty.floor, BENCH_FLOOR);
+        assert!(r.uncertainty.percent > BENCH_PERCENT && r.uncertainty.percent < 0.004);
+        assert_eq!(r.uncertainty.sigma(0.5), BENCH_FLOOR);
         // Photos level: the cameras' −y (image up) is the model's −y, levelled onto +z.
         let up = r.transform.apply([0.0, -1.0, 0.0]);
         let o = r.transform.apply([0.0, 0.0, 0.0]);
         assert!((up[2] - o[2] - 3.0).abs() < 1e-9, "{up:?} {o:?}");
+        // With a check distance: right, it passes and doesn't scale; 5 cm wrong, it's flagged
+        // and raises the model's floor.
+        let good = 3.0 * d(pts[2], pts[3]);
+        let r = solve(
+            &m,
+            &ScaleRequest::Distances {
+                items: vec![
+                    item("tape", 0, 1, 3.0 * d(pts[0], pts[1]), false),
+                    item("check", 2, 3, good, true),
+                ],
+            },
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(r.rows[1].check && !r.rows[1].exceeds && r.rows[1].residual.abs() < 1e-9);
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        let r = solve(
+            &m,
+            &ScaleRequest::Distances {
+                items: vec![
+                    item("tape", 0, 1, 3.0 * d(pts[0], pts[1]), false),
+                    item("check", 2, 3, good + 0.05, true),
+                ],
+            },
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(
+            (r.transform.scale - 3.0).abs() < 1e-9,
+            "a check doesn't scale"
+        );
+        assert!(r.rows[1].exceeds);
+        assert!(r.warnings.iter().any(|w| w.contains("Check check")));
+        assert!(r.uncertainty.from_checks && (r.uncertainty.floor - 0.05).abs() < 1e-9);
+        // Only checks: refused.
+        assert!(solve(
+            &m,
+            &ScaleRequest::Distances {
+                items: vec![item("c", 0, 1, 1.0, true)]
+            },
+            &BTreeMap::new()
+        )
+        .is_err());
         // Control points: a known similarity, with one check point.
         let t = Similarity {
             scale: 3.0,
             rotation: [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
             translation: [100.0, 50.0, 2.0],
         };
-        let items: Vec<GcpItem> = pts
-            .iter()
-            .enumerate()
-            .map(|(k, p)| GcpItem {
-                label: format!("G{k}"),
-                clicks: clicks(&m, *p),
-                world: t.apply(*p),
-                check: k == 4,
-            })
-            .collect();
-        let r = solve(&m, &ScaleRequest::Gcps { items }, &BTreeMap::new()).unwrap();
+        let gcps = |shift: f64| -> Vec<GcpItem> {
+            pts.iter()
+                .enumerate()
+                .map(|(k, p)| {
+                    let mut w = t.apply(*p);
+                    if k == 4 {
+                        w[0] += shift;
+                    }
+                    GcpItem {
+                        label: format!("G{k}"),
+                        clicks: clicks(&m, *p),
+                        world: w,
+                        check: k == 4,
+                        sigma: 0.005,
+                    }
+                })
+                .collect()
+        };
+        let r = solve(
+            &m,
+            &ScaleRequest::Gcps { items: gcps(0.0) },
+            &BTreeMap::new(),
+        )
+        .unwrap();
         assert!((r.transform.scale - 3.0).abs() < 1e-9);
-        assert!(r.rows[4].check && r.rows[4].residual < 1e-9);
+        assert!(r.rows[4].check && r.rows[4].residual < 1e-9 && !r.rows[4].exceeds);
         assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        // A check point 10 cm off: flagged.
+        let r = solve(
+            &m,
+            &ScaleRequest::Gcps { items: gcps(0.1) },
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(r.rows[4].exceeds && (r.rows[4].residual - 0.1).abs() < 1e-9);
+        assert!(r.warnings.iter().any(|w| w.contains("Check G4")));
         // GPS: too few photos with positions.
         assert!(solve(&m, &ScaleRequest::Gps, &BTreeMap::new()).is_err());
     }

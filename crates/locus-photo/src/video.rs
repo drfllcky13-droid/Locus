@@ -210,34 +210,35 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
 
-    /// A 4 s, 25 fps test video made with ffmpeg if it is on PATH (only for the test; Locus
-    /// itself never uses ffmpeg), sampled every 0.5 s.
+    /// A 4 s, 25 fps test video written with Media Foundation (a moving square on a gradient),
+    /// sampled every 0.5 s.
     #[test]
     #[cfg(windows)]
     fn frames_are_sampled_at_the_interval() {
         let dir = std::env::temp_dir().join(format!("locus-video-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mp4 = dir.join("test.mp4");
-        let made = std::process::Command::new("ffmpeg")
-            .args([
-                "-v",
-                "error",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc2=size=320x240:rate=25:duration=4",
-                "-pix_fmt",
-                "yuv420p",
-            ])
-            .arg(&mp4)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !made {
-            eprintln!("ffmpeg not found: skipping the video test");
-            return;
-        }
+        let frames: Vec<crate::video_dev::Frame> = (0..100)
+            .map(|k| {
+                let (w, h) = (320u32, 240u32);
+                let mut bgrx = vec![0u8; (w * h * 4) as usize];
+                for y in 0..h {
+                    for x in 0..w {
+                        let i = ((y * w + x) * 4) as usize;
+                        let inside = x.abs_diff(40 + 2 * k) < 20 && y.abs_diff(120) < 20;
+                        bgrx[i] = if inside { 255 } else { (x * 255 / w) as u8 };
+                        bgrx[i + 1] = if inside { 255 } else { (y * 255 / h) as u8 };
+                        bgrx[i + 2] = if inside { 255 } else { 64 };
+                    }
+                }
+                crate::video_dev::Frame {
+                    width: w,
+                    height: h,
+                    bgrx,
+                }
+            })
+            .collect();
+        crate::video_dev::write_mp4(&mp4, &frames, 25).unwrap();
         let s = sample_frames(
             &mp4,
             0.5,
@@ -265,6 +266,28 @@ mod tests {
         }
         let img = std::fs::read(&s.frames[3].file).unwrap();
         assert_eq!(&img[1..4], b"PNG");
+        // The pixels: frame 3 is at 1.5 s, video frame 37 or 38, so the white square is centred
+        // near x = 40 + 2 × 37.5 = 115, y = 120; the background there is the gradient.
+        let dec = png::Decoder::new(std::io::Cursor::new(img));
+        let mut r = dec.read_info().unwrap();
+        let mut buf = vec![0; r.output_buffer_size().unwrap()];
+        let info = r.next_frame(&mut buf).unwrap();
+        let px = |x: usize, y: usize| {
+            let i = (y * info.width as usize + x) * 3;
+            [buf[i], buf[i + 1], buf[i + 2]]
+        };
+        let sq = px(115, 120);
+        assert!(sq.iter().all(|c| *c > 200), "square {sq:?}");
+        // Above the square: red 64, green from y, blue from x (x = 115 → 91; y = 60 → 64).
+        let bg = px(115, 60);
+        assert!(
+            (bg[0] as i32 - 64).abs() < 20
+                && (bg[1] as i32 - 64).abs() < 20
+                && (bg[2] as i32 - 91).abs() < 20,
+            "background {bg:?}"
+        );
+        // Not upside down: the green channel grows downwards.
+        assert!(px(20, 220)[1] > px(20, 20)[1] + 100);
         assert!(sample_frames(
             &mp4,
             0.0,
@@ -274,5 +297,33 @@ mod tests {
         )
         .is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod dump {
+    /// Sample a video to a folder, to look at the frames: LOCUS_VIDEO=file LOCUS_FRAMES=dir.
+    #[test]
+    #[ignore = "a tool: needs LOCUS_VIDEO and LOCUS_FRAMES"]
+    fn dump_frames() {
+        let (v, d) = (
+            std::env::var("LOCUS_VIDEO").unwrap(),
+            std::env::var("LOCUS_FRAMES").unwrap(),
+        );
+        let s = super::sample_frames(
+            std::path::Path::new(&v),
+            0.5,
+            std::path::Path::new(&d),
+            &std::sync::atomic::AtomicBool::new(false),
+            &mut |_, _| {},
+        )
+        .unwrap();
+        println!(
+            "{}×{}, {} frames, first at {}",
+            s.width,
+            s.height,
+            s.frames.len(),
+            s.first_timestamp
+        );
     }
 }

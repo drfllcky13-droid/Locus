@@ -26,7 +26,10 @@ Options:
 3. Every other distance of at least 0.5 m is compared with the truth.
 4. The bound: 99 % of them within 1 %.
 
-**Result on 2026-09-23** (COLMAP 4.2.0, CPU features, 4800 px):
+**Results on 2026-09-23** (COLMAP 4.2.0, CPU features, 4800 px; COLMAP's result varies a little from run to run):
 - 14 of 14 images registered;
-- 94,384 check distances: median error 0.16 %, 99th percentile 0.58 %, worst 1.01 %;
-- 100.00 % within 1 % to two decimals: the worst, 1.011 %, is the one exception.
+- about 95,000 check distances per run;
+- over five runs: median 0.16–0.22 %, 99th percentile 0.51–0.83 %, worst 0.97–1.43 %;
+- the RMS relative error was 0.23–0.33 %, and the point error 3.0–3.8 mm per axis. These set the measurement uncertainty model: 0.35 % and a 6 mm floor.
+
+`pipes.mp4`, for testing video import, is made from the photos with `locus-validate gen-video --images <pipes>/images/dslr_images --out pipes.mp4 --fps 2 --scale 0.5`. The laser scan, `pipes_scan_clean.7z` (SHA-256 `07cd2021fe68c1520109898d4485fa2805163143aa9fa0e4123157f4106b379f`), is under the same licence and is also kept outside the repository.

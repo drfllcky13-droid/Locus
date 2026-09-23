@@ -41,4 +41,15 @@ test("every value shows its unit and 1σ", () => {
   expect(formatMeasurement(rec("distance", { value: 1, sigma: 0.001 })).detail).toBe(
     "assumes 2.0 mm per point, 1σ",
   );
+  expect(
+    formatMeasurement(
+      rec("distance", {
+        value: 3,
+        sigma: 0.0105,
+        photogrammetry: { analysis: 4, percent: 0.0035, floor_m: 0.006, from_checks: false },
+      }),
+    ).detail,
+  ).toBe(
+    "photogrammetric cloud (analysis 4): 1σ at least 0.35 % of the length and 6.0 mm, from the benchmark",
+  );
 });

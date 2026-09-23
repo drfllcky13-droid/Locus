@@ -30,7 +30,12 @@ export function formatLength(m: Measured): string {
 
 export function formatMeasurement(rec: MeasurementRecord): { label: string; detail: string } {
   const r = rec.result;
-  const sp = `assumes ${(r.sigma_point_m * 1000).toFixed(1)} mm per point, 1σ`;
+  // On a photogrammetric cloud the run's model sets the uncertainty: max(percent × length, floor).
+  const ph = r.photogrammetry as
+    { analysis: number; percent: number; floor_m: number; from_checks: boolean } | undefined;
+  const sp = ph
+    ? `photogrammetric cloud (analysis ${ph.analysis}): 1σ at least ${(ph.percent * 100).toFixed(2)} % of the length and ${(ph.floor_m * 1000).toFixed(1)} mm, from ${ph.from_checks ? "the case's checks" : "the benchmark"}`
+    : `assumes ${(r.sigma_point_m * 1000).toFixed(1)} mm per point, 1σ`;
   switch (rec.kind) {
     case "distance": {
       const m = r as unknown as Measured;

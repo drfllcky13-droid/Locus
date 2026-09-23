@@ -49,6 +49,11 @@ Progress is read from COLMAP's log, and Cancel stops the process. Crashes with W
 - Dense or not.
 - The longest image side for features: 4800 px by default, more than COLMAP's 3200 (see Validation). COLMAP 4.2's CPU SIFT crashed at the benchmark's full 6048 px.
 - The longest image side for the dense cloud: 2000 px by default.
+- The horizontal field of view, when the images carry no focal length (video frames, photos without EXIF).
+  - It sets COLMAP's starting focal length, with the principal point at the centre and no distortion. COLMAP takes that as a prior.
+  - For fisheye models f = (w/2) / (fov/2 in radians); for the others f = (w/2) / tan(fov/2).
+  - A fisheye video needs it. COLMAP can't recover a fisheye focal length from matches alone and marks every pair degenerate. That was found on the first in-app video run.
+  - A camera's specified field of view is enough: the prior is refined in bundle adjustment. The test gave 100° where the truth is 101°.
 
 ## Scaling and placing
 
@@ -68,6 +73,53 @@ A reconstruction has arbitrary scale, position and orientation. One of three met
   - The report warns unless every photo has an RTK fixed solution, because ordinary GPS is good to metres.
 
 The scale's relative 1σ for control points and GPS is RMS / √(Σ |x − x̄|²).
+
+## Checks
+
+Both known distances and control points can be marked as checks, held out of the scaling. For each check, the report lists what the scaled reconstruction measures, the known value and the residual.
+
+A check is flagged, with a warning, when its residual exceeds its 95 % limit:
+- **A check distance:** 2 × √(σ_known² + σ_model(length)²). σ_model here uses the benchmark's terms with the scaling's own uncertainty, not the case's checks, so the limit doesn't depend on the check itself.
+- **A check point**, in 3-D: 2.80 × σ per axis, the 95 % point of χ² with 3 degrees of freedom. σ per axis is √(σ_coordinates² + (6 mm/√2)² + (p × r)²):
+  - σ_coordinates: the point's stated 1σ (5 mm by default; for a point picked on a scan, the project's point uncertainty);
+  - p: the larger of the benchmark percentage and the scale's relative σ;
+  - r: the point's distance from the control points' centre.
+
+The report warns when there are no checks.
+
+## Measurement uncertainty
+
+Every measurement made on a photogrammetric point cloud takes the uncertainty of its run:
+
+σ(length) = max(p × length, floor), 1σ
+
+This keeps short distances from getting unrealistically tight bounds, which the scan's per-point σ alone would give them.
+
+- **p** is the larger of:
+  - the benchmark's 0.35 %;
+  - the case's check distances' RMS relative residual;
+
+  combined in quadrature with the scaling's own relative σ.
+- **floor** is the larger of:
+  - the benchmark's 6 mm;
+  - the case's check distances' RMS residual (for check points, their RMS 3-D error × √(2/3), a distance's share of it).
+
+**Benchmark values** (ETH3D pipes, four runs):
+- The RMS relative error of distances of 0.5 m and more was 0.23–0.33 %, so p is 0.35 %.
+- A point's error, with the scaled model placed on the truth, was 3.0–3.8 mm per axis. A distance between two points is √2 × that: 6 mm.
+
+The benchmark's DSLR photos were taken 1–3 m from the surfaces. Scenes photographed from further away, or with poorer cameras, have larger absolute errors. That is why checks matter: when the case's own checks show more, they set the terms. The report says which set them.
+
+**Other kinds of measurement:**
+- A height takes the same rule as a length.
+- An angle takes the floor across each arm: floor × √(1/a² + 1/b²) rad, for arms a and b.
+- An area takes max(2p × area, floor × perimeter / 2).
+
+A measurement's 1σ is never lowered below what the scan's point σ gives. The measurement's record names the run, and the UI shows the terms.
+
+The model is fixed when the cloud is imported, and stored in the run's record.
+- Runs stored before it existed read as the benchmark's terms.
+- Withdrawing a run doesn't remove its cloud from evidence, so its model still applies.
 
 ## Import and provenance
 
@@ -92,10 +144,11 @@ The PDF report prints all of it.
 3. The model is scaled by 3–4 known distances of 2–3 m between well-triangulated points.
 4. Every other distance of at least 0.5 m is compared with the truth.
 
-**Result** (COLMAP 4.2.0, CPU features, 4800 px):
+**Result** (COLMAP 4.2.0, CPU features, 4800 px; COLMAP's result varies a little from run to run):
 - 14 of 14 images placed;
-- 94,384 distances: median 0.16 %, 99th percentile 0.58 %, worst 1.01 %;
-- 100.00 % within 1 %, to two decimal places.
+- about 95,000 distances per run;
+- over five runs: median 0.16–0.22 %, 99th percentile 0.51–0.83 %, worst 0.97–1.43 %;
+- 99.86–100.00 % within 1 %.
 
 COLMAP's default 3200 px left the 99th percentile at 1.02 %, hence the 4800 px default. GPU SIFT at 3200 px: 99th percentile 1.20 %.
 
@@ -116,6 +169,13 @@ The acceptance bound: 99 % of distances within 1 %.
   - scaled by two known distances between ground-truth points, clicked at their true pixels (residuals 0.8 and 0.9 mm);
   - 416 distances between 33 other ground-truth points triangulated in the reconstruction: median 0.21 %, worst 0.45 %;
   - the 294,005-point dense cloud imported as evidence and the report printed.
+- **In the app, from a video** (the 14 photos at half size as a 2 fps H.264 MP4, written with Media Foundation by `locus-validate gen-video`; OPENCV_FISHEYE with a 100° field of view):
+  - 10 of 14 frames placed; the other 4 formed a separate group, warned in the report;
+  - scaled by six ground-truth points picked on ETH3D's laser scan, imported as evidence (four control, two check):
+    - picks 1–4 mm from the true points;
+    - checks 3.4 and 3.2 mm, against limits of 17 and 18 mm;
+  - 95 other ground-truth distances: median 0.09 %, worst 0.38 %;
+  - the cloud imported and the report printed.
 - **Dense image size.** The dense cloud uses its own size, 2000 px by default. PatchMatch at the 4800 px feature size took 26 minutes for 14 photos, against about 8 minutes at 2000 px.
 
 ## References

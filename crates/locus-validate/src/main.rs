@@ -140,6 +140,41 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("gen-video") => {
+            // An H.264 MP4 from a folder of images, in name order (Media Foundation; Windows):
+            // for testing video import. `--scale` shrinks them (H.264 takes up to 4096 px wide).
+            let run = || -> Result<(), String> {
+                let dir: String = arg(&args, "--images", None)?;
+                let out: String = arg(&args, "--out", None)?;
+                let fps: u32 = arg(&args, "--fps", Some(2))?;
+                let scale: f64 = arg(&args, "--scale", Some(0.5))?;
+                let mut files: Vec<_> = std::fs::read_dir(&dir)
+                    .map_err(|e| format!("{dir}: {e}"))?
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.is_file())
+                    .collect();
+                files.sort();
+                let frames = files
+                    .iter()
+                    .map(|f| locus_photo::video_dev::load_image(f, scale))
+                    .collect::<Result<Vec<_>, _>>()?;
+                locus_photo::video_dev::write_mp4(std::path::Path::new(&out), &frames, fps)?;
+                eprintln!(
+                    "wrote {} frames ({}×{}) at {fps} fps to {out}",
+                    frames.len(),
+                    frames[0].width,
+                    frames[0].height
+                );
+                Ok(())
+            };
+            match run() {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("gen-video: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("import") => {
             let run = || -> Result<(), String> {
                 let project: String = arg(&args, "--project", None)?;

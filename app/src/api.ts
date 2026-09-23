@@ -728,6 +728,8 @@ export interface PhotoRunRequest {
   dense: boolean;
   max_image_size: number;
   dense_max_image_size: number;
+  /** Horizontal field of view (°) when the images carry no focal length (video). */
+  fov_deg: number | null;
 }
 
 /** A finished reconstruction waiting to be scaled and imported. */
@@ -754,7 +756,14 @@ export type PhotoScale =
   | { method: "gps" }
   | {
       method: "distances";
-      items: { label: string; a: PhotoClick[]; b: PhotoClick[]; length: number; sigma: number }[];
+      items: {
+        label: string;
+        a: PhotoClick[];
+        b: PhotoClick[];
+        length: number;
+        sigma: number;
+        check: boolean;
+      }[];
     }
   | {
       method: "gcps";
@@ -764,6 +773,8 @@ export type PhotoScale =
         world: [number, number, number] | null;
         pick: PickHit | null;
         check: boolean;
+        /** The coordinates' 1σ (m); for a scan pick, the project's point uncertainty. */
+        sigma: number | null;
       }[];
     };
 
@@ -771,7 +782,18 @@ export interface PhotoScaleRecord {
   method: string;
   transform: { scale: number; rotation: number[][]; translation: [number, number, number] };
   scale_sigma_rel: number;
-  rows: { label: string; target: string; residual: number; check: boolean; angle_deg: number }[];
+  rows: {
+    label: string;
+    target: string;
+    measured: string;
+    residual: number;
+    check: boolean;
+    angle_deg: number;
+    limit: number;
+    exceeds: boolean;
+  }[];
+  /** Every measurement on the resulting cloud: 1σ = max(percent × length, floor). */
+  uncertainty: { percent: number; floor: number; from_checks: boolean };
   rms: number;
   enu_origin: [number, number, number] | null;
   notes: string[];

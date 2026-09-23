@@ -291,6 +291,66 @@ fn compute(kind: &str, pts: &[measure::P3], sigma: f64) -> CmdResult<Value> {
     })
 }
 
+/// Each photogrammetric point cloud's measurement uncertainty, by its evidence id (from its
+/// run's analysis record; withdrawn runs included, since the cloud stays evidence).
+fn photo_models(
+    p: &locus_core::Project,
+) -> CmdResult<std::collections::HashMap<i64, (locus_photo::georef::MeasurementModel, i64)>> {
+    let mut out = std::collections::HashMap::new();
+    for a in p.analyses().map_err(err)? {
+        if a.tool != "photogrammetry" {
+            continue;
+        }
+        let ev = a.record["output"]["evidence_id"].as_i64();
+        let m: locus_photo::georef::MeasurementModel =
+            serde_json::from_value(a.record["scale"]["uncertainty"].clone()).unwrap_or_default();
+        if let Some(ev) = ev {
+            out.insert(ev, (m, a.id));
+        }
+    }
+    Ok(out)
+}
+
+/// Raise a measurement's 1σ to the photogrammetric model's: a length or height to
+/// max(percent × value, floor); an angle to what the floor does to its shorter arm; an area to
+/// max(2 × percent × area, floor × perimeter / 2). Never lowered.
+fn apply_photo(
+    kind: &str,
+    pts: &[measure::P3],
+    result: &mut Value,
+    m: &locus_photo::georef::MeasurementModel,
+) {
+    let raise = |v: &mut Value, s: f64| {
+        let cur = v["sigma"].as_f64().unwrap_or(0.0);
+        v["sigma"] = json!(cur.max(s));
+    };
+    match kind {
+        "distance" => {
+            let d = result["value"].as_f64().unwrap_or(0.0);
+            raise(result, m.sigma(d));
+        }
+        "height" => {
+            let h = result["height"]["value"].as_f64().unwrap_or(0.0);
+            raise(&mut result["height"], m.sigma(h));
+        }
+        "angle" if pts.len() == 3 => {
+            let arm = |a: measure::P3| {
+                ((a[0] - pts[1][0]).powi(2)
+                    + (a[1] - pts[1][1]).powi(2)
+                    + (a[2] - pts[1][2]).powi(2))
+                .sqrt()
+            };
+            raise(result, m.angle_sigma(arm(pts[0]), arm(pts[2])));
+        }
+        "area" => {
+            let a = result["area"]["value"].as_f64().unwrap_or(0.0);
+            let per = result["perimeter"].as_f64().unwrap_or(0.0);
+            raise(&mut result["area"], m.area_sigma(a, per));
+        }
+        _ => {}
+    }
+}
+
 /// Measure from picked points. Every coordinate is re-resolved here from the stored f64
 /// data; the client's own idea of where the points are is never used.
 #[tauri::command]
@@ -307,6 +367,26 @@ pub async fn measure(app: AppHandle, kind: String, picks: Vec<Pick>) -> CmdResul
             let pts: Vec<measure::P3> = resolved.iter().map(|r| r.project).collect();
             let mut result = compute(&kind, &pts, sigma)?;
             result["sigma_point_m"] = json!(sigma);
+            // Points on a photogrammetric cloud: its run's measurement uncertainty applies.
+            let models = photo_models(p)?;
+            let involved: Vec<&(locus_photo::georef::MeasurementModel, i64)> = resolved
+                .iter()
+                .filter_map(|r| models.get(&r.scan.evidence_id))
+                .collect();
+            if let Some(&(first, run)) = involved.first() {
+                let m = involved.iter().fold(*first, |a, (b, _)| locus_photo::georef::MeasurementModel {
+                    percent: a.percent.max(b.percent),
+                    floor: a.floor.max(b.floor),
+                    from_checks: a.from_checks || b.from_checks,
+                });
+                apply_photo(&kind, &pts, &mut result, &m);
+                result["photogrammetry"] = json!({
+                    "analysis": run,
+                    "percent": m.percent,
+                    "floor_m": m.floor,
+                    "from_checks": m.from_checks,
+                });
+            }
             let points = json!(resolved
                 .iter()
                 .map(|r| json!({ "scan": r.scan.to_string(), "index": r.index, "project": r.project }))

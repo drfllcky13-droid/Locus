@@ -12,6 +12,7 @@ const REFS: &[&str] = &[
 
 pub fn report(meta: &Meta, r: &PhotoRun) -> Report {
     let sc = &r.scale;
+    let u = &sc.uncertainty;
     let method = match sc.method.as_str() {
         "gps" => "the photos' GPS/RTK positions (similarity from the camera centres)",
         "distances" => "known distances clicked in the photos (scale only)",
@@ -37,6 +38,19 @@ pub fn report(meta: &Meta, r: &PhotoRun) -> Report {
             ),
         ],
         ["Scaled by".into(), method.into()],
+        [
+            "Measurement uncertainty".into(),
+            format!(
+                "every measurement on this point cloud takes 1σ = max({:.2} % of the length, {:.1} mm), from {} with the scaling's own uncertainty",
+                u.percent * 100.0,
+                u.floor * 1000.0,
+                if u.from_checks {
+                    "the case's check measurements (larger than the benchmark's)"
+                } else {
+                    "the ETH3D benchmark (0.35 %, 6 mm)"
+                }
+            ),
+        ],
         [
             "Scale".into(),
             format!(
@@ -78,15 +92,26 @@ pub fn report(meta: &Meta, r: &PhotoRun) -> Report {
             vec![
                 format!("{}{}", w.label, if w.check { " (check)" } else { "" }),
                 w.target.clone(),
+                w.measured.clone(),
                 if w.angle_deg > 0.0 {
                     format!("{:.1}°", w.angle_deg)
                 } else {
                     String::new()
                 },
                 format!("{:.1}", w.residual * 1000.0),
+                if w.check {
+                    format!(
+                        "{:.1}{}",
+                        w.limit * 1000.0,
+                        if w.exceeds { " EXCEEDED" } else { "" }
+                    )
+                } else {
+                    String::new()
+                },
             ]
         })
         .collect();
+
     let stages = r
         .stages
         .iter()
@@ -111,11 +136,23 @@ pub fn report(meta: &Meta, r: &PhotoRun) -> Report {
         });
     }
     scale_blocks.push(Block::Table {
-        widths: ["1fr", "1fr", "auto", "auto"].map(String::from).to_vec(),
-        head: ["Target", "Should be", "Ray angle", "Residual (mm)"]
+        widths: ["1fr", "1fr", "1fr", "auto", "auto", "auto"]
             .map(String::from)
             .to_vec(),
+        head: [
+            "Target",
+            "Known",
+            "Measured",
+            "Ray angle",
+            "Residual (mm)",
+            "Check's 95 % limit (mm)",
+        ]
+        .map(String::from)
+        .to_vec(),
         rows,
+    });
+    scale_blocks.push(Block::Text {
+        text: "Check targets (marked) are held out of the scaling. A check's 95 % limit combines its stated uncertainty with the measurement model's at that length (for a check point, in 3-D: 2.80σ per axis, from its coordinates' σ, a point's benchmark σ and the scale's at its distance from the control points' centre); a residual beyond it is flagged and warned.".into(),
     });
     let s = &r.settings;
     let sections = vec![

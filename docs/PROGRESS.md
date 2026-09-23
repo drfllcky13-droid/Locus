@@ -253,7 +253,7 @@ Acceptance criteria:
 
 Status (2026-09-23): items 1–5 built: vehicle specifications; skid, yaw (chord or a circle fitted to picked points), two-vehicle momentum with its sensitivity table, and CRASH3 crush energy, each with the range method and a Monte Carlo interval, a PDF report and the method note `docs/methods/crash.md`; checked in the app. Crush takes A and B from the NHTSA-derived table (850 tests, 698 vehicles; `docs/methods/crash-stiffness.md`) or entered with a source, and its width and depths entered or measured on the scan (both checked in the app). The crush integral reproduces the CRASH3 manual's sample run. Item 6 built: volumetric crush against an exemplar scan (pairs + ICP outside the damage region, cells over the face's plane, Monte Carlo over the registration and each cell; `docs/methods/crash-volume.md`), validated on synthetic vehicles (mean error 0.3 %, worst 1.9 %, interval covering 40/40) and checked in the app (7.89 L for a 7.854 L dent). Item 7 built: EDR pre-crash data from CSV or the form, distances with their range and Monte Carlo, positions along a picked path as the animation track (`docs/methods/crash-edr.md`), checked in the app (7.20 m, 5.61–8.79 m, as worked by hand). Items 1–8 are built; the Phase 7 acceptance box for textbook cases waits on the examiner's worked examples (Blocked).
 
-### Phase 8: Photogrammetry
+### Phase 8: Photogrammetry (done 2026-09-23)
 
 Plan (the licence review is in `docs/phase8-colmap-licence-review.txt`; COLMAP runs as a separate process, never linked):
 
@@ -266,7 +266,59 @@ Plan (the licence review is in `docs/phase8-colmap-licence-review.txt`; COLMAP r
 7. **Report** (Typst): inputs, reconstruction statistics (registered images, mean reprojection error, track lengths), scaling and check points, provenance.
 8. **Validation.** A public benchmark with ground truth (ETH3D or Strecha fountain-P11, needs download permission): scaled reconstruction measuring known distances within 1 %; missing CUDA falls back with a clear message.
 
-Status (2026-09-23): option A chosen (examiner-installed COLMAP). Built: `locus-photo` (COLMAP runner with CPU-only features, progress, cancel and crash hints; camera models; model and PLY readers; scaling by known distances, control points or photo GPS; EXIF/RTK; ENU; Media Foundation video frames), the setup panel, runs from photos or a video, scaling by targets clicked in the photos, import as E57 evidence with an analysis record and report (`docs/methods/photogrammetry.md`). Acceptance on ETH3D pipes (laser-scan ground truth): 99th percentile 0.58 %, 100.00 % of 94,384 distances within 1 %. Missing CUDA runs sparse only with a message. In the app (ETH3D pipes photos imported as evidence; setup and run through the panel; CPU features; dense at 2000 px, 9 min on an RTX 3070 Ti): scaled by two known distances (0.8 and 0.9 mm residuals), 416 distances between 33 other ground-truth points: median 0.21 %, worst 0.45 %; 294,005 dense points imported as evidence and loaded; report printed. Not yet run in-app: a video source and control points picked on a scan (both covered by unit tests).
+Status (2026-09-23): option A chosen (examiner-installed COLMAP). Built: `locus-photo` (COLMAP runner with CPU-only features, progress, cancel and crash hints; camera models; model and PLY readers; scaling by known distances, control points or photo GPS; EXIF/RTK; ENU; Media Foundation video frames), the setup panel, runs from photos or a video, scaling by targets clicked in the photos, import as E57 evidence with an analysis record and report (`docs/methods/photogrammetry.md`). Acceptance on ETH3D pipes (laser-scan ground truth): 99th percentile 0.58 %, 100.00 % of 94,384 distances within 1 %. Missing CUDA runs sparse only with a message. In the app (ETH3D pipes photos imported as evidence; setup and run through the panel; CPU features; dense at 2000 px, 9 min on an RTX 3070 Ti): scaled by two known distances (0.8 and 0.9 mm residuals), 416 distances between 33 other ground-truth points: median 0.21 %, worst 0.45 %; 294,005 dense points imported as evidence and loaded; report printed. Review additions (2026-09-23):
+- Known distances can be check-only, like control points. Each check's measured value, known value and residual is reported, and a check is flagged beyond its 95 % limit.
+- Every measurement on a photogrammetric cloud takes 1σ = max(p × length, floor): p the larger of the benchmark's 0.35 % and the checks', floor the larger of the benchmark's 6 mm and the checks'. In the app: 11.564 m ± 40.8 mm.
+- **Video, in the app** (ETH3D's photos as an H.264 MP4 written with Media Foundation):
+  - fisheye video needed a stated field of view, which is now in the panel (COLMAP marks fisheye pairs degenerate without a focal prior);
+  - 10 of 14 frames placed.
+- **Control points picked on ETH3D's laser scan, in the app:**
+  - picks 1–4 mm from the true points;
+  - two checks at 3.4 and 3.2 mm, within 17–18 mm limits;
+  - 95 ground-truth distances, worst 0.38 %.
+
+Acceptance criteria:
+- [x] On a public benchmark dataset with ground truth, scaled reconstruction measures known distances within 1 %.
+  - ETH3D pipes, laser-scan ground truth: 99 % of about 95,000 distances within 1 % in every run (99th percentile 0.51–0.83 % over five runs; worst single distance 0.97–1.43 %).
+  - In the app: worst 0.45 % (photos, scaled by known distances) and 0.38 % (video, scaled by control points on the scan).
+- [x] Missing CUDA falls back gracefully with a clear message: sparse only, the reason in the panel and the report.
+
+### Phase 9: Animation and cameras
+
+Plan:
+
+1. **Motion math, `locus-analysis::motion`, tested.** This is the single authority for positions over time. Playback samples it and reports and renders evaluate it per frame, so the acceptance test covers the real code. It covers:
+   - paths through picked points: centripetal Catmull–Rom with curvature-continuing ends, or straight segments; exact arc-length parametrisation (Gauss–Legendre table, then Newton);
+   - speed profiles: constant speed; phases of constant acceleration that stop at zero and never reverse; time–distance tables for EDR records and keyframes, interpolated monotonically (Fritsch–Carlson);
+   - tracks: a path, a profile, a start time and an offset along the path, giving position, direction of travel, heading, distance, speed and acceleration at any time and at every frame;
+   - keyframed objects (lights, props): position and heading at keyframe times, interpolated.
+2. **Timeline in the scene** (`app/src/animation/`): play, pause, scrub and loop over a time ruler, with a track per animated object.
+   - Vehicles and people from the scene builder follow a path picked on the cloud with a profile. An EDR run's time–distance track (Phase 7) can drive a vehicle directly.
+   - A vehicle's heading follows the path's tangent at its reference point, the rear axle, set from its wheelbase.
+   - The animation is stored with the scene and audit-logged like other scene edits.
+3. **Camera rigs:**
+   - orbit (a centre, radius, height and period);
+   - fly-through (a camera path with a look-ahead or fixed targets);
+   - follow (an offset in an object's frame, smoothed);
+   - driver view (an eye point in a vehicle's frame);
+   - mirror views (a reflected camera for a mirror's plane and size);
+   - 360° panorama (a cube map rendered, then equirectangular).
+4. **Time–distance–speed report** from any animation: a table per moving object at a chosen interval (time, position, distance travelled, speed, acceleration), the distances between chosen objects over time, and each object's inputs (path, profile, source such as an EDR run) and method. Typst PDF, audit-logged.
+5. **Render to MP4** at a chosen resolution and frame rate:
+   - frames rendered offscreen, exactly duration × fps + 1 of them, each at its timeline time;
+   - encoded with Media Foundation's H.264 sink writer (as `locus-photo::video_dev`, moved into app code), with no ffmpeg;
+   - after writing, the file is read back and checked (frame count and duration against the timeline);
+   - on macOS and Linux, render is refused with a message, like video import.
+6. **Validation:**
+   - an object moving at a set speed is at the right position at every frame (a unit test, done);
+   - rendered frame count and duration match the timeline (tested by reading the file back);
+   - EDR-driven motion reproduces the record's distances.
+
+Acceptance criteria (SPEC):
+- [ ] An object moving at a set speed shows the correct position at every frame (tested).
+- [ ] Rendered video frame count and duration match the timeline.
+
+Status (2026-09-23): item 1 started. Paths, profiles and tracks are built and tested (`crates/locus-analysis/src/motion.rs`): a constant-speed object on a curved path is at v·t along it at every frame at 30 fps (to 1e-9 m, arc length checked against a brute-force polyline to 0.1 mm), braking phases stop and stay stopped, and EDR-like tables are followed monotonically.
 
 ## Blocked
 

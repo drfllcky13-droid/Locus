@@ -82,6 +82,48 @@ pub struct Settings {
     /// with the pixel count: 4800 px took 26 min for 14 photos where 2000 px takes minutes.
     #[serde(default = "dense_size")]
     pub dense_max_image_size: u32,
+    /// The camera's starting parameters when the images carry no focal length (video frames,
+    /// photos without EXIF), from a stated field of view; COLMAP treats them as a prior.
+    #[serde(default)]
+    pub camera_params: Option<String>,
+    /// The horizontal field of view they came from (°).
+    #[serde(default)]
+    pub fov_deg: Option<f64>,
+}
+
+/// Starting parameters for a camera model from its image size and horizontal field of view:
+/// the focal length (for fisheye models the equidistant f = (w/2) / (fov/2 in radians); for the
+/// others the pinhole f = (w/2) / tan(fov/2)), the principal point at the centre, no distortion.
+/// Fisheye models need them when images carry no focal length: COLMAP can't recover a fisheye
+/// focal length from matches alone and treats every pair as degenerate.
+pub fn initial_params(
+    model: &str,
+    width: u32,
+    height: u32,
+    fov_deg: f64,
+) -> Result<String, String> {
+    if !(fov_deg > 1.0 && fov_deg < 250.0) {
+        return Err("the field of view must be between 1° and 250°".into());
+    }
+    let half = (fov_deg / 2.0).to_radians();
+    let (cx, cy) = (width as f64 / 2.0, height as f64 / 2.0);
+    let fisheye = model.contains("FISHEYE");
+    if !fisheye && fov_deg >= 179.0 {
+        return Err("a field of view that wide needs a fisheye camera model".into());
+    }
+    let f = if fisheye { cx / half } else { cx / half.tan() };
+    let v: Vec<f64> = match model {
+        "SIMPLE_PINHOLE" => vec![f, cx, cy],
+        "PINHOLE" => vec![f, f, cx, cy],
+        "SIMPLE_RADIAL" => vec![f, cx, cy, 0.0],
+        "RADIAL" => vec![f, cx, cy, 0.0, 0.0],
+        "OPENCV" | "OPENCV_FISHEYE" => vec![f, f, cx, cy, 0.0, 0.0, 0.0, 0.0],
+        m => return Err(format!("camera model {m} isn't supported")),
+    };
+    Ok(v.iter()
+        .map(|x| format!("{x:.3}"))
+        .collect::<Vec<_>>()
+        .join(","))
 }
 
 fn dense_size() -> u32 {
@@ -101,6 +143,8 @@ impl Default for Settings {
             // COLMAP 4.2's CPU SIFT.
             max_image_size: 4800,
             dense_max_image_size: 2000,
+            camera_params: None,
+            fov_deg: None,
         }
     }
 }
@@ -155,6 +199,9 @@ pub fn stages(
             format!("--{fe}.max_image_size"),
             s.max_image_size.to_string(),
         ]);
+    }
+    if let Some(cp) = &s.camera_params {
+        extract.extend(["--ImageReader.camera_params".into(), cp.clone()]);
     }
     let matcher = match s.matcher {
         Matcher::Exhaustive => "exhaustive_matcher",
@@ -261,7 +308,9 @@ pub fn progress(stage: &str, line: &str) -> Option<(u32, u32)> {
             let r = &line[i..];
             let a = r.find('(')? + 1;
             let b = r[a..].find(')')? + a;
-            return Some((r[a..b].trim().parse().ok()?, 0));
+            // "(8)" in COLMAP 3, "(num_reg_frames=10)" in COLMAP 4.
+            let n = r[a..b].rsplit('=').next()?.trim();
+            return Some((n.parse().ok()?, 0));
         }
         _ => return None,
     };
@@ -470,6 +519,33 @@ mod tests {
     }
 
     #[test]
+    fn a_field_of_view_gives_the_starting_focal_length() {
+        // ETH3D's pipes at half size: 3024 px wide, fx 1715 (fisheye): half-angle 1512/1715 rad.
+        let fov = 2.0 * (1512.0f64 / 1715.0).to_degrees();
+        let p = initial_params("OPENCV_FISHEYE", 3024, 2016, fov).unwrap();
+        assert_eq!(
+            p,
+            "1715.000,1715.000,1512.000,1008.000,0.000,0.000,0.000,0.000"
+        );
+        // Pinhole: 90° over 2000 px is f = 1000.
+        assert_eq!(
+            initial_params("SIMPLE_RADIAL", 2000, 1000, 90.0).unwrap(),
+            "1000.000,1000.000,500.000,0.000"
+        );
+        assert!(initial_params("OPENCV", 2000, 1000, 200.0).is_err());
+        let b = parse_banner("COLMAP 4.2.0 (Commit x on y with CUDA)").unwrap();
+        let s = Settings {
+            camera_params: Some(p.clone()),
+            ..Settings::default()
+        };
+        let (st, _) = stages(&b, &s, Path::new("i"), Path::new("w"));
+        assert!(st[0]
+            .args
+            .join(" ")
+            .contains(&format!("--ImageReader.camera_params {p}")));
+    }
+
+    #[test]
     fn progress_is_read_from_the_log() {
         assert_eq!(
             progress(
@@ -490,6 +566,13 @@ mod tests {
             Some((1, 3))
         );
         assert_eq!(progress("mapper", "Registering image #7 (8)"), Some((8, 0)));
+        assert_eq!(
+            progress(
+                "mapper",
+                "incremental_pipeline.cc:620] Registering image #9 (num_reg_frames=10)"
+            ),
+            Some((10, 0))
+        );
         assert_eq!(
             progress(
                 "patch_match_stereo",
