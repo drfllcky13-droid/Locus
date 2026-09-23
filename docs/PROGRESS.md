@@ -142,7 +142,7 @@ Plan (step 1 comes first: every accuracy criterion is measured against it):
 4. **Storage and audit.** *Built: schema 3 (registrations, registration_poses, both immutable; applied registration in settings), step-by-step migration, scene uses the applied poses.* Schema 3: registrations, links, per-scan poses, detected targets; every run and every manual link change (delete, force) audit-logged. Applying a registration only updates scan poses (octrees stay as built).
 5. **Graph view.** *Built: Scans → Register Scans… (Ctrl+R): run settings, stored registrations, top-view graph coloured by link status with unverified scans ringed, link figures, delete/force and re-solve, apply/revert.* Scans as nodes, links as edges coloured by error; delete or force a link and re-optimise.
 6. **Registration report.** Per-link error, overlap %, max and mean target residuals, overall statistics; exported to PDF (PDF crate chosen for its licence, logged here).
-7. **Method notes** in `docs/methods/registration.md`.
+7. **Method notes** in `docs/methods/registration.md`. *Written.*
 
 Acceptance criteria:
 - [x] On synthetic scans with known poses, registration error is under 2 mm and 0.02° (relative to the first scan): 6 scans × 4M points, targets + cloud links from rough poses (0.5 m, 5° off), worst error 0.22 mm and 0.0008° (`crates/locus-register/tests/accept.rs`).
