@@ -548,13 +548,16 @@ export type AnalysisRecord = AnalysisBase &
     | { tool: "bloodstain"; record: BloodstainRun }
     | { tool: "camera"; record: CameraRun }
     | { tool: "witness"; record: WitnessRun }
-    | { tool: "skid" | "yaw" | "momentum" | "crush"; record: CrashRun }
+    | { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume"; record: CrashRun }
   );
 export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
 export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
 export type CameraRecord = Extract<AnalysisRecord, { tool: "camera" }>;
 export type WitnessRecord = Extract<AnalysisRecord, { tool: "witness" }>;
-export type CrashRecord = Extract<AnalysisRecord, { tool: "skid" | "yaw" | "momentum" | "crush" }>;
+export type CrashRecord = Extract<
+  AnalysisRecord,
+  { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume" }
+>;
 
 /** A crash tool's input: a value and the range it could be in (uniform, or normal with the
  * range as ±2σ). */
@@ -621,7 +624,34 @@ export type CrashRequest =
       depths?: CrashInput[];
       pdof_deg: CrashInput;
       mass: CrashInput;
+    }
+  | {
+      /** Volumetric crush: a reference scan registered onto the damaged one by picked pairs
+       * (reference, damaged) and ICP around the damage region. */
+      tool: "volume";
+      label: string;
+      damaged: string;
+      reference: string;
+      pairs: [PickHit, PickHit][];
+      lo: P3;
+      hi: P3;
+      cell: number;
     };
+
+/** Volumetric crush (locus-analysis crush_volume::CrushVolume). */
+export interface CrushVolume {
+  origin: P3;
+  u: P3;
+  v: P3;
+  normal: P3;
+  cell: number;
+  cells: { i: number; j: number; depth: number; sigma: number }[];
+  uncovered: number;
+  inward: { value: number; mean: number; sd: number; interval95: [number, number]; draws: number };
+  outward: number;
+  max_depth: number;
+  crushed_area: number;
+}
 
 /** A crush profile measured on a damaged vehicle's scan (locus-analysis crash::CrushProfile). */
 export interface CrushProfile {
@@ -664,6 +694,15 @@ export interface CrashRun {
   circle?: { centre: P3; normal: P3; radius: number; arc_deg: number } | null;
   radius_from?: { kind: "chord" } | { kind: "points"; points: P3[] };
   profile?: CrushProfile | null;
+  result?: CrushVolume;
+  registration?: {
+    pairs_rms: number;
+    icp_rms: number;
+    overlap: number;
+    inflation: number;
+    sigma_translation: number;
+    sigma_rotation_deg: number;
+  };
 }
 
 export type LensModel = "pinhole" | "radial1" | "radial2" | "full" | "auto";

@@ -466,6 +466,7 @@ export function Viewport({
             key={`x${project.root}`}
             engine={getEngine}
             origin={shownScene?.origin.join() ?? ""}
+            scans={shownScene?.scans ?? []}
             requestPick={(hint, then) => {
               setTool("orbit");
               setPickRequest({ hint, then });

@@ -20,7 +20,7 @@ import type { Engine } from "../../viewer3d/engine";
 import type { PickHit } from "../../viewer3d/pointcloud";
 import { RecordButtons } from "../camera/CameraPanel";
 
-type Tool = "skid" | "yaw" | "momentum" | "crush";
+type Tool = "skid" | "yaw" | "momentum" | "crush" | "volume";
 type V3 = [number, number, number];
 
 /** A value and a symmetric tolerance, as typed. */
@@ -152,6 +152,40 @@ function crashOverlay(run: CrashRun, origin: V3): THREE.Group {
       g.add(d);
     }
   }
+  // Volumetric crush: the cells deeper than 2σ either way, on the face's plane, coloured by
+  // depth (red in, blue out).
+  if (run.result) {
+    const v = run.result;
+    const pos: number[] = [];
+    const col: number[] = [];
+    const scale = Math.max(v.max_depth, 0.01);
+    const at = (s: number, t: number) =>
+      [0, 1, 2].map((k) => v.origin[k] + v.u[k] * s + v.v[k] * t - origin[k]);
+    for (const c of v.cells) {
+      if (Math.abs(c.depth) <= 2 * c.sigma) continue;
+      const [s, t, h] = [c.i * v.cell, c.j * v.cell, v.cell];
+      const [a, b, d, e] = [at(s, t), at(s + h, t), at(s + h, t + h), at(s, t + h)];
+      pos.push(...a, ...b, ...d, ...a, ...d, ...e);
+      const x = Math.max(-1, Math.min(1, c.depth / scale));
+      const rgb = x >= 0 ? [1, 1 - 0.8 * x, 1 - 0.85 * x] : [1 + 0.8 * x, 1 + 0.55 * x, 1];
+      for (let k = 0; k < 6; k++) col.push(...rgb);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    const m = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.8,
+      }),
+    );
+    m.renderOrder = 10;
+    g.add(m);
+  }
   // A crush profile: the face line, and each station to the damaged surface behind it.
   if (run.profile) {
     const p = run.profile;
@@ -172,9 +206,11 @@ export function CrashPanel({
   origin,
   requestPick,
   onNotice,
+  scans,
 }: {
   engine: () => Engine | null;
   origin: string;
+  scans: { key: string; name: string }[];
   requestPick: (hint: string, then: (hit: PickHit) => void) => void;
   onNotice: (m: string | null) => void;
 }) {
@@ -214,6 +250,12 @@ export function CrashPanel({
   const [profilePicks, setProfilePicks] = useState<PickHit[]>([]);
   const [band, setBand] = useState("0.1");
   const [profile, setProfile] = useState<CrushProfile | null>(null);
+  // Volumetric crush: the two scans, picked pairs (reference, damaged) and the damage region.
+  const [volDamaged, setVolDamaged] = useState("");
+  const [volReference, setVolReference] = useState("");
+  const [volPairs, setVolPairs] = useState<[PickHit, PickHit][]>([]);
+  const [region, setRegion] = useState<{ min: V3; max: V3 } | null>(null);
+  const [cell, setCell] = useState("0.02");
   const [pdof, setPdof] = useState(val(0));
   const [mass, setMass] = useState(val(""));
   const [result, setResult] = useState<CrashRun | null>(null);
@@ -317,6 +359,25 @@ export function CrashPanel({
         ? { ...rest, table: null, a: ai, b: bi, stiffness_source: source }
         : null;
     }
+    if (tool === "volume") {
+      return volDamaged &&
+        volReference &&
+        volDamaged !== volReference &&
+        volPairs.length >= 3 &&
+        region &&
+        Number(cell) > 0
+        ? {
+            tool,
+            label: crushLabel,
+            damaged: volDamaged,
+            reference: volReference,
+            pairs: volPairs,
+            lo: region.min,
+            hi: region.max,
+            cell: Number(cell),
+          }
+        : null;
+    }
     return null;
   })();
   const reqKey = JSON.stringify(request);
@@ -339,7 +400,7 @@ export function CrashPanel({
   }, [reqKey]);
   const preview = tool && request ? result : null;
   const crashes = records.filter((r): r is CrashRecord =>
-    ["skid", "yaw", "momentum", "crush"].includes(r.tool),
+    ["skid", "yaw", "momentum", "crush", "crush_volume"].includes(r.tool),
   );
   const drawn = tool ? preview : (crashes.find((r) => r.id === shown)?.record ?? null);
 
@@ -390,6 +451,7 @@ export function CrashPanel({
     yaw: "Critical speed from a yaw mark",
     momentum: "Linear momentum (two vehicles)",
     crush: "Crush energy (CRASH3)",
+    volume: "Crush volume (against a reference scan)",
   };
   return (
     <section className="panel-section crash">
@@ -401,7 +463,8 @@ export function CrashPanel({
               key={t}
               onClick={() => {
                 setTool(t);
-                setName(`${titles[t]} ${crashes.filter((r) => r.tool === t).length + 1}`);
+                const stored = t === "volume" ? "crush_volume" : t;
+                setName(`${titles[t]} ${crashes.filter((r) => r.tool === stored).length + 1}`);
                 setResult(null);
               }}
             >
@@ -745,6 +808,82 @@ export function CrashPanel({
               <ValField label="Mass" v={mass} set={setMass} unit="kg" />
             </>
           )}
+          {tool === "volume" && (
+            <>
+              <label>
+                Face
+                <input value={crushLabel} onChange={(e) => setCrushLabel(e.target.value)} />
+              </label>
+              <label>
+                Damaged vehicle&apos;s scan
+                <select value={volDamaged} onChange={(e) => setVolDamaged(e.target.value)}>
+                  <option value="">Choose…</option>
+                  {scans.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Reference (undamaged) scan
+                <select value={volReference} onChange={(e) => setVolReference(e.target.value)}>
+                  <option value="">Choose…</option>
+                  {scans.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted">
+                Pick at least 3 undamaged features away from the damage, each on the reference and
+                then on the damaged vehicle.
+              </p>
+              <div className="buttons">
+                <button
+                  onClick={() =>
+                    requestPick("Click an undamaged feature on the reference.", (r) =>
+                      requestPick("Click the same feature on the damaged vehicle.", (d) =>
+                        setVolPairs((ps) => [...ps, [r, d]]),
+                      ),
+                    )
+                  }
+                >
+                  Pick a pair ({volPairs.length})
+                </button>
+                {volPairs.length > 0 && (
+                  <button onClick={() => setVolPairs([])}>Clear pairs</button>
+                )}
+              </div>
+              <div className="buttons">
+                <button
+                  onClick={() => {
+                    const r = engine()?.clipRegion();
+                    if (r) setRegion({ min: r.min as V3, max: r.max as V3 });
+                    else onNotice("Turn the clip box on and fit it around the damage first.");
+                  }}
+                >
+                  Use the clip box as the damage region
+                </button>
+              </div>
+              {region && (
+                <p className="muted">
+                  Region {region.max.map((h, k) => (h - region.min[k]).toFixed(2)).join(" × ")} m
+                </p>
+              )}
+              <label>
+                Cell size
+                <input
+                  className="narrow"
+                  inputMode="decimal"
+                  value={cell}
+                  onChange={(e) => setCell(e.target.value)}
+                />{" "}
+                m
+              </label>
+            </>
+          )}
           {failure && request && <p className="error">{failure}</p>}
           {preview && (
             <div className="trajectory-result">
@@ -766,6 +905,24 @@ export function CrashPanel({
                 <div>
                   Energy {(preview.energy.value / 1000).toFixed(1)} kJ; equivalent barrier speed{" "}
                   <strong>{fmtSpeed(preview.ebs!)}</strong>
+                </div>
+              )}
+              {preview.result && (
+                <div>
+                  Crush volume <strong>{(preview.result.inward.value * 1000).toFixed(2)} L</strong>{" "}
+                  (95 % {(preview.result.inward.interval95[0] * 1000).toFixed(2)}–
+                  {(preview.result.inward.interval95[1] * 1000).toFixed(2)} L); pushed outward{" "}
+                  {(preview.result.outward * 1000).toFixed(2)} L; deepest{" "}
+                  {(preview.result.max_depth * 1000).toFixed(0)} mm
+                  {preview.registration && (
+                    <div className="muted">
+                      Registration: pairs {(preview.registration.pairs_rms * 1000).toFixed(1)} mm
+                      RMS, ICP {(preview.registration.icp_rms * 1000).toFixed(1)} mm RMS,{" "}
+                      {(preview.registration.overlap * 100).toFixed(0)} % overlap; 1σ{" "}
+                      {(preview.registration.sigma_translation * 1000).toFixed(1)} mm,{" "}
+                      {preview.registration.sigma_rotation_deg.toFixed(3)}°
+                    </div>
+                  )}
                 </div>
               )}
               {preview.warnings?.map((w, i) => (

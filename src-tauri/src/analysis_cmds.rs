@@ -341,6 +341,13 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                 };
                 (doc, vec![])
             }
+            "crush_volume" => (
+                locus_report::crash::volume(
+                    &meta(p, &a)?,
+                    &serde_json::from_value(a.record.clone()).map_err(err)?,
+                ),
+                vec![],
+            ),
             t => return Err(format!("No report for {t} analyses yet.")),
         };
         let (report, images) = report;

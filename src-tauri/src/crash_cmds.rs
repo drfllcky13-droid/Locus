@@ -8,6 +8,7 @@ use locus_analysis::crash::{
     self, Input, MomentumVehicle, SkidSegment, YawRadius, CRUSH_METHOD, DRAWS, MOMENTUM_METHOD,
     SKID_METHOD, YAW_METHOD,
 };
+use locus_analysis::crush_volume;
 use locus_analysis::measure::P3;
 use locus_analysis::trajectory::PointSource;
 use locus_core::AnalysisRecord;
@@ -123,6 +124,147 @@ pub enum CrashRequest {
         pdof_deg: Input,
         mass: Input,
     },
+    /// Volumetric crush: an undamaged reference scan registered onto the damaged one by picked
+    /// pairs (reference, damaged) and ICP around the damage region `lo`–`hi`.
+    Volume {
+        label: String,
+        damaged: String,
+        reference: String,
+        pairs: Vec<[Pick; 2]>,
+        lo: P3,
+        hi: P3,
+        cell: f64,
+    },
+}
+
+/// Points of the vehicle this far around the pairs and the damage region are used (m).
+const VOLUME_MARGIN: f64 = 1.0;
+/// The reference is thinned to this spacing for the ICP (m).
+const VOLUME_SPACING: f64 = 0.02;
+const VOLUME_DRAWS: usize = 200;
+
+#[allow(clippy::too_many_arguments)]
+fn crush_volume_run(
+    scene: &Scene,
+    point_sigma: f64,
+    label: &str,
+    damaged: &str,
+    reference: &str,
+    pairs: &[[Pick; 2]],
+    lo: P3,
+    hi: P3,
+    cell: f64,
+) -> CmdResult<crush_volume::VolumeRun> {
+    use locus_octree::scene::{apply, ScanKey};
+    use nalgebra::Point3;
+    let key = |s: &str| ScanKey::parse(s).ok_or_else(|| format!("No scan {s}."));
+    let (dk, rk) = (key(damaged)?, key(reference)?);
+    if dk == rk {
+        return Err("Choose two different scans: the damaged vehicle and the reference.".into());
+    }
+    if pairs.len() < 3 {
+        return Err("Pick at least 3 pairs: the same undamaged feature on the reference, then on the damaged vehicle.".into());
+    }
+    if !(0..3).all(|k| hi[k] > lo[k]) {
+        return Err("Set the clip box around the damage first.".into());
+    }
+    let mut rows = vec![];
+    for (k, [r, d]) in pairs.iter().enumerate() {
+        if r.scan != reference || d.scan != damaged {
+            return Err(format!(
+                "Pair {}: pick the reference's point on the reference scan, then the damaged vehicle's on the damaged scan.",
+                k + 1
+            ));
+        }
+        let (rp, rs) = resolve_all(scene, std::slice::from_ref(r))?;
+        let (dp, ds) = resolve_all(scene, std::slice::from_ref(d))?;
+        rows.push(crush_volume::PairRow {
+            reference: rp[0],
+            damaged: dp[0],
+            residual: f64::NAN,
+            reference_source: rs[0].clone(),
+            damaged_source: ds[0].clone(),
+        });
+    }
+    let grow = |pts: &mut dyn Iterator<Item = P3>| {
+        let (mut a, mut b) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for p in pts {
+            for k in 0..3 {
+                a[k] = a[k].min(p[k]);
+                b[k] = b[k].max(p[k]);
+            }
+        }
+        (a.map(|v| v - VOLUME_MARGIN), b.map(|v| v + VOLUME_MARGIN))
+    };
+    let (da, db) = grow(&mut rows.iter().map(|r| r.damaged).chain([lo, hi]));
+    let (ra, rb) = grow(&mut rows.iter().map(|r| r.reference));
+    let dam = scene.scan_points_in(dk, da, db).map_err(err)?;
+    let refs = scene.scan_points_in(rk, ra, rb).map_err(err)?;
+    let view = apply(&scene.scans[&dk].pose, [0.0; 3]);
+    let pair_pts: Vec<(P3, P3)> = rows.iter().map(|r| (r.reference, r.damaged)).collect();
+    let a = locus_register::exemplar::align_exemplar(
+        &refs,
+        &dam,
+        view,
+        &pair_pts,
+        lo,
+        hi,
+        VOLUME_SPACING,
+    )
+    .map_err(|e| capital(&e))?;
+    let map = |p: P3| -> P3 { (a.transform * Point3::from(p)).coords.into() };
+    for r in &mut rows {
+        let m = map(r.reference);
+        r.residual = (0..3)
+            .map(|k| (m[k] - r.damaged[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+    }
+    let moved: Vec<P3> = refs.iter().map(|p| map(*p)).collect();
+    let result = crush_volume::crush_volume(
+        &moved,
+        &dam,
+        lo,
+        hi,
+        view,
+        cell,
+        point_sigma,
+        Some(crush_volume::PoseUncertainty {
+            covariance: a.covariance,
+            about: a.about.coords.into(),
+        }),
+        VOLUME_DRAWS,
+        1,
+    )
+    .map_err(|e| capital(&e.0))?;
+    let h = a.transform.to_homogeneous();
+    let c = &a.covariance;
+    let registration = crush_volume::Registration {
+        pairs: rows,
+        pairs_rms: a.pairs.rms,
+        icp_rms: a.icp.rms,
+        icp_pairs: a.icp.pairs,
+        overlap: a.icp.overlap,
+        conditioning: a.icp.conditioning,
+        iterations: a.icp.iterations,
+        converged: a.icp.converged,
+        inflation: a.inflation,
+        transform: std::array::from_fn(|k| h[(k / 4, k % 4)]),
+        sigma_translation: (c[(3, 3)] + c[(4, 4)] + c[(5, 5)]).max(0.0).sqrt(),
+        sigma_rotation_deg: (c[(0, 0)] + c[(1, 1)] + c[(2, 2)])
+            .max(0.0)
+            .sqrt()
+            .to_degrees(),
+    };
+    Ok(crush_volume::volume_run(
+        label,
+        damaged,
+        reference,
+        lo,
+        hi,
+        registration,
+        result,
+    ))
 }
 
 /// A crush profile to measure on the scan: the damage's two ends on the undamaged face line
@@ -354,6 +496,32 @@ fn crash_run(
             r.table_entry = entry;
             r.profile = measured;
             ("crush", CRUSH_METHOD, serde_json::to_value(r).map_err(err)?)
+        }
+        CrashRequest::Volume {
+            label,
+            damaged,
+            reference,
+            pairs,
+            lo,
+            hi,
+            cell,
+        } => {
+            let r = crush_volume_run(
+                scene,
+                point_sigma,
+                label,
+                damaged,
+                reference,
+                pairs,
+                *lo,
+                *hi,
+                *cell,
+            )?;
+            (
+                "crush_volume",
+                crush_volume::VOLUME_METHOD,
+                serde_json::to_value(r).map_err(err)?,
+            )
         }
     })
 }
