@@ -104,11 +104,23 @@ Worked in the tests:
 
 Δ [A (c₁ + c₂)/2 + B (c₁² + c₁c₂ + c₂²)/6 + G]
 
+**Measured on the scan.** Instead of entering them, the width and depths can be measured on the damaged vehicle's scan:
+- The examiner picks the damage's two ends on the undamaged face line, at the measuring height, and any point on the vehicle's side of that line (it only sets which side is inward).
+- The width is the ends' horizontal distance. n stations are spaced equally between them at the ends' mean height.
+- At each station, the scan points in a strip across the line are taken: within a height band (±0.1 m by default) and a quarter of the stations' spacing along the line (20–50 mm). The depth is where the surviving surface begins behind the line: the 5th percentile of the points' distances, so a few stray points don't set it.
+- The depth's 1σ is √(2σₚ² + (d₁₅ − d₅)²), with σₚ the scan's point uncertainty. The two σₚ terms are for the surface and for the picked line; the percentile spread grows where the surface begins raggedly.
+- Depths enter the calculation as normal inputs, ±2σ. Where that would reach below 0 (crush can't be negative), they are uniform from 0 to d + 2σ. The width's 1σ is √2 σₚ, from its two picked ends.
+- The report lists each station's point on the face line, the surface point found, the depth with its 1σ, and the number of points.
+
+The face line is the examiner's reading of where the undamaged surface was; the profile measures from it and does not find it. Checked in the tests against a dented synthetic face, and in the app along a flat wall (width 1.498 m between picks 1.498 m apart, depths 0 ± 3 mm).
+
 **Force direction.** The sum is multiplied by (1 + tan² α) for a principal direction of force α off the face's normal (|α| ≤ 45°).
 
 **Equivalent barrier speed.** √(2E/m).
 
-**Stiffness coefficients.** A and B are entered with their source, which the report prints. A bundled coefficient table from public NHTSA crash-test data is planned (it needs the data downloaded, with permission, and its licence recorded; rule 7).
+**Stiffness coefficients.** A and B come from the bundled table, derived by Campbell's method from 850 NHTSA full-width frontal rigid-barrier tests, with each vehicle's test numbers and uncertainty (see `crash-stiffness.md`). The examiner can override them with values entered with their source, which the report prints.
+
+**The CRASH3 manual's checks.** The integral is the manual's equations (2)–(4), and the tests reproduce its sample run's crush energies (vehicle 1: 19,245.3 ft-lb printed, 19,255 computed; vehicle 2: 31,220.8 printed, 31,100 computed), each within the range its printed inputs' rounding allows. Details are in `crash-stiffness.md`.
 
 Worked in the tests, with A = 50,000 N/m and B = 1,000,000 N/m² (G = 1,250 N):
 
@@ -126,7 +138,9 @@ Every formula is tested against the examples worked by hand above, including the
 In the app, on a generated room's scan:
 - a skid stretch was measured on the cloud and combined with a second, entered surface;
 - a yaw mark's radius was fitted to picked points;
-- momentum and crush were entered.
+- momentum and crush were entered;
+- a crush profile was measured along a flat wall (depths 0 ± 3 mm);
+- crush with A and B from the NHTSA table (a 2021 RAV4, test 15703) was run.
 
 Each run was saved and printed. Momentum and crush reproduced the worked values.
 
@@ -145,5 +159,5 @@ Each tool stores its own assumptions and limitations with every run and prints t
 - L. B. Fricke, *Traffic Accident Reconstruction*, Northwestern University Traffic Institute, 1990.
 - R. M. Brach and R. M. Brach, *Vehicle Accident Analysis and Reconstruction Methods*, 2nd ed., SAE International, 2011.
 - K. L. Campbell, "Energy basis for collision severity", SAE technical paper 740565, 1974.
-- National Highway Traffic Safety Administration, *CRASH3 Technical Manual*, US Department of Transportation, 1986.
+- National Highway Traffic Safety Administration, *CRASH3 User's Guide and Technical Manual*, US Department of Transportation (NTIS PB83-112201).
 - J. A. Neptune, "Crush stiffness coefficients, restitution constants, and a revision of CRASH3 and SMAC", SAE technical paper 980024, 1998.

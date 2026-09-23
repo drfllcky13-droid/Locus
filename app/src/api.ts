@@ -397,6 +397,11 @@ export const api = {
   witnessPreview: (request: WitnessRequest) => invoke<WitnessRun>("witness_preview", { request }),
   crashMarkLength: (picks: PickHit[]) =>
     invoke<{ length: number; points: P3[] }>("crash_mark_length", { picks }),
+  stiffnessMakes: () => invoke<string[]>("stiffness_makes"),
+  stiffnessLookup: (make: string, model: string, yearFrom: number | null, yearTo: number | null) =>
+    invoke<StiffnessEntry[]>("stiffness_lookup", { make, model, yearFrom, yearTo }),
+  crashCrushProfile: (request: { picks: PickHit[]; stations: number; band: number }) =>
+    invoke<CrushProfile>("crash_crush_profile", { request }),
   crashPreview: (request: CrashRequest) => invoke<CrashRun>("crash_preview", { request }),
   crashSave: (name: string, request: CrashRequest, revises: number | null) =>
     invoke<AnalysisRecord>("crash_save", { name, request, revises }),
@@ -605,14 +610,44 @@ export type CrashRequest =
   | {
       tool: "crush";
       label: string;
-      a: CrashInput;
-      b: CrashInput;
-      stiffness_source: string;
-      width: CrashInput;
-      depths: CrashInput[];
+      /** A and B from the bundled NHTSA table, or entered with their source. */
+      table: { make: string; model: string; model_year: number } | null;
+      a?: CrashInput;
+      b?: CrashInput;
+      stiffness_source?: string;
+      /** The width and depths measured on the scan: the damage's ends and a point inside. */
+      profile?: { picks: PickHit[]; stations: number; band: number } | null;
+      width?: CrashInput;
+      depths?: CrashInput[];
       pdof_deg: CrashInput;
       mass: CrashInput;
     };
+
+/** A crush profile measured on a damaged vehicle's scan (locus-analysis crash::CrushProfile). */
+export interface CrushProfile {
+  start: P3;
+  end: P3;
+  inward: P3;
+  height: number;
+  band: number;
+  width: number;
+  stations: { at: P3; surface: P3; depth: number; sigma: number; points: number }[];
+}
+
+/** A vehicle in the bundled CRASH3 stiffness table (NHTSA frontal barrier tests). */
+export interface StiffnessEntry {
+  make: string;
+  model: string;
+  model_year: number;
+  body_type: string;
+  tests: { test_no: number; a: number; b: number }[];
+  a: number;
+  a_sigma: number;
+  b: number;
+  b_sigma: number;
+  single_test: boolean;
+  width_from_vehicle: boolean;
+}
 
 /** A stored or previewed crash run: the fields the panel shows (the rest is in the record). */
 export interface CrashRun {
@@ -628,6 +663,7 @@ export interface CrashRun {
   segments?: { path: P3[] }[];
   circle?: { centre: P3; normal: P3; radius: number; arc_deg: number } | null;
   radius_from?: { kind: "chord" } | { kind: "points"; points: P3[] };
+  profile?: CrushProfile | null;
 }
 
 export type LensModel = "pinhole" | "radial1" | "radial2" | "full" | "auto";

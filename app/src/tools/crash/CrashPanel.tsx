@@ -12,7 +12,9 @@ import {
   type CrashRecord,
   type CrashRequest,
   type CrashRun,
+  type CrushProfile,
   type Spread,
+  type StiffnessEntry,
 } from "../../api";
 import type { Engine } from "../../viewer3d/engine";
 import type { PickHit } from "../../viewer3d/pointcloud";
@@ -150,6 +152,18 @@ function crashOverlay(run: CrashRun, origin: V3): THREE.Group {
       g.add(d);
     }
   }
+  // A crush profile: the face line, and each station to the damaged surface behind it.
+  if (run.profile) {
+    const p = run.profile;
+    const pts = [rel(p.start), rel(p.end)];
+    for (const s of p.stations) pts.push(rel(s.at), rel(s.surface));
+    const l = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xff9f0a, depthTest: false }),
+    );
+    l.renderOrder = 10;
+    g.add(l);
+  }
   return g;
 }
 
@@ -184,8 +198,22 @@ export function CrashPanel({
   const [a, setA] = useState(val(""));
   const [b, setB] = useState(val(""));
   const [source, setSource] = useState("");
+  // Stiffness: from the NHTSA table (a vehicle chosen there) or entered with a source.
+  const [fromTable, setFromTable] = useState(true);
+  const [makes, setMakes] = useState<string[]>([]);
+  const [make, setMake] = useState("");
+  const [model, setModel] = useState("");
+  const [year, setYear] = useState("");
+  const [matches, setMatches] = useState<StiffnessEntry[]>([]);
+  const [entry, setEntry] = useState<StiffnessEntry | null>(null);
   const [width, setWidth] = useState(val(""));
   const [depths, setDepths] = useState<Val[]>([val(""), val("")]);
+  // Or the width and depths measured on the scan: the damage's two ends on the undamaged
+  // face line and a point inside the vehicle, with the height band.
+  const [measure, setMeasure] = useState(false);
+  const [profilePicks, setProfilePicks] = useState<PickHit[]>([]);
+  const [band, setBand] = useState("0.1");
+  const [profile, setProfile] = useState<CrushProfile | null>(null);
   const [pdof, setPdof] = useState(val(0));
   const [mass, setMass] = useState(val(""));
   const [result, setResult] = useState<CrashRun | null>(null);
@@ -195,6 +223,11 @@ export function CrashPanel({
   useEffect(() => {
     api.analyses().then(setRecords, (e) => onNotice(String(e)));
   }, [onNotice]);
+  // The stiffness table's makes, when the crush tool is first opened.
+  useEffect(() => {
+    if (tool === "crush" && makes.length === 0)
+      api.stiffnessMakes().then(setMakes, (e) => onNotice(String(e)));
+  }, [tool, makes.length, onNotice]);
 
   const all = <T,>(xs: (T | null)[]): T[] | null =>
     xs.every((x) => x !== null) ? (xs as T[]) : null;
@@ -257,20 +290,31 @@ export function CrashPanel({
       return vs.every((v) => v) ? { tool, vehicles: vs.map((v) => v!) } : null;
     }
     if (tool === "crush") {
-      const i = all([a, b, width, pdof, mass].map(toInput));
-      const ds = all(depths.map(toInput));
-      return i && ds && source.trim()
-        ? {
-            tool,
-            label: crushLabel,
-            a: i[0],
-            b: i[1],
-            stiffness_source: source,
-            width: i[2],
-            depths: ds,
-            pdof_deg: i[3],
-            mass: i[4],
-          }
+      const i = all([pdof, mass].map(toInput));
+      if (!i) return null;
+      const base = { tool, label: crushLabel, pdof_deg: i[0], mass: i[1] };
+      let rest;
+      if (measure) {
+        if (profilePicks.length !== 3 || !(Number(band) > 0)) return null;
+        rest = {
+          ...base,
+          profile: { picks: profilePicks, stations: depths.length, band: Number(band) },
+        };
+      } else {
+        const [w, ds] = [toInput(width), all(depths.map(toInput))];
+        if (!w || !ds) return null;
+        rest = { ...base, width: w, depths: ds, profile: null };
+      }
+      if (fromTable)
+        return entry
+          ? {
+              ...rest,
+              table: { make: entry.make, model: entry.model, model_year: entry.model_year },
+            }
+          : null;
+      const [ai, bi] = [toInput(a), toInput(b)];
+      return ai && bi && source.trim()
+        ? { ...rest, table: null, a: ai, b: bi, stiffness_source: source }
         : null;
     }
     return null;
@@ -507,13 +551,109 @@ export function CrashPanel({
                 Face
                 <input value={crushLabel} onChange={(e) => setCrushLabel(e.target.value)} />
               </label>
-              <ValField label="A" v={a} set={setA} unit="N/m" />
-              <ValField label="B" v={b} set={setB} unit="N/m²" />
               <label>
-                Source of A and B (in the report)
-                <input value={source} onChange={(e) => setSource(e.target.value)} />
+                Stiffness A and B
+                <select
+                  value={fromTable ? "table" : "entered"}
+                  onChange={(e) => {
+                    setFromTable(e.target.value === "table");
+                  }}
+                >
+                  <option value="table">from NHTSA frontal barrier tests</option>
+                  <option value="entered">entered, with their source</option>
+                </select>
               </label>
-              <ValField label="Damage width" v={width} set={setWidth} unit="m" />
+              {fromTable ? (
+                <>
+                  <div className="buttons">
+                    <select value={make} onChange={(e) => setMake(e.target.value)}>
+                      <option value="">Make…</option>
+                      {makes.map((m) => (
+                        <option key={m}>{m}</option>
+                      ))}
+                    </select>
+                    <input
+                      className="narrow"
+                      placeholder="Model"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                    />
+                    <input
+                      className="narrow"
+                      placeholder="Year"
+                      inputMode="numeric"
+                      value={year}
+                      onChange={(e) => setYear(e.target.value)}
+                    />
+                    <button
+                      disabled={!make}
+                      onClick={() => {
+                        const y = Number(year) || null;
+                        api
+                          .stiffnessLookup(make, model, y && y - 2, y && y + 2)
+                          .then(setMatches, (err) => onNotice(String(err)));
+                      }}
+                    >
+                      Find
+                    </button>
+                  </div>
+                  {matches.length > 0 && (
+                    <label>
+                      Vehicle
+                      <select
+                        value={entry ? `${entry.make}|${entry.model}|${entry.model_year}` : ""}
+                        onChange={(e) =>
+                          setEntry(
+                            matches.find(
+                              (m) => `${m.make}|${m.model}|${m.model_year}` === e.target.value,
+                            ) ?? null,
+                          )
+                        }
+                      >
+                        <option value="">Choose…</option>
+                        {matches.map((m) => (
+                          <option
+                            key={`${m.make}|${m.model}|${m.model_year}`}
+                            value={`${m.make}|${m.model}|${m.model_year}`}
+                          >
+                            {m.model_year} {m.model} ({m.tests.length} test
+                            {m.tests.length > 1 ? "s" : ""})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {entry && (
+                    <p className={entry.single_test ? "error" : "muted"}>
+                      A {entry.a.toFixed(0)} ± {entry.a_sigma.toFixed(0)} N/m, B{" "}
+                      {entry.b.toFixed(0)} ± {entry.b_sigma.toFixed(0)} N/m² (1σ), from NHTSA test
+                      {entry.tests.length > 1 ? "s" : ""}{" "}
+                      {entry.tests.map((t) => t.test_no).join(", ")}
+                      {entry.single_test ? ". One test only: its spread can't be known." : "."}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <ValField label="A" v={a} set={setA} unit="N/m" />
+                  <ValField label="B" v={b} set={setB} unit="N/m²" />
+                  <label>
+                    Source of A and B (in the report; required)
+                    <input value={source} onChange={(e) => setSource(e.target.value)} />
+                  </label>
+                </>
+              )}
+              <label>
+                Width and depths
+                <select
+                  value={measure ? "scan" : "entered"}
+                  onChange={(e) => setMeasure(e.target.value === "scan")}
+                >
+                  <option value="entered">entered</option>
+                  <option value="scan">measured on the scan</option>
+                </select>
+              </label>
+              {!measure && <ValField label="Damage width" v={width} set={setWidth} unit="m" />}
               <label>
                 Crush depths
                 <select
@@ -531,15 +671,72 @@ export function CrashPanel({
                   ))}
                 </select>
               </label>
-              {depths.map((d, k) => (
-                <ValField
-                  key={k}
-                  label={`C${k + 1}`}
-                  v={d}
-                  set={(x) => setDepths((ds) => ds.map((y, j) => (j === k ? x : y)))}
-                  unit="m"
-                />
-              ))}
+              {!measure &&
+                depths.map((d, k) => (
+                  <ValField
+                    key={k}
+                    label={`C${k + 1}`}
+                    v={d}
+                    set={(x) => setDepths((ds) => ds.map((y, j) => (j === k ? x : y)))}
+                    unit="m"
+                  />
+                ))}
+              {measure && (
+                <>
+                  <label>
+                    Height band (± m around the ends&apos; height)
+                    <input
+                      className="narrow"
+                      inputMode="decimal"
+                      value={band}
+                      onChange={(e) => setBand(e.target.value)}
+                    />
+                  </label>
+                  <div className="buttons">
+                    <button
+                      onClick={() => {
+                        setProfile(null);
+                        const hints = [
+                          "Click one end of the damage on the undamaged face line, at the measuring height.",
+                          "Click the other end of the damage on the face line.",
+                          "Click any point inside the vehicle, behind the damaged face.",
+                        ];
+                        const next = (picked: PickHit[]) =>
+                          requestPick(hints[picked.length], (h) => {
+                            const all3 = [...picked, h];
+                            setProfilePicks(all3);
+                            if (all3.length < 3) next(all3);
+                            else
+                              api
+                                .crashCrushProfile({
+                                  picks: all3,
+                                  stations: depths.length,
+                                  band: Number(band),
+                                })
+                                .then(setProfile, (err) => onNotice(String(err)));
+                          });
+                        setProfilePicks([]);
+                        next([]);
+                      }}
+                    >
+                      {profilePicks.length === 3
+                        ? "Pick again"
+                        : "Pick the ends and a point inside"}
+                    </button>
+                  </div>
+                  {profile && (
+                    <p className="muted">
+                      Width {profile.width.toFixed(3)} m at {profile.height.toFixed(2)} m; depths{" "}
+                      {profile.stations
+                        .map(
+                          (s, k) =>
+                            `C${k + 1} ${(s.depth * 1000).toFixed(0)} ± ${(s.sigma * 1000).toFixed(0)} mm`,
+                        )
+                        .join(", ")}
+                    </p>
+                  )}
+                </>
+              )}
               <ValField
                 label="Principal direction of force (° off normal)"
                 v={pdof}

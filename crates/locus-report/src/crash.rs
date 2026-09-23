@@ -498,7 +498,7 @@ fn momentum_figure(r: &MomentumRun) -> Figure {
 
 const REFS_CRUSH: &[&str] = &[
     "K. L. Campbell, \"Energy basis for collision severity\", SAE technical paper 740565, 1974.",
-    "National Highway Traffic Safety Administration, CRASH3 Technical Manual, US DOT, 1986: the crush-energy integral and the force-direction factor.",
+    "National Highway Traffic Safety Administration, CRASH3 User's Guide and Technical Manual, US DOT (NTIS PB83-112201): the crush-energy integral, the force-direction factor, and the sample run reproduced in the tests.",
     "J. A. Neptune, \"Crush stiffness coefficients, restitution constants, and a revision of CRASH3 and SMAC\", SAE technical paper 980024, 1998.",
 ];
 
@@ -531,6 +531,55 @@ pub fn crush(meta: &Meta, r: &CrushRun) -> Report {
         .enumerate()
         .map(|(k, d)| vec![format!("C{}", k + 1), input(d, "m", 3)])
         .collect();
+    let mut warnings = vec![];
+    let measured = r.profile.as_ref().map(|p| {
+        let rows = p
+            .stations
+            .iter()
+            .enumerate()
+            .map(|(k, s)| {
+                vec![
+                    format!("C{}", k + 1),
+                    format!("{:.3}, {:.3}, {:.3}", s.at[0], s.at[1], s.at[2]),
+                    format!("{:.3}, {:.3}, {:.3}", s.surface[0], s.surface[1], s.surface[2]),
+                    format!("{:.0} ± {:.0}", s.depth * 1000.0, s.sigma * 1000.0),
+                    s.points.to_string(),
+                ]
+            })
+            .collect();
+        vec![
+            Block::Text {
+                text: format!(
+                    "The width and depths were measured on the scan. The damage's ends were picked on the undamaged face line ({:.3}, {:.3}, {:.3}) and ({:.3}, {:.3}, {:.3}), {:.3} m apart. At each equally spaced station, the scan points within ±{:.2} m of the ends' mean height ({:.2} m) in a strip across the line were taken, and the depth is where the surviving surface begins behind the line: the 5th percentile of their distances. Its 1σ combines the scan's point noise (for the surface and for the picked line) with the spread between the 5th and 15th percentiles. A depth enters the calculation as normal, ±2σ, or, where that would reach below 0, as uniform from 0 to d + 2σ.",
+                    p.start[0], p.start[1], p.start[2], p.end[0], p.end[1], p.end[2], p.width, p.band, p.height
+                ),
+            },
+            Block::Table {
+                widths: ["auto", "1fr", "1fr", "auto", "auto"].map(String::from).to_vec(),
+                head: ["Station", "On the face line (m)", "Surface (m)", "Crush (mm, 1σ)", "Points"]
+                    .map(String::from)
+                    .to_vec(),
+                rows,
+            },
+        ]
+    });
+    if let Some(e) = &r.table_entry {
+        if e.single_test {
+            warnings.push(format!(
+                "The stiffness coefficients come from a single NHTSA test ({}): one test can't show how much another of the same vehicle would differ. Their uncertainty is that test's alone (b0 and the measurements).",
+                e.tests[0].test_no
+            ));
+        }
+        if e.width_from_vehicle {
+            warnings.push("For at least one source test the damage width wasn't recorded; the vehicle's overall width was used (a full-width frontal test crushes the whole front).".into());
+        }
+        if !r.label.to_lowercase().contains("front") {
+            warnings.push(format!(
+                "The table's coefficients are from frontal barrier tests; the damaged face here is \"{}\". Use them only for frontal damage.",
+                r.label
+            ));
+        }
+    }
     let mut sections = vec![
         Section {
             heading: "Result".into(),
@@ -552,7 +601,10 @@ pub fn crush(meta: &Meta, r: &CrushRun) -> Report {
                     .to_vec(),
                     rows: depths,
                 },
-            ],
+            ]
+            .into_iter()
+            .chain(measured.into_iter().flatten())
+            .collect(),
         },
     ];
     tail(
@@ -562,7 +614,67 @@ pub fn crush(meta: &Meta, r: &CrushRun) -> Report {
         &r.assumptions,
         &r.limitations,
     );
-    report(meta, "Crush energy", vec![], sections)
+    if let Some(e) = &r.table_entry {
+        let rows = e
+            .tests
+            .iter()
+            .map(|t| {
+                vec![
+                    t.test_no.to_string(),
+                    format!("{:.0} kg", t.mass),
+                    format!("{:.1} km/h", t.speed * 3.6),
+                    format!(
+                        "{:.3} m{}",
+                        t.width,
+                        if t.width_from_vehicle {
+                            " (vehicle width)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    t.crush
+                        .iter()
+                        .map(|c| format!("{:.0}", c * 1000.0))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    format!("{:.0} ± {:.0}", t.a, t.a_sigma),
+                    format!("{:.0} ± {:.0}", t.b, t.b_sigma),
+                ]
+            })
+            .collect();
+        sections.insert(
+            2,
+            Section {
+                heading: "Stiffness source".into(),
+                blocks: vec![
+                    Block::Text {
+                        text: format!(
+                            "A and B for the {} {} {} from the bundled table: NHTSA full-width frontal rigid-barrier tests, by Campbell's method with the CRASH3 energy integral (b0 = 8 ± 3.2 km/h). Each test's A and B (1σ over b0 and the measurements) are listed; the vehicle's values are their mean, with 1σ combining each test's own and the spread between tests: A = {:.0} ± {:.0} N/m, B = {:.0} ± {:.0} N/m². They enter the calculation as normal inputs, ±2σ.",
+                            e.model_year, e.make, e.model, e.a, e.a_sigma, e.b, e.b_sigma
+                        ),
+                    },
+                    Block::Table {
+                        widths: ["auto", "auto", "auto", "auto", "1fr", "auto", "auto"]
+                            .map(String::from)
+                            .to_vec(),
+                        head: [
+                            "NHTSA test",
+                            "Mass",
+                            "Speed",
+                            "Width",
+                            "Crush (mm)",
+                            "A (N/m)",
+                            "B (N/m²)",
+                        ]
+                        .map(String::from)
+                        .to_vec(),
+                        rows,
+                    },
+                ],
+            },
+        );
+    }
+    report(meta, "Crush energy", warnings, sections)
 }
 
 fn crush_figure(r: &CrushRun) -> Figure {
