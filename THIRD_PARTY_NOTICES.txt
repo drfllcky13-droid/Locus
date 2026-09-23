@@ -644,7 +644,7 @@ Per-file attribution (from the metadata embedded in each file):
 ==============================================================================
 [hypher-lppl-1-3] Hyphenation patterns (LPPL-1.3+)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL-1.3+
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -669,7 +669,7 @@ Verification:
 ==============================================================================
 [hypher-mit-or-lgpl-3-0-or-later-or-gpl-3-0-or-later] Hyphenation patterns (MIT OR LGPL-3.0-or-later OR GPL-3.0-or-later)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: MIT OR LGPL-3.0-or-later OR GPL-3.0-or-later
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -721,7 +721,7 @@ Verification:
 ==============================================================================
 [hypher-mit] Hyphenation patterns (MIT)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: MIT
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -770,7 +770,7 @@ Verification:
 ==============================================================================
 [hypher-licenseref-hyph-bg] Hyphenation patterns (LicenseRef-hyph-bg)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LicenseRef-hyph-bg
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -799,7 +799,7 @@ Verification:
 ==============================================================================
 [hypher-lppl-1-0] Hyphenation patterns (LPPL-1.0+)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL-1.0+
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -836,7 +836,7 @@ Verification:
 ==============================================================================
 [hypher-lppl-1-3-or-mit] Hyphenation patterns (LPPL-1.3+ OR MIT)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL-1.3+ OR MIT
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -865,7 +865,7 @@ Verification:
 ==============================================================================
 [hypher-lppl] Hyphenation patterns (LPPL)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -890,7 +890,7 @@ Verification:
 ==============================================================================
 [hypher-fsfap] Hyphenation patterns (FSFAP)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: FSFAP
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -920,7 +920,7 @@ Verification:
 ==============================================================================
 [hypher-unlicense] Hyphenation patterns (Unlicense)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: Unlicense
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -942,7 +942,7 @@ Verification:
 ==============================================================================
 [hypher-lppl-1-2] Hyphenation patterns (LPPL-1.2+)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL-1.2+
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -969,7 +969,7 @@ Verification:
 ==============================================================================
 [hypher-lppl-1-3-only] Hyphenation patterns (LPPL-1.3)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL-1.3
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -991,7 +991,7 @@ Verification:
 ==============================================================================
 [hypher-lppl-1-0-or-mit] Hyphenation patterns (LPPL-1.0+ OR MIT)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LPPL-1.0+ OR MIT
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -1015,7 +1015,7 @@ Verification:
 ==============================================================================
 [hypher-bsd-3-clause] Hyphenation patterns (BSD-3-Clause)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: BSD-3-Clause
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into
@@ -1038,7 +1038,7 @@ Verification:
 ==============================================================================
 [hypher-licenseref-hyph-sa] Hyphenation patterns (LicenseRef-hyph-sa)
 ==============================================================================
-Crate:   hypher 0.1.8
+Crate:   hypher 0.1.8 (patched copy in patches/hypher)
 Licence: LicenseRef-hyph-sa
 What:
   Hyphenation patterns (TeX hyph-utf8 and others) compiled by hypher into

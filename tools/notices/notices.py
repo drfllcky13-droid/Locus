@@ -195,6 +195,13 @@ def registry_dir(name, version):
     return hits[0] if hits else None
 
 
+def local_label(g):
+    loc = g.get('local')
+    if not loc:
+        return ''
+    return f' (patched copy in {loc})' if loc.startswith('patches/') else ' (this repository)'
+
+
 def source_dir(g):
     if g.get('local'):
         return os.path.join(REPO, g['local'])
@@ -205,7 +212,7 @@ def expand(g):
     d = source_dir(g)
     out = []
     for pat in g['files']:
-        if pat.startswith('$OUT_DIR/') or g.get('local'):
+        if pat.startswith('$OUT_DIR/'):
             out.append((pat, [pat]))
             continue
         m = sorted(os.path.relpath(p, d).replace(os.sep, '/')
@@ -306,7 +313,12 @@ def licence_text(data, lid):
     if 'note' in spec:
         parts.append(spec['note'])
     if 'crate' in spec:
-        d = registry_dir(spec['crate'], spec['version']) if 'version' in spec else os.path.join(REPO, spec['crate'])
+        if 'local' in spec:
+            d = os.path.join(REPO, spec['local'])
+        elif 'version' in spec:
+            d = registry_dir(spec['crate'], spec['version'])
+        else:
+            d = os.path.join(REPO, spec['crate'])
         with open(os.path.join(d, spec['path']), encoding='utf-8', errors='replace') as fh:
             t = fh.read().replace('\r\n', '\n')
         if 'from' in spec:
@@ -327,7 +339,7 @@ def generate(data):
     for g in data['groups']:
         used.update(licence_atoms(g, allow))
         L += ['=' * 78, f"[{g['id']}] {g['title']}", '=' * 78,
-              f"Crate:   {g['crate']} {g['version']}" + (' (this repository)' if g.get('local') else ''),
+              f"Crate:   {g['crate']} {g['version']}" + local_label(g),
               f"Licence: {g['licence']}", 'What:', fill(g['what']), 'Files:']
         for pat, files in expand(g):
             L += ['  ' + f for f in files] or ['  ' + pat]
