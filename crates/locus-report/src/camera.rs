@@ -59,15 +59,23 @@ const REFERENCES: &[&str] = &[
     "D. C. Brown, \"Decentering distortion of lenses\", Photogrammetric Engineering, 32(3), 1966, 444–462: the radial and tangential lens model.",
     "A. Criminisi, I. Reid and A. Zisserman, \"Single view metrology\", International Journal of Computer Vision, 40(2), 2000, 123–148: heights from a calibrated view.",
     "R. Drillis and R. Contini, Body Segment Parameters, Technical Report 1166.03, New York University, 1966; as reproduced in D. A. Winter, Biomechanics and Motor Control of Human Movement, 4th ed., Wiley, 2009, Fig. 4.1: the person model's proportions.",
+    "B. Efron and R. J. Tibshirani, An Introduction to the Bootstrap, Chapman & Hall, 1993: the parametric bootstrap.",
+    "M. Stone, \"Cross-validatory choice and assessment of statistical predictions\", Journal of the Royal Statistical Society B, 36(2), 1974, 111–147: leave-one-out cross-validation.",
     "R. T. Birge, \"The calculation of errors by the method of least squares\", Physical Review, 40, 1932, 207–227: inflating the uncertainty when residuals exceed their stated σ.",
 ];
 
-/// The files the camera report embeds (its photo), with their recorded hashes.
+/// The files the camera report embeds (its photo and the subjects' other frames), with their
+/// recorded hashes.
 pub fn photo_files(r: &Run) -> Vec<(String, String)> {
-    r.photo
+    let mut out: Vec<(String, String)> = r
+        .photo
         .iter()
+        .chain(r.heights.iter().filter_map(|h| h.frame.as_ref()))
         .map(|p| (p.file.clone(), p.sha256.clone()))
-        .collect()
+        .collect();
+    out.sort();
+    out.dedup();
+    out
 }
 
 pub fn report(meta: &Meta, r: &Run) -> Report {
@@ -107,7 +115,7 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
     let [fh, fv] = c.fov();
     let k = &c.distortion;
     let ks = &s.distortion_sigma;
-    let result = vec![
+    let mut result = vec![
         [
             "Camera position".into(),
             format!(
@@ -155,7 +163,13 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
                 k[0], ks[0], k[1], ks[1], k[2], ks[2], k[3], ks[3], k[4], ks[4]
             ),
         ],
-        ["Lens model".into(), s.model.describe().into()],
+        [
+            "Lens model".into(),
+            match &s.selection {
+                Some(sel) => format!("{}; {}", s.model.describe(), sel.reason),
+                None => format!("{} (chosen by the examiner)", s.model.describe()),
+            },
+        ],
         [
             "Fit".into(),
             format!(
@@ -173,12 +187,58 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
         ],
     ];
 
+    if let Some(pl) = &s.planar {
+        result.push([
+            "Planar start".into(),
+            format!(
+                "the pairs lie on one plane (RMS {:.1} mm, at most {:.1} mm off it; spread {:.2} m across it). The solve started from the plane's homography, assuming square pixels and the principal point at the image centre, which the solve then keeps{}.",
+                pl.rms * 1000.0,
+                pl.max_off * 1000.0,
+                pl.extent,
+                if pl.f_assumed {
+                    "; the photo is nearly square on to the plane, so the start's focal length was assumed and found by the refinement"
+                } else {
+                    ""
+                }
+            ),
+        ]);
+    }
+    result.push([
+        "Uncertainty".into(),
+        format!(
+            "parametric bootstrap: {} re-solves from the solved camera's projections plus each pair's pixel noise{}{}",
+            s.bootstrap,
+            match &s.selection {
+                Some(sel) if sel.pooled.len() > 1 => format!(
+                    ", pooled over {} (the lens models the pairs can't tell apart)",
+                    sel.pooled
+                        .iter()
+                        .map(|m| m.short())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                _ => String::new(),
+            },
+            if s.bootstrap_failed > 0 {
+                format!("; {} failed and were left out", s.bootstrap_failed)
+            } else {
+                String::new()
+            }
+        ),
+    ]);
+    let frame_name = |h: &locus_analysis::camera::Height| {
+        h.frame
+            .as_ref()
+            .map(|f| format!("{} (evidence {})", f.name, f.evidence_id))
+            .unwrap_or_else(|| "the camera's photo".into())
+    };
     let heights: Vec<Vec<String>> = r
         .heights
         .iter()
         .map(|h| {
             vec![
                 h.input.label.clone(),
+                frame_name(h),
                 format!("{:.3} ± {:.3} m", h.height.value, h.height.sigma),
                 format!("{:.3} to {:.3} m", h.interval95[0], h.interval95[1]),
                 format!("{:.3}, {:.3}", h.feet[0], h.feet[1]),
@@ -236,14 +296,15 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
             heading: "Subject heights".into(),
             blocks: vec![
                 Block::Text {
-                    text: "Each subject's height by reverse projection: the ray through the point between the feet meets the floor, and the height is where the ray through the top of the head passes the vertical above that point. The uncertainty is from a Monte Carlo over the camera's covariance and each image point's pick uncertainty. It is the height of the top of what was marked (hair, headwear and footwear included), for the posture in the frame, not the subject's stature.".into(),
+                    text: "Each subject's height by reverse projection: the ray through the point between the feet meets the floor, and the height is where the ray through the top of the head passes the vertical above that point. The uncertainty is from a Monte Carlo over the camera's bootstrap re-solves and each image point's pick uncertainty. It is the height of the top of what was marked (hair, headwear and footwear included), in that frame's posture and phase of the gait, not the subject's stature: a walking person's apparent height changes by a few centimetres over a stride. Measure each subject in several frames and read the range across them.".into(),
                 },
                 Block::Table {
-                    widths: ["1fr", "auto", "auto", "auto", "1fr", "auto"]
+                    widths: ["1fr", "1fr", "auto", "auto", "auto", "1fr", "auto"]
                         .map(String::from)
                         .to_vec(),
                     head: [
                         "Subject",
+                        "Frame",
                         "Height (1σ)",
                         "95 % interval",
                         "Feet at x, y (m)",
@@ -256,6 +317,47 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
                 },
             ],
         });
+        if !r.across_frames.is_empty() {
+            let rows = r
+                .across_frames
+                .iter()
+                .map(|a| {
+                    vec![
+                        a.label.clone(),
+                        a.frames.to_string(),
+                        format!("{:.3} to {:.3} m", a.min, a.max),
+                        format!("{:.3} m (spread {:.3} m)", a.mean, a.spread),
+                        format!("{:.3} to {:.3} m", a.interval95[0], a.interval95[1]),
+                    ]
+                })
+                .collect();
+            let last = sections.len() - 1;
+            sections[last].blocks.extend([
+                Block::Text {
+                    text: "Subjects measured in several frames: the range of their heights across the frames, the mean and spread, and the span of the frames' 95 % intervals. The range, not any one frame, is the result to report.".into(),
+                },
+                Block::Table {
+                    widths: ["1fr", "auto", "auto", "auto", "auto"]
+                        .map(String::from)
+                        .to_vec(),
+                    head: [
+                        "Subject",
+                        "Frames",
+                        "Range",
+                        "Mean",
+                        "Frames' 95 % intervals span",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                    rows,
+                },
+            ]);
+        } else {
+            let last = sections.len() - 1;
+            sections[last].blocks.push(Block::Text {
+                text: "Each subject was measured in one frame. Apparent height varies from frame to frame with the gait, footwear, headwear and posture; measuring in several frames and reporting the range across them is recommended.".into(),
+            });
+        }
     }
     sections.push(Section {
         heading: "Point pairs".into(),
@@ -278,7 +380,7 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
         heading: "Method".into(),
         blocks: vec![
             Block::Text {
-                text: "The camera is started from the direct linear transform on the pairs nearest the image centre (normalised, then decomposed into the camera's intrinsics, rotation and position) and refined by Levenberg–Marquardt on the reprojection errors, each in units of its σ (the pick σ, and the scan point's σ projected at its depth), in stages: the pose and focal length, then the distortion terms the lens model has. The covariance is (JᵀJ)⁻¹ at the solution, inflated by the Birge ratio √(χ²/dof) when that exceeds 1. Heights are by reverse projection onto the floor plane, with 2,000-draw Monte Carlo uncertainty (seeded, so a run repeats exactly). See docs/methods/camera-height.md.".into(),
+                text: "The camera is started from the direct linear transform on the pairs nearest the image centre (normalised, then decomposed into the camera's intrinsics, rotation and position), or, for pairs on one plane, from the plane's homography with square pixels and the principal point at the image centre. It is refined by Levenberg–Marquardt on the reprojection errors, each in units of its σ (the pick σ, and the scan point's σ projected at its depth), in stages: the pose and focal length, then the distortion terms the lens model has. The lens model is chosen by leave-one-out cross-validation (each pair predicted by the camera solved from the others; a more complex model only when its held-out error is smaller), unless the examiner chose it. The uncertainty is a parametric bootstrap: the camera re-solved from its own projections of the scan points plus each pair's pixel noise (inflated by the Birge ratio √(χ²/dof) when that exceeds 1), pooled over the lens models whose held-out error is within 25 % of the best. Heights are by reverse projection onto the floor plane, with each bootstrap camera and fresh pick noise as one Monte Carlo draw (seeded, so a run repeats exactly). See docs/methods/camera-height.md.".into(),
             },
             Block::Pairs {
                 rows: vec![
@@ -293,6 +395,38 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
             },
         ],
     });
+    if let Some(sel) = &s.selection {
+        let rows = sel
+            .scores
+            .iter()
+            .map(|sc| {
+                let px = |v: Option<f64>| v.map_or("not possible".into(), |e| format!("{e:.2} px"));
+                vec![
+                    sc.model.describe().to_string(),
+                    px(sc.fit_rms),
+                    px(sc.held_out_rms),
+                    if sc.model == s.model {
+                        "chosen".into()
+                    } else if sel.pooled.contains(&sc.model) {
+                        "pooled into the uncertainty".into()
+                    } else {
+                        String::new()
+                    },
+                ]
+            })
+            .collect();
+        let last = sections.len() - 1;
+        sections[last].blocks.insert(
+            1,
+            Block::Table {
+                widths: ["1fr", "auto", "auto", "auto"].map(String::from).to_vec(),
+                head: ["Lens model", "Fit RMS", "Held-out RMS", ""]
+                    .map(String::from)
+                    .to_vec(),
+                rows,
+            },
+        );
+    }
     tail(&mut sections, &r.assumptions, &r.limitations);
     Report {
         title: format!("Camera match: {}", meta.name),
@@ -573,6 +707,7 @@ mod tests {
             feet_px: cam.project([3.2, 3.4, 0.0]).unwrap(),
             head_px: cam.project([3.2, 3.4, 1.78]).unwrap(),
             matched_model: None,
+            frame: None,
         }];
         run(
             None,
@@ -585,6 +720,7 @@ mod tests {
                 ..Parameters::default()
             },
             &subjects,
+            &|_| None,
         )
         .unwrap()
     }

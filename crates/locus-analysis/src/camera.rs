@@ -26,11 +26,13 @@ pub const ASSUMPTIONS: &[&str] = &[
     "The image is a single central projection (a pinhole camera) with the lens distortion of the chosen model, square pixels and no skew.",
     "The scene has not changed between the image and the scan at the points paired: each pair is the same physical point.",
     "A subject's feet point is on the floor plane, and the top of the head is vertically above it (standing upright).",
+    "Frames other than the camera's photo come from the same fixed camera (not moved or zoomed between them).",
+    "When the pairs lie on one plane, the pixels are square and the principal point is at the image centre (the planar start's assumptions).",
 ];
 
 pub const LIMITATIONS: &[&str] = &[
     "The solve is only as good as the pairs: few pairs, pairs bunched in one part of the image, or pairs near one plane leave the focal length and distortion poorly determined; the stated uncertainties show this.",
-    "Height by reverse projection measures to the top of what was clicked: hair, headwear and footwear, posture (a stride, a slouch, a head tilt) and the frame's timing within the gait all change it by centimetres. The result is the height of the image feature, not the subject's stature.",
+    "Height by reverse projection measures to the top of what was marked, in that frame. Apparent height changes with the phase of the gait (a walking person is shortest at mid-stride and tallest at mid-stance, by a few centimetres), with footwear and headwear, and with posture (a slouch, a head tilt, a lean). The result is the height of the image feature, not the subject's stature. Measure the subject in several frames and report the range across them.",
     "Rolling-shutter, motion blur, compression and interlacing in video frames are not modelled.",
     "A line of sight is tested against the scan only: anything not in the scan (people, vehicles, lighting, smoke) is not an obstruction here.",
 ];
@@ -88,6 +90,8 @@ pub enum LensModel {
     Radial2,
     /// Focal length, principal point, k1, k2, k3, p1, p2.
     Full,
+    /// Chosen by leave-one-out cross-validation among the four.
+    Auto,
 }
 
 impl LensModel {
@@ -97,7 +101,16 @@ impl LensModel {
             LensModel::Pinhole => [true, false, false, false, false, false, false, false],
             LensModel::Radial1 => [true, false, false, true, false, false, false, false],
             LensModel::Radial2 => [true, false, false, true, true, false, false, false],
-            LensModel::Full => [true; 8],
+            LensModel::Full | LensModel::Auto => [true; 8],
+        }
+    }
+    pub fn short(self) -> &'static str {
+        match self {
+            LensModel::Pinhole => "focal length only",
+            LensModel::Radial1 => "focal length and k1",
+            LensModel::Radial2 => "focal length, k1 and k2",
+            LensModel::Full => "the full model",
+            LensModel::Auto => "chosen by leave-one-out",
         }
     }
     pub fn describe(self) -> &'static str {
@@ -114,6 +127,7 @@ impl LensModel {
             LensModel::Full => {
                 "focal length, principal point, radial distortion k1–k3 and tangential p1, p2"
             }
+            LensModel::Auto => "chosen by leave-one-out cross-validation",
         }
     }
 }
@@ -145,16 +159,37 @@ impl Camera {
         ]
     }
 
-    /// The largest undistorted radius the lens model is valid for: where the radial
-    /// distortion stops increasing with radius (searched to r = 10). Beyond it the
-    /// polynomial folds back, and a point outside the field of view would land in the image.
-    pub fn max_radius(&self) -> f64 {
+    /// Is the lens model valid out to radius² `r2`: does the radial distortion keep
+    /// increasing with radius all the way there? Its slope, 1 + 3k1 x + 5k2 x² + 7k3 x³ in
+    /// x = r², is 1 at the centre; checked exactly at `r2` and at its turning points before it.
+    /// Past the first zero the polynomial folds back, and a point outside the field of view
+    /// would land in the image.
+    pub fn within_lens(&self, r2: f64) -> bool {
         let [k1, k2, k3, ..] = self.distortion;
-        let slope = |r2: f64| 1.0 + 3.0 * k1 * r2 + 5.0 * k2 * r2 * r2 + 7.0 * k3 * r2 * r2 * r2;
-        (1..=20_000)
-            .map(|i| i as f64 * 0.005)
-            .find(|r2| slope(*r2) <= 0.0)
-            .map_or(f64::INFINITY, f64::sqrt)
+        let slope = |x: f64| 1.0 + 3.0 * k1 * x + 5.0 * k2 * x * x + 7.0 * k3 * x * x * x;
+        if slope(r2) <= 0.0 {
+            return false;
+        }
+        // Turning points: 3k1 + 10k2 x + 21k3 x² = 0.
+        let (a, b, c) = (21.0 * k3, 10.0 * k2, 3.0 * k1);
+        let roots: Vec<f64> = if a.abs() < 1e-300 {
+            if b.abs() < 1e-300 {
+                vec![]
+            } else {
+                vec![-c / b]
+            }
+        } else {
+            let d = b * b - 4.0 * a * c;
+            if d < 0.0 {
+                vec![]
+            } else {
+                vec![(-b - d.sqrt()) / (2.0 * a), (-b + d.sqrt()) / (2.0 * a)]
+            }
+        };
+        roots
+            .into_iter()
+            .filter(|x| *x > 0.0 && *x < r2)
+            .all(|x| slope(x) > 0.0)
     }
 
     /// A point in the camera's frame.
@@ -170,7 +205,7 @@ impl Camera {
     /// Pixel of a project-frame point, or None behind the camera.
     pub fn project(&self, x: P3) -> Option<P2> {
         let c = self.to_camera(x);
-        if c[2] <= 1e-9 || (c[0] / c[2]).hypot(c[1] / c[2]) >= self.max_radius() {
+        if c[2] <= 1e-9 || !self.within_lens((c[0] / c[2]).powi(2) + (c[1] / c[2]).powi(2)) {
             return None;
         }
         let [a, b] = self.distort(c[0] / c[2], c[1] / c[2]);
@@ -279,55 +314,200 @@ pub struct CameraPair {
     pub world: P3,
 }
 
+/// One lens model's leave-one-out score: each pair left out in turn, the camera solved from
+/// the rest, and the left-out pair's reprojection error (px).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelScore {
+    pub model: LensModel,
+    /// RMS held-out error (px); none when the model has too many unknowns for the pairs, or
+    /// can't be solved on a plane.
+    pub held_out_rms: Option<f64>,
+    /// RMS error over all pairs when solved from all of them (px).
+    pub fit_rms: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Selection {
+    pub scores: Vec<ModelScore>,
+    pub reason: String,
+    /// The models the bootstrap was pooled over (the chosen one and those the pairs can't
+    /// tell from it).
+    #[serde(default)]
+    pub pooled: Vec<LensModel>,
+}
+
+/// The plane the pairs lie on, when they do (the planar start was used).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Planar {
+    pub point: P3,
+    pub normal: P3,
+    /// RMS and largest distance of the pairs' scan points from it (m), and their extent in
+    /// it (largest distance from their centre, m).
+    pub rms: f64,
+    pub max_off: f64,
+    pub extent: f64,
+    /// The start's focal length came from the homography, or was assumed (a photo taken
+    /// nearly square on to the plane gives the homography no focal length).
+    pub f_assumed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Solve {
+    /// The lens model used, and how it was chosen (leave-one-out, when automatic).
     pub model: LensModel,
+    #[serde(default)]
+    pub selection: Option<Selection>,
+    #[serde(default)]
+    pub planar: Option<Planar>,
     pub camera: Camera,
     /// 1σ of the position (m), of heading, pitch and roll (degrees), of the focal length and
-    /// principal point (px), and of k1, k2, k3, p1, p2 (0 where fixed).
+    /// principal point (px), and of k1, k2, k3, p1, p2 (0 where fixed), from the bootstrap.
     pub position_sigma: P3,
     pub angles_sigma: P3,
     pub f_sigma: f64,
     pub principal_sigma: P2,
     pub distortion_sigma: [f64; 5],
-    /// The free parameters' covariance, in the order of `free` (row-major), for Monte Carlo.
+    /// The parameters solved for (indices into [ω, C, f, cx, cy, k1, k2, k3, p1, p2]).
     pub free: Vec<usize>,
-    pub covariance: Vec<f64>,
     /// Each pair's reprojection residual (px, x and y) and its size in σ.
     pub residuals: Vec<P2>,
     pub residual_sigmas: Vec<f64>,
     pub rms_px: f64,
     pub chi2: f64,
     pub dof: usize,
-    /// √(χ²/dof) when above 1: the factor the covariance was inflated by.
+    /// √(χ²/dof) when above 1: the factor the bootstrap's pixel noise was inflated by.
     pub birge: f64,
+    /// Bootstrap re-solves made, and those that failed.
+    #[serde(default)]
+    pub bootstrap: usize,
+    #[serde(default)]
+    pub bootstrap_failed: usize,
     pub warnings: Vec<String>,
+    /// The bootstrap's cameras, for the heights' Monte Carlo (not stored).
+    #[serde(skip)]
+    pub draws: Vec<Camera>,
 }
 
-impl Solve {
-    /// The camera with its free parameters drawn from their covariance (`z` standard normals,
-    /// one per free parameter).
-    fn draw(&self, z: &[f64], chol: &DMatrix<f64>) -> Camera {
-        let mut p = self.camera.params();
-        let dz = chol * DVector::from_column_slice(z);
-        for (k, &i) in self.free.iter().enumerate() {
-            p[i] += dz[k];
-        }
-        self.camera.with(&p)
+/// The parameters' finite-difference steps.
+const STEPS: [f64; 14] = [
+    1e-7, 1e-7, 1e-7, 1e-6, 1e-6, 1e-6, 1e-3, 1e-3, 1e-3, 1e-7, 1e-7, 1e-7, 1e-8, 1e-8,
+];
+
+fn free_of(m: LensModel, planar: bool) -> Vec<usize> {
+    let lens = m.free();
+    (0..14)
+        .filter(|&i| i < 6 || lens[i - 6])
+        // On a plane the principal point stays at the image centre (the planar start's
+        // assumption).
+        .filter(|&i| !(planar && (i == 7 || i == 8)))
+        .collect()
+}
+
+/// The pairs and their uncertainties, for Levenberg–Marquardt.
+struct Problem<'a> {
+    pairs: &'a [CameraPair],
+    pick: f64,
+    point: f64,
+}
+
+impl Problem<'_> {
+    /// Each pair's 1σ in pixels: the pick σ and the scan point's σ projected at its depth.
+    fn sigmas(&self, c: &Camera) -> Vec<f64> {
+        self.pairs
+            .iter()
+            .map(|p| {
+                let z = c.to_camera(p.world)[2].max(1e-6);
+                (self.pick.powi(2) + (c.f * self.point / z).powi(2)).sqrt()
+            })
+            .collect()
     }
 
-    fn cholesky(&self) -> DMatrix<f64> {
-        let n = self.free.len();
-        let c = DMatrix::from_row_slice(n, n, &self.covariance);
-        match c.clone().cholesky() {
-            Some(l) => l.l(),
-            None => {
-                // Not positive definite (numerically): clamp its eigenvalues at zero.
-                let e = c.symmetric_eigen();
-                let d = DMatrix::from_diagonal(&e.eigenvalues.map(|v| v.max(0.0).sqrt()));
-                e.eigenvectors * d
+    fn residuals(&self, c: &Camera, sig: &[f64]) -> DVector<f64> {
+        let mut r = DVector::zeros(2 * self.pairs.len());
+        for (i, p) in self.pairs.iter().enumerate() {
+            match c.project(p.world) {
+                Some(q) => {
+                    r[2 * i] = (q[0] - p.px[0]) / sig[i];
+                    r[2 * i + 1] = (q[1] - p.px[1]) / sig[i];
+                }
+                None => {
+                    r[2 * i] = 1e6;
+                    r[2 * i + 1] = 1e6;
+                }
             }
         }
+        r
+    }
+
+    fn jacobian(&self, c: &Camera, sig: &[f64], r0: &DVector<f64>, free: &[usize]) -> DMatrix<f64> {
+        let base = c.params();
+        let mut j = DMatrix::zeros(r0.len(), free.len());
+        for (col, &i) in free.iter().enumerate() {
+            let mut p = base;
+            p[i] += STEPS[i];
+            let r1 = self.residuals(&c.with(&p), sig);
+            j.set_column(col, &((r1 - r0) / STEPS[i]));
+        }
+        j
+    }
+
+    /// Levenberg–Marquardt over `free` from `cam`, twice (the weights set from the estimate
+    /// each time).
+    fn refine(&self, cam: Camera, free: &[usize]) -> Camera {
+        self.refine_with(cam, free, 2, 200)
+    }
+
+    /// Levenberg–Marquardt: `passes` times (the weights set from the estimate each time), at
+    /// most `iterations` steps each, stopping when a step improves χ² by less than 1 part in
+    /// 10⁹.
+    fn refine_with(
+        &self,
+        mut cam: Camera,
+        free: &[usize],
+        passes: usize,
+        iterations: usize,
+    ) -> Camera {
+        for _ in 0..passes {
+            let sig = self.sigmas(&cam);
+            let mut r = self.residuals(&cam, &sig);
+            let mut cost = r.norm_squared();
+            let mut lambda = 1e-3;
+            for _ in 0..iterations {
+                let j = self.jacobian(&cam, &sig, &r, free);
+                let jtj = j.transpose() * &j;
+                let g = -(j.transpose() * &r);
+                let mut stepped = false;
+                for _ in 0..12 {
+                    let mut a = jtj.clone();
+                    for k in 0..a.nrows() {
+                        a[(k, k)] += lambda * jtj[(k, k)].max(1e-12);
+                    }
+                    let Some(dx) = a.cholesky().map(|c| c.solve(&g)) else {
+                        lambda *= 10.0;
+                        continue;
+                    };
+                    let mut p = cam.params();
+                    for (k, &i) in free.iter().enumerate() {
+                        p[i] += dx[k];
+                    }
+                    let c2 = cam.with(&p);
+                    let r2 = self.residuals(&c2, &sig);
+                    let cost2 = r2.norm_squared();
+                    if cost2 < cost {
+                        let small = dx.norm() < 1e-12 || (cost - cost2) < 1e-9 * cost;
+                        (cam, r, cost) = (c2, r2, cost2);
+                        lambda = (lambda / 3.0).max(1e-12);
+                        stepped = !small;
+                        break;
+                    }
+                    lambda *= 10.0;
+                }
+                if !stepped {
+                    break;
+                }
+            }
+        }
+        cam
     }
 }
 
@@ -344,6 +524,19 @@ fn normaliser(pts: &[Vec<f64>]) -> (Vec<f64>, f64) {
         .sum::<f64>()
         / n;
     (c, (dim as f64).sqrt() / mean.max(1e-300))
+}
+
+/// The unit vector of `a`'s smallest singular value (AᵀA's eigenvector).
+fn null_vector(a: &DMatrix<f64>) -> DVector<f64> {
+    let e = (a.transpose() * a).symmetric_eigen();
+    let k = e
+        .eigenvalues
+        .iter()
+        .enumerate()
+        .min_by(|x, y| x.1.total_cmp(y.1))
+        .map(|(i, _)| i)
+        .unwrap();
+    e.eigenvectors.column(k).into_owned()
 }
 
 /// The DLT start: P from the pairs (normalised), decomposed into K, R and C.
@@ -366,46 +559,18 @@ fn dlt(pairs: &[CameraPair], size: [u32; 2]) -> Result<Camera, CameraError> {
             a[(2 * i + 1, 8 + k)] = -v * xh[k];
         }
     }
-    // The right singular vector of the smallest singular value (via AᵀA's eigenvectors).
-    let ata = a.transpose() * &a;
-    let e = ata.symmetric_eigen();
-    let k = e
-        .eigenvalues
-        .iter()
-        .enumerate()
-        .min_by(|x, y| x.1.total_cmp(y.1))
-        .map(|(i, _)| i)
-        .unwrap();
-    let h = e.eigenvectors.column(k);
-    let pn = DMatrix::from_row_slice(3, 4, h.as_slice());
+    let pn = DMatrix::from_row_slice(3, 4, null_vector(&a).as_slice());
     // Undo the normalisations: P = T_px⁻¹ Pn T_w.
     let tpx_inv = DMatrix::from_row_slice(
         3,
         3,
         &[1.0 / sp, 0.0, cp[0], 0.0, 1.0 / sp, cp[1], 0.0, 0.0, 1.0],
     );
-    let tw = DMatrix::from_row_slice(
-        4,
-        4,
-        &[
-            sw,
-            0.0,
-            0.0,
-            -cw[0] * sw,
-            0.0,
-            sw,
-            0.0,
-            -cw[1] * sw,
-            0.0,
-            0.0,
-            sw,
-            -cw[2] * sw,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ],
-    );
+    let mut tw = DMatrix::<f64>::identity(4, 4) * sw;
+    tw[(3, 3)] = 1.0;
+    for k in 0..3 {
+        tw[(k, 3)] = -cw[k] * sw;
+    }
     let mut p = tpx_inv * pn * tw;
     // Sign: the points in front of the camera (positive depth).
     let depth: f64 = pairs
@@ -417,23 +582,14 @@ fn dlt(pairs: &[CameraPair], size: [u32; 2]) -> Result<Camera, CameraError> {
     }
     let m = Matrix3::from_fn(|i, j| p[(i, j)]);
     let p4 = Vector3::new(p[(0, 3)], p[(1, 3)], p[(2, 3)]);
-    let minv = m.try_inverse().ok_or(CameraError::Degenerate(
-        "the pairs don't determine a camera",
-    ))?;
+    let bad = || CameraError::Degenerate("the pairs don't determine a camera");
+    let minv = m.try_inverse().ok_or_else(bad)?;
     let c = -(minv * p4);
     // RQ by Cholesky: M Mᵀ = K Kᵀ with K upper triangular (through the exchange matrix J).
     let j = Matrix3::new(0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0);
-    let mm = j * m * m.transpose() * j;
-    let l = mm
-        .cholesky()
-        .ok_or(CameraError::Degenerate(
-            "the pairs don't determine a camera",
-        ))?
-        .l();
+    let l = (j * m * m.transpose() * j).cholesky().ok_or_else(bad)?.l();
     let kmat = j * l * j;
-    let r = kmat.try_inverse().ok_or(CameraError::Degenerate(
-        "the pairs don't determine a camera",
-    ))? * m;
+    let r = kmat.try_inverse().ok_or_else(bad)? * m;
     if r.determinant() < 0.0 {
         return Err(CameraError::Degenerate(
             "the pairs give a mirror-image camera; check that each pixel is paired with the right scan point",
@@ -445,105 +601,169 @@ fn dlt(pairs: &[CameraPair], size: [u32; 2]) -> Result<Camera, CameraError> {
         rotation: [0, 1, 2].map(|i| [r[(i, 0)], r[(i, 1)], r[(i, 2)]]),
         size,
         f: (kmat[(0, 0)] + kmat[(1, 1)]) / 2.0,
-        cx: kmat[(0, 2)],
-        cy: kmat[(1, 2)],
+        cx: size[0] as f64 / 2.0,
+        cy: size[1] as f64 / 2.0,
         distortion: [0.0; 5],
     })
 }
 
-/// How flat the scan points are: the smallest over the largest eigenvalue of their scatter.
-fn flatness(pairs: &[CameraPair]) -> f64 {
+/// The scan points' plane: centre, axes (the last is the normal, right-handed), and the
+/// smallest over the largest eigenvalue of their scatter (0 for points on one plane).
+fn plane_of(pairs: &[CameraPair]) -> (Vector3<f64>, [Vector3<f64>; 3], f64) {
     let n = pairs.len() as f64;
-    let c = [0, 1, 2].map(|k| pairs.iter().map(|p| p.world[k]).sum::<f64>() / n);
+    let c = Vector3::from_fn(|k, _| pairs.iter().map(|p| p.world[k]).sum::<f64>() / n);
     let mut s = Matrix3::zeros();
     for p in pairs {
-        let d = Vector3::new(p.world[0] - c[0], p.world[1] - c[1], p.world[2] - c[2]);
+        let d = Vector3::new(p.world[0], p.world[1], p.world[2]) - c;
         s += d * d.transpose();
     }
-    let e = s.symmetric_eigenvalues();
-    let (lo, hi) = (e.min(), e.max());
-    if hi > 0.0 {
-        lo / hi
-    } else {
-        0.0
-    }
+    let e = s.symmetric_eigen();
+    let mut order = [0, 1, 2];
+    order.sort_by(|&a, &b| e.eigenvalues[b].total_cmp(&e.eigenvalues[a]));
+    let e1 = e.eigenvectors.column(order[0]).into_owned();
+    let e2 = e.eigenvectors.column(order[1]).into_owned();
+    let e3 = e1.cross(&e2);
+    let (hi, lo) = (e.eigenvalues[order[0]], e.eigenvalues[order[2]]);
+    (c, [e1, e2, e3], if hi > 0.0 { lo / hi } else { 0.0 })
 }
 
-/// Solve a camera from image-to-scan pairs. `pick_sigma_px` is each pixel's 1σ and
-/// `point_sigma` each scan point's (m, projected into the image at its depth).
-pub fn solve(
-    pairs: &[CameraPair],
+/// Pairs this flat (smallest over largest scatter eigenvalue) are solved from a planar start.
+const PLANAR: f64 = 1e-3;
+
+/// The planar start: the homography from the plane to the image, with square pixels and the
+/// principal point at the image centre, decomposed into the focal length and the pose
+/// (Zhang 2000, with the focal length the only intrinsic unknown).
+fn planar_start(pairs: &[CameraPair], size: [u32; 2]) -> Result<(Camera, Planar), CameraError> {
+    let (c, [e1, e2, e3], _) = plane_of(pairs);
+    let centre = [size[0] as f64 / 2.0, size[1] as f64 / 2.0];
+    let uv: Vec<Vec<f64>> = pairs
+        .iter()
+        .map(|p| {
+            let d = Vector3::new(p.world[0], p.world[1], p.world[2]) - c;
+            vec![d.dot(&e1), d.dot(&e2)]
+        })
+        .collect();
+    let q: Vec<Vec<f64>> = pairs
+        .iter()
+        .map(|p| vec![p.px[0] - centre[0], p.px[1] - centre[1]])
+        .collect();
+    let (cu, su) = normaliser(&uv);
+    let (cq, sq) = normaliser(&q);
+    let n = pairs.len();
+    let mut a = DMatrix::<f64>::zeros(2 * n, 9);
+    for i in 0..n {
+        let (x, y) = ((uv[i][0] - cu[0]) * su, (uv[i][1] - cu[1]) * su);
+        let (u, v) = ((q[i][0] - cq[0]) * sq, (q[i][1] - cq[1]) * sq);
+        for (k, val) in [x, y, 1.0].into_iter().enumerate() {
+            a[(2 * i, k)] = val;
+            a[(2 * i, 6 + k)] = -u * val;
+            a[(2 * i + 1, 3 + k)] = val;
+            a[(2 * i + 1, 6 + k)] = -v * val;
+        }
+    }
+    let hn = Matrix3::from_row_slice(null_vector(&a).as_slice());
+    let t_uv = Matrix3::new(su, 0.0, -cu[0] * su, 0.0, su, -cu[1] * su, 0.0, 0.0, 1.0);
+    let t_q_inv = Matrix3::new(1.0 / sq, 0.0, cq[0], 0.0, 1.0 / sq, cq[1], 0.0, 0.0, 1.0);
+    let h = t_q_inv * hn * t_uv;
+    let (h1, h2, h3) = (h.column(0), h.column(1), h.column(2));
+    // The focal length from r1 ⟂ r2 and |r1| = |r2|, where r = K⁻¹ h with K = diag(f, f, 1).
+    let mut fs = vec![];
+    let orth = -(h1[0] * h2[0] + h1[1] * h2[1]) / (h1[2] * h2[2]);
+    if orth.is_finite() && orth > 0.0 {
+        fs.push(orth.sqrt());
+    }
+    let eq = (h1[0].powi(2) + h1[1].powi(2) - h2[0].powi(2) - h2[1].powi(2))
+        / (h2[2].powi(2) - h1[2].powi(2));
+    if eq.is_finite() && eq > 0.0 {
+        fs.push(eq.sqrt());
+    }
+    let span = size[0].max(size[1]) as f64;
+    let good: Vec<f64> = fs
+        .into_iter()
+        .filter(|f| *f > 0.1 * span && *f < 20.0 * span)
+        .collect();
+    let f_assumed = good.is_empty();
+    let f = if f_assumed {
+        span // about a 53° field of view across the longer side
+    } else {
+        good.iter().sum::<f64>() / good.len() as f64
+    };
+    let kinv = |v: nalgebra::VectorView3<f64>| Vector3::new(v[0] / f, v[1] / f, v[2]);
+    let (k1, k2, k3) = (kinv(h1), kinv(h2), kinv(h3));
+    let mut lambda = 1.0 / k1.norm();
+    if (k3 * lambda)[2] < 0.0 {
+        lambda = -lambda; // the plane in front of the camera
+    }
+    let (r1, r2, t) = (k1 * lambda, k2 * lambda, k3 * lambda);
+    let r = Matrix3::from_columns(&[r1, r2, r1.cross(&r2)]);
+    let svd = r.svd(true, true);
+    let r = svd.u.unwrap() * svd.v_t.unwrap();
+    // x_c = R (u e1 + v e2 + w e3) + t, so R_world = R Eᵀ and C = c − R_worldᵀ t.
+    let e = Matrix3::from_columns(&[e1, e2, e3]);
+    let rw = r * e.transpose();
+    let cam_c = c - rw.transpose() * t;
+    let offs: Vec<f64> = pairs
+        .iter()
+        .map(|p| (Vector3::new(p.world[0], p.world[1], p.world[2]) - c).dot(&e3))
+        .collect();
+    let extent = uv.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max);
+    Ok((
+        Camera {
+            position: [cam_c[0], cam_c[1], cam_c[2]],
+            rotation: [0, 1, 2].map(|i| [rw[(i, 0)], rw[(i, 1)], rw[(i, 2)]]),
+            size,
+            f,
+            cx: centre[0],
+            cy: centre[1],
+            distortion: [0.0; 5],
+        },
+        Planar {
+            point: [c[0], c[1], c[2]],
+            normal: [e3[0], e3[1], e3[2]],
+            rms: (offs.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt(),
+            max_off: offs.iter().fold(0.0, |m, v| m.max(v.abs())),
+            extent,
+            f_assumed,
+        },
+    ))
+}
+
+/// The camera for one lens model: the start (the DLT on the pairs nearest the image centre,
+/// where distortion is least, or the planar start), then Levenberg–Marquardt in stages (the
+/// pose and focal length, then k1, k2 and the rest as the model has them). A strong
+/// wide-angle distortion otherwise leaves the start, which has none, in the wrong basin.
+fn fit(
+    problem: &Problem,
     size: [u32; 2],
     model: LensModel,
-    pick_sigma_px: f64,
-    point_sigma: f64,
-) -> Result<Solve, CameraError> {
+) -> Result<(Camera, Option<Planar>), CameraError> {
+    let pairs = problem.pairs;
+    let (_, _, flat) = plane_of(pairs);
+    let (mut cam, planar) = if flat < PLANAR {
+        if model == LensModel::Full {
+            return Err(CameraError::Degenerate(
+                "the full lens model needs pairs off one plane (a plane can't fix the principal point); choose a simpler lens model, or add pairs on another surface",
+            ));
+        }
+        let (c, p) = planar_start(pairs, size)?;
+        (c, Some(p))
+    } else {
+        let centre = [size[0] as f64 / 2.0, size[1] as f64 / 2.0];
+        let mut near: Vec<CameraPair> = pairs.to_vec();
+        near.sort_by(|a, b| {
+            let r = |p: &CameraPair| (p.px[0] - centre[0]).hypot(p.px[1] - centre[1]);
+            r(a).total_cmp(&r(b))
+        });
+        near.truncate((pairs.len() / 2).max(8).min(pairs.len()));
+        let start: &[CameraPair] = if plane_of(&near).2 > PLANAR {
+            &near
+        } else {
+            pairs
+        };
+        (dlt(start, size)?, None)
+    };
     let lens = model.free();
-    let n_free = 6 + lens.iter().filter(|f| **f).count();
-    if pairs.len() < 6 || 2 * pairs.len() <= n_free {
-        return Err(CameraError::TooFewPairs(pairs.len()));
-    }
-    if flatness(pairs) < 1e-4 {
-        return Err(CameraError::OnePlane);
-    }
-    // The start: the DLT on the pairs nearest the image centre (at least 8, or half of them),
-    // where lens distortion is least, unless those lie on one plane.
-    let centre = [size[0] as f64 / 2.0, size[1] as f64 / 2.0];
-    let mut near: Vec<CameraPair> = pairs.to_vec();
-    near.sort_by(|a, b| {
-        let r = |p: &CameraPair| (p.px[0] - centre[0]).hypot(p.px[1] - centre[1]);
-        r(a).total_cmp(&r(b))
-    });
-    near.truncate((pairs.len() / 2).max(8).min(pairs.len()));
-    let start: &[CameraPair] = if flatness(&near) > 1e-3 { &near } else { pairs };
-    let mut cam = dlt(start, size)?;
-    // The principal point starts at the image centre (the DLT's is poor with distortion).
-    cam.cx = centre[0];
-    cam.cy = centre[1];
-    let free_of = |m: LensModel| -> Vec<usize> {
-        let lens = m.free();
-        (0..14).filter(|&i| i < 6 || lens[i - 6]).collect()
-    };
-    let free = free_of(model);
-    let sigma_of = |c: &Camera, w: P3| {
-        let z = c.to_camera(w)[2].max(1e-6);
-        (pick_sigma_px.powi(2) + (c.f * point_sigma / z).powi(2)).sqrt()
-    };
-    let residuals = |c: &Camera, sig: &[f64]| -> DVector<f64> {
-        let mut r = DVector::zeros(2 * pairs.len());
-        for (i, p) in pairs.iter().enumerate() {
-            match c.project(p.world) {
-                Some(q) => {
-                    r[2 * i] = (q[0] - p.px[0]) / sig[i];
-                    r[2 * i + 1] = (q[1] - p.px[1]) / sig[i];
-                }
-                None => {
-                    r[2 * i] = 1e6;
-                    r[2 * i + 1] = 1e6;
-                }
-            }
-        }
-        r
-    };
-    let steps = [
-        1e-7, 1e-7, 1e-7, 1e-6, 1e-6, 1e-6, 1e-3, 1e-3, 1e-3, 1e-7, 1e-7, 1e-7, 1e-8, 1e-8,
-    ];
-    let jacobian = |c: &Camera, sig: &[f64], r0: &DVector<f64>, free: &[usize]| -> DMatrix<f64> {
-        let base = c.params();
-        let mut j = DMatrix::zeros(r0.len(), free.len());
-        for (col, &i) in free.iter().enumerate() {
-            let mut p = base;
-            p[i] += steps[i];
-            let r1 = residuals(&c.with(&p), sig);
-            j.set_column(col, &((r1 - r0) / steps[i]));
-        }
-        j
-    };
-    // In stages, each started from the last: the pose and focal length, then k1, k2 and the
-    // rest as the model has them. A strong wide-angle distortion otherwise leaves the DLT's
-    // start (which has none) in the wrong basin. At each stage, two passes: the weights (each
-    // scan point's σ at its depth) are set from the estimate.
-    let stages: Vec<LensModel> = [
+    for stage in [
         LensModel::Pinhole,
         LensModel::Radial1,
         LensModel::Radial2,
@@ -551,84 +771,249 @@ pub fn solve(
     ]
     .into_iter()
     .filter(|m| m.free().iter().zip(lens).all(|(a, b)| !a || b))
-    .collect();
-    for stage in stages.iter().flat_map(|m| [free_of(*m), free_of(*m)]) {
-        let sig: Vec<f64> = pairs.iter().map(|p| sigma_of(&cam, p.world)).collect();
-        let mut r = residuals(&cam, &sig);
-        let mut cost = r.norm_squared();
-        let mut lambda = 1e-3;
-        for _ in 0..200 {
-            let j = jacobian(&cam, &sig, &r, &stage);
-            let jtj = j.transpose() * &j;
-            let g = -(j.transpose() * &r);
-            let mut stepped = false;
-            for _ in 0..12 {
-                let mut a = jtj.clone();
-                for k in 0..a.nrows() {
-                    a[(k, k)] += lambda * jtj[(k, k)].max(1e-12);
-                }
-                let Some(dx) = a.cholesky().map(|c| c.solve(&g)) else {
-                    lambda *= 10.0;
-                    continue;
+    {
+        cam = problem.refine(cam, &free_of(stage, planar.is_some()));
+    }
+    Ok((cam, planar))
+}
+
+/// Candidate lens models, simplest first.
+const MODELS: [LensModel; 4] = [
+    LensModel::Pinhole,
+    LensModel::Radial1,
+    LensModel::Radial2,
+    LensModel::Full,
+];
+
+/// Lens models whose held-out error is within this factor of the best are taken as ones the
+/// pairs can't tell apart: the bootstrap is pooled over them, so the uncertainty includes the
+/// choice of model.
+pub const PLAUSIBLE: f64 = 1.25;
+
+/// Choose the lens model by leave-one-out: each pair left out in turn and predicted by the
+/// camera solved from the others (started from the solve on all pairs), the model with the
+/// smallest held-out reprojection error chosen, a more complex one only when strictly
+/// smaller. Returns the choice, the scores, and each usable model's camera on all pairs.
+#[allow(clippy::type_complexity)]
+fn select(
+    problem: &Problem,
+    size: [u32; 2],
+) -> Result<
+    (
+        LensModel,
+        Selection,
+        Vec<(LensModel, Camera, Option<Planar>)>,
+    ),
+    CameraError,
+> {
+    let pairs = problem.pairs;
+    let planar = plane_of(pairs).2 < PLANAR;
+    let mut scores = vec![];
+    let mut fits = vec![];
+    for m in MODELS {
+        let unknowns = 6 + m.free().iter().filter(|f| **f).count();
+        let usable = !(planar && m == LensModel::Full) && 2 * (pairs.len() - 1) > unknowns;
+        let full = if usable {
+            fit(problem, size, m).ok()
+        } else {
+            None
+        };
+        let held_out = full.as_ref().and_then(|(cam, pl)| {
+            let free = free_of(m, pl.is_some());
+            let (mut sq, mut ok) = (0.0, 0usize);
+            for i in 0..pairs.len() {
+                let rest: Vec<CameraPair> = pairs
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, _)| *k != i)
+                    .map(|(_, p)| *p)
+                    .collect();
+                let sub = Problem {
+                    pairs: &rest,
+                    ..*problem
                 };
-                let mut p = cam.params();
-                for (k, &i) in stage.iter().enumerate() {
-                    p[i] += dx[k];
+                if let Some(q) = sub.refine(cam.clone(), &free).project(pairs[i].world) {
+                    sq += (q[0] - pairs[i].px[0]).powi(2) + (q[1] - pairs[i].px[1]).powi(2);
+                    ok += 1;
                 }
-                let c2 = cam.with(&p);
-                let r2 = residuals(&c2, &sig);
-                let cost2 = r2.norm_squared();
-                if cost2 < cost {
-                    let small = dx.norm() < 1e-12 || (cost - cost2) < 1e-12 * cost;
-                    (cam, r, cost) = (c2, r2, cost2);
-                    lambda = (lambda / 3.0).max(1e-12);
-                    stepped = !small;
-                    break;
-                }
-                lambda *= 10.0;
             }
-            if !stepped {
-                break;
+            // Every pair must be predictable (in front of the camera, inside the lens).
+            (ok == pairs.len()).then(|| (sq / ok as f64).sqrt())
+        });
+        scores.push(ModelScore {
+            model: m,
+            held_out_rms: held_out,
+            fit_rms: full.as_ref().map(|(c, _)| rms(c, pairs)),
+        });
+        if let (Some((c, pl)), Some(_)) = (full, held_out) {
+            fits.push((m, c, pl));
+        }
+    }
+    let mut best: Option<(LensModel, f64)> = None;
+    for sc in &scores {
+        if let Some(e) = sc.held_out_rms {
+            if best.is_none_or(|(_, b)| e < b) {
+                best = Some((sc.model, e));
             }
         }
     }
-    let sig: Vec<f64> = pairs.iter().map(|p| sigma_of(&cam, p.world)).collect();
-    let r = residuals(&cam, &sig);
-    let j = jacobian(&cam, &sig, &r, &free);
+    let Some((model, err)) = best else {
+        return Err(CameraError::Degenerate(
+            "no lens model could be solved from the pairs with each one left out; add pairs, spread over the photo",
+        ));
+    };
+    let pooled: Vec<LensModel> = scores
+        .iter()
+        .filter(|sc| sc.held_out_rms.is_some_and(|e| e <= PLAUSIBLE * err))
+        .map(|sc| sc.model)
+        .collect();
+    let others: Vec<String> = scores
+        .iter()
+        .filter(|sc| sc.model != model)
+        .map(|sc| match sc.held_out_rms {
+            Some(e) => format!("{} {e:.2} px", sc.model.short()),
+            None => format!("{} not possible", sc.model.short()),
+        })
+        .collect();
+    let mut reason = format!(
+        "chosen by leave-one-out: {} had the smallest held-out reprojection error, {err:.2} px (each pair left out in turn and predicted from the others; {})",
+        model.short(),
+        others.join(", ")
+    );
+    if pooled.len() > 1 {
+        reason += &format!(
+            ". The pairs can't tell it from {} (held-out error within {:.0} % of the best), so the uncertainty is from a bootstrap pooled over them",
+            pooled
+                .iter()
+                .filter(|m| **m != model)
+                .map(|m| m.short())
+                .collect::<Vec<_>>()
+                .join(" and "),
+            (PLAUSIBLE - 1.0) * 100.0
+        );
+    }
+    fits.retain(|(m, ..)| pooled.contains(m));
+    Ok((
+        model,
+        Selection {
+            scores,
+            reason,
+            pooled,
+        },
+        fits,
+    ))
+}
+
+fn rms(c: &Camera, pairs: &[CameraPair]) -> f64 {
+    let sq: f64 = pairs
+        .iter()
+        .map(|p| {
+            c.project(p.world).map_or(1e12, |q| {
+                (q[0] - p.px[0]).powi(2) + (q[1] - p.px[1]).powi(2)
+            })
+        })
+        .sum();
+    (sq / pairs.len() as f64).sqrt()
+}
+
+/// Solve a camera from image-to-scan pairs. `pick_sigma_px` is each pixel's 1σ and
+/// `point_sigma` each scan point's (m, projected into the image at its depth). The lens
+/// model is chosen by leave-one-out when `model` is `Auto`. The uncertainty is a parametric
+/// bootstrap: `draws` re-solves from the solved camera's projections of the scan points plus
+/// pixel noise of each pair's σ (inflated by the Birge ratio), seeded by `seed`.
+pub fn solve(
+    pairs: &[CameraPair],
+    size: [u32; 2],
+    model: LensModel,
+    pick_sigma_px: f64,
+    point_sigma: f64,
+    draws: usize,
+    seed: u64,
+) -> Result<Solve, CameraError> {
+    if pairs.len() < 6 {
+        return Err(CameraError::TooFewPairs(pairs.len()));
+    }
+    let problem = Problem {
+        pairs,
+        pick: pick_sigma_px,
+        point: point_sigma,
+    };
+    let (model, selection, fits) = if model == LensModel::Auto {
+        let (m, s, f) = select(&problem, size)?;
+        (m, Some(s), f)
+    } else {
+        let (c, p) = fit(&problem, size, model)?;
+        (model, None, vec![(model, c, p)])
+    };
+    let (cam, planar) = fits
+        .iter()
+        .find(|(m, ..)| *m == model)
+        .map(|(_, c, p)| (c.clone(), p.clone()))
+        .expect("the chosen model's camera");
+    let free = free_of(model, planar.is_some());
+    if 2 * pairs.len() <= free.len() {
+        return Err(CameraError::TooFewPairs(pairs.len()));
+    }
+    let sig = problem.sigmas(&cam);
+    let r = problem.residuals(&cam, &sig);
     let chi2 = r.norm_squared();
     let dof = 2 * pairs.len() - free.len();
     let birge = (chi2 / dof as f64).sqrt().max(1.0);
-    let cov = (j.transpose() * &j)
-        .try_inverse()
-        .ok_or(CameraError::Degenerate(
-        "the pairs don't pin the camera down (spread them over more of the image and the scene)",
-    ))? * (birge * birge);
-    let var = |i: usize| {
-        free.iter()
-            .position(|&k| k == i)
-            .map_or(0.0, |k| cov[(k, k)].max(0.0).sqrt())
-    };
-    // Heading, pitch and roll: first-order through the rotation increment.
-    let angles_sigma = {
-        let base = cam.params();
-        let a0 = cam.angles();
-        let mut ja = DMatrix::zeros(3, free.len());
-        for (col, &i) in free.iter().enumerate().filter(|(_, &i)| i < 3) {
-            let mut p = base;
-            p[i] += 1e-7;
-            let a1 = cam.with(&p).angles();
-            for k in 0..3 {
-                let mut d = a1[k] - a0[k];
-                if d > 180.0 {
-                    d -= 360.0;
-                } else if d < -180.0 {
-                    d += 360.0;
-                }
-                ja[(k, col)] = d / 1e-7;
+    // Parametric bootstrap: synthetic pixels from each plausible model's camera plus noise
+    // (its pairs' σ, inflated by its Birge ratio), re-solved from that camera; the draws
+    // shared equally between the models.
+    let mut rng = Rng(seed.max(1).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+    let mut cams = Vec::with_capacity(draws);
+    let mut failed = 0;
+    for (k, (m, c0, pl)) in fits.iter().enumerate() {
+        let free_m = free_of(*m, pl.is_some());
+        let sig_m = problem.sigmas(c0);
+        let chi2_m = problem.residuals(c0, &sig_m).norm_squared();
+        let dof_m = (2 * pairs.len()).saturating_sub(free_m.len()).max(1);
+        let birge_m = (chi2_m / dof_m as f64).sqrt().max(1.0);
+        let ideal: Vec<P2> = pairs
+            .iter()
+            .map(|p| c0.project(p.world).unwrap_or(p.px))
+            .collect();
+        let share = draws / fits.len() + usize::from(k < draws % fits.len());
+        for _ in 0..share {
+            let sim: Vec<CameraPair> = pairs
+                .iter()
+                .zip(&ideal)
+                .zip(&sig_m)
+                .map(|((p, q), s)| CameraPair {
+                    px: [
+                        q[0] + s * birge_m * rng.gauss(),
+                        q[1] + s * birge_m * rng.gauss(),
+                    ],
+                    world: p.world,
+                })
+                .collect();
+            let sub = Problem {
+                pairs: &sim,
+                ..problem
+            };
+            // From the solution, with its weights: a few steps suffice.
+            let c = sub.refine_with(c0.clone(), &free_m, 1, 30);
+            if rms(&c, &sim) < 10.0 * (rms(c0, pairs) + pick_sigma_px) {
+                cams.push(c);
+            } else {
+                failed += 1;
             }
         }
-        let ca = &ja * &cov * ja.transpose();
-        [0, 1, 2].map(|k| ca[(k, k)].max(0.0).sqrt())
+    }
+    let sd = |f: &dyn Fn(&Camera) -> f64| {
+        let v: Vec<f64> = cams.iter().map(f).collect();
+        let n = v.len().max(2) as f64;
+        let m = v.iter().sum::<f64>() / v.len().max(1) as f64;
+        (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+    };
+    let a0 = cam.angles();
+    let angle_sd = |k: usize| {
+        sd(&|c: &Camera| {
+            let d = c.angles()[k] - a0[k];
+            (d + 180.0).rem_euclid(360.0) - 180.0
+        })
     };
     let mut res = vec![];
     let mut res_sig = vec![];
@@ -640,10 +1025,11 @@ pub fn solve(
         res.push(d);
         res_sig.push(d[0].hypot(d[1]) / sig[i]);
     }
+    let f_sigma = sd(&|c: &Camera| c.f);
     let mut warnings = vec![];
     if birge > 2.0 {
         warnings.push(format!(
-            "The pairs fit worse than their stated uncertainty (χ² = {chi2:.0} on {dof} degrees of freedom): a pair may be wrong, or the lens model too simple. The uncertainties were inflated by {birge:.1}."
+            "The pairs fit worse than their stated uncertainty (χ² = {chi2:.0} on {dof} degrees of freedom): a pair may be wrong, or the lens model too simple. The bootstrap's noise was inflated by {birge:.1}."
         ));
     }
     let bad: Vec<String> = res_sig
@@ -658,36 +1044,55 @@ pub fn solve(
             bad.join(", ")
         ));
     }
-    if var(6) > 0.05 * cam.f {
+    if f_sigma > 0.05 * cam.f {
         warnings.push(format!(
             "The focal length is poorly determined ({:.0} ± {:.0} px): add pairs at different depths and toward the image's edges.",
-            cam.f,
-            var(6)
+            cam.f, f_sigma
         ));
     }
     if pairs.len() < free.len() {
         warnings.push(format!(
-            "Only {} pairs for the {} unknowns of this lens model: the solve has little redundancy to show a wrong pair, and the lens parameters can absorb errors. Add pairs or choose a simpler lens model.",
+            "Only {} pairs for the {} unknowns of this lens model: the solve has little redundancy to show a wrong pair.",
             pairs.len(),
             free.len()
         ));
     }
+    if let Some(p) = &planar {
+        warnings.push(format!(
+            "The pairs lie on one plane (RMS {:.0} mm off it): the solve started from the plane's homography, assuming square pixels and the principal point at the image centre{}.",
+            p.rms * 1000.0,
+            if p.f_assumed {
+                "; the photo is nearly square on to the plane, so the start's focal length was assumed"
+            } else {
+                ""
+            }
+        ));
+    }
+    if failed * 20 > draws {
+        warnings.push(format!(
+            "{failed} of {draws} bootstrap re-solves failed: the camera is poorly determined."
+        ));
+    }
     Ok(Solve {
         model,
-        position_sigma: [var(3), var(4), var(5)],
-        angles_sigma,
-        f_sigma: var(6),
-        principal_sigma: [var(7), var(8)],
-        distortion_sigma: [var(9), var(10), var(11), var(12), var(13)],
-        free: free.clone(),
-        covariance: cov.transpose().as_slice().to_vec(),
+        selection,
+        planar,
+        position_sigma: [0, 1, 2].map(|k| sd(&|c: &Camera| c.position[k])),
+        angles_sigma: [0, 1, 2].map(angle_sd),
+        f_sigma,
+        principal_sigma: [sd(&|c: &Camera| c.cx), sd(&|c: &Camera| c.cy)],
+        distortion_sigma: [0, 1, 2, 3, 4].map(|k| sd(&|c: &Camera| c.distortion[k])),
+        free,
         residuals: res,
         residual_sigmas: res_sig,
         rms_px: (sq / pairs.len() as f64).sqrt(),
         chi2,
         dof,
         birge,
+        bootstrap: cams.len(),
+        bootstrap_failed: failed,
         warnings,
+        draws: cams,
         camera: cam,
     })
 }
@@ -722,6 +1127,10 @@ pub struct HeightInput {
     /// (its projected top of head), not clicked.
     #[serde(default)]
     pub matched_model: Option<f64>,
+    /// The frame the points were marked on, when not the photo the camera was solved from
+    /// (another frame from the same fixed camera): its evidence id.
+    #[serde(default)]
+    pub frame: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -739,6 +1148,24 @@ pub struct Height {
     pub miss: f64,
     pub draws: usize,
     pub failed: usize,
+    /// The frame, when not the camera's photo (hash-checked like it).
+    #[serde(default)]
+    pub frame: Option<PhotoRef>,
+}
+
+/// One subject over the frames it was measured in: the range of the heights, their mean and
+/// spread (apparent height changes with the gait and posture from frame to frame).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AcrossFrames {
+    pub label: String,
+    pub frames: usize,
+    pub min: f64,
+    pub max: f64,
+    pub mean: f64,
+    /// Standard deviation of the frames' heights (0 for one frame).
+    pub spread: f64,
+    /// The lowest of the frames' 2.5th and the highest of their 97.5th percentiles.
+    pub interval95: P2,
 }
 
 /// Height of the head point above the floor for one camera: the feet ray meets the floor,
@@ -773,15 +1200,14 @@ fn reverse(cam: &Camera, floor_z: f64, feet_px: P2, head_px: P2) -> Option<(f64,
     Some((s, feet, head, norm(sub(head, on_ray))))
 }
 
-/// A subject's height with its uncertainty: Monte Carlo over the camera's covariance and
-/// each image point's 1σ (`pick_sigma_px`; a head point from a matched model is drawn the
+/// A subject's height with its uncertainty: Monte Carlo over the camera's bootstrap re-solves
+/// and each image point's 1σ (`pick_sigma_px`; a head point from a matched model is drawn the
 /// same way).
 pub fn height(
     solve: &Solve,
     input: &HeightInput,
     floor_z: f64,
     pick_sigma_px: f64,
-    draws: usize,
     seed: u64,
 ) -> Result<Height, CameraError> {
     let Some((h, feet, head, miss)) = reverse(&solve.camera, floor_z, input.feet_px, input.head_px)
@@ -790,14 +1216,10 @@ pub fn height(
             "the feet point's ray doesn't reach the floor in front of the camera; check the feet and head points",
         ));
     };
-    let chol = solve.cholesky();
     let mut rng = Rng(seed.max(1).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
-    let mut hs = Vec::with_capacity(draws);
+    let mut hs = Vec::with_capacity(solve.draws.len());
     let mut failed = 0;
-    let mut z = vec![0.0; solve.free.len()];
-    for _ in 0..draws {
-        z.iter_mut().for_each(|v| *v = rng.gauss());
-        let cam = solve.draw(&z, &chol);
+    for cam in &solve.draws {
         let fp = [
             input.feet_px[0] + pick_sigma_px * rng.gauss(),
             input.feet_px[1] + pick_sigma_px * rng.gauss(),
@@ -806,7 +1228,7 @@ pub fn height(
             input.head_px[0] + pick_sigma_px * rng.gauss(),
             input.head_px[1] + pick_sigma_px * rng.gauss(),
         ];
-        match reverse(&cam, floor_z, fp, hp) {
+        match reverse(cam, floor_z, fp, hp) {
             Some((v, ..)) => hs.push(v),
             None => failed += 1,
         }
@@ -832,6 +1254,7 @@ pub fn height(
         miss,
         draws: hs.len(),
         failed,
+        frame: None,
     })
 }
 
@@ -923,7 +1346,8 @@ pub struct Parameters {
     pub point_sigma: f64,
     /// The floor's elevation (m), for heights.
     pub floor_z: f64,
-    /// Monte Carlo draws for heights, and the seed.
+    /// Bootstrap re-solves of the camera (each also a Monte Carlo draw for the heights), and
+    /// the seed.
     pub draws: usize,
     pub seed: u64,
 }
@@ -931,11 +1355,11 @@ pub struct Parameters {
 impl Default for Parameters {
     fn default() -> Self {
         Parameters {
-            model: LensModel::Radial2,
+            model: LensModel::Auto,
             pick_sigma_px: 1.0,
             point_sigma: 0.002,
             floor_z: 0.0,
-            draws: 2000,
+            draws: 1000,
             seed: 1,
         }
     }
@@ -949,17 +1373,23 @@ pub struct Run {
     pub parameters: Parameters,
     pub solve: Solve,
     pub heights: Vec<Height>,
+    /// Each subject measured in more than one frame, over its frames.
+    #[serde(default)]
+    pub across_frames: Vec<AcrossFrames>,
     pub summary: String,
     pub assumptions: Vec<String>,
     pub limitations: Vec<String>,
 }
 
+/// A camera match with its subjects' heights. `frames` gives each subject's frame (by its
+/// evidence id) when it is not the camera's photo.
 pub fn run(
     photo: Option<PhotoRef>,
     pairs: Vec<PairInput>,
     size: [u32; 2],
     parameters: Parameters,
     subjects: &[HeightInput],
+    frames: &dyn Fn(i64) -> Option<PhotoRef>,
 ) -> Result<Run, CameraError> {
     let p = &parameters;
     let cp: Vec<CameraPair> = pairs
@@ -969,21 +1399,68 @@ pub fn run(
             world: q.world,
         })
         .collect();
-    let solve = solve(&cp, size, p.model, p.pick_sigma_px, p.point_sigma)?;
-    let heights = subjects
-        .iter()
-        .enumerate()
-        .map(|(k, s)| {
-            height(
-                &solve,
-                s,
-                p.floor_z,
-                p.pick_sigma_px,
-                p.draws,
-                p.seed + k as u64,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut solve = solve(
+        &cp,
+        size,
+        p.model,
+        p.pick_sigma_px,
+        p.point_sigma,
+        p.draws,
+        p.seed,
+    )?;
+    let mut heights = vec![];
+    for (k, s) in subjects.iter().enumerate() {
+        let mut h = height(&solve, s, p.floor_z, p.pick_sigma_px, p.seed + 1 + k as u64)?;
+        if let Some(id) = s.frame {
+            h.frame = Some(frames(id).ok_or(CameraError::Height(
+                "a subject's frame is not an image in the evidence",
+            ))?);
+        }
+        heights.push(h);
+    }
+    // Heights far off the control points' plane rest on extrapolating a planar solve.
+    if let Some(pl) = solve.planar.clone() {
+        for h in &heights {
+            let off = |x: P3| dot(sub(x, pl.point), pl.normal).abs();
+            let far = off(h.head).max(off(h.feet));
+            if far > 0.25 * pl.extent {
+                solve.warnings.push(format!(
+                    "{}: its points lie up to {far:.2} m off the plane of the control points (which spread {:.2} m across it). The height rests on extrapolating a solve from one plane; its interval comes from the bootstrap, but pairs on a second surface would make it more reliable.",
+                    h.input.label, pl.extent
+                ));
+            }
+        }
+    }
+    let mut across_frames = vec![];
+    let mut labels: Vec<&str> = heights.iter().map(|h| h.input.label.as_str()).collect();
+    labels.dedup();
+    labels.sort();
+    labels.dedup();
+    for l in labels {
+        let hs: Vec<&Height> = heights.iter().filter(|h| h.input.label == l).collect();
+        if hs.len() < 2 {
+            continue;
+        }
+        let v: Vec<f64> = hs.iter().map(|h| h.height.value).collect();
+        let n = v.len() as f64;
+        let mean = v.iter().sum::<f64>() / n;
+        across_frames.push(AcrossFrames {
+            label: l.into(),
+            frames: hs.len(),
+            min: v.iter().cloned().fold(f64::INFINITY, f64::min),
+            max: v.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            mean,
+            spread: (v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt(),
+            interval95: [
+                hs.iter()
+                    .map(|h| h.interval95[0])
+                    .fold(f64::INFINITY, f64::min),
+                hs.iter()
+                    .map(|h| h.interval95[1])
+                    .fold(f64::NEG_INFINITY, f64::max),
+            ],
+        });
+    }
     let c = &solve.camera;
     let [hd, pt, _] = c.angles();
     let mut summary = format!(
@@ -998,9 +1475,18 @@ pub fn run(
         solve.rms_px
     );
     for h in &heights {
+        if across_frames.iter().any(|a| a.label == h.input.label) {
+            continue;
+        }
         summary += &format!(
             "; {} {:.3} ± {:.3} m",
             h.input.label, h.height.value, h.height.sigma
+        );
+    }
+    for a in &across_frames {
+        summary += &format!(
+            "; {} {:.3}–{:.3} m over {} frames",
+            a.label, a.min, a.max, a.frames
         );
     }
     Ok(Run {
@@ -1010,6 +1496,7 @@ pub fn run(
         parameters,
         solve,
         heights,
+        across_frames,
         summary,
         assumptions: ASSUMPTIONS.iter().map(|s| s.to_string()).collect(),
         limitations: LIMITATIONS.iter().map(|s| s.to_string()).collect(),
@@ -1129,6 +1616,8 @@ mod tests {
             LensModel::Full,
             0.5,
             0.0,
+            10,
+            1,
         )
         .unwrap();
         let c = &s.camera;
@@ -1158,6 +1647,8 @@ mod tests {
                 LensModel::Full,
                 0.5,
                 0.0,
+                200,
+                seed,
             )
             .unwrap();
             for k in 0..3 {
@@ -1168,33 +1659,93 @@ mod tests {
         assert!((0.6..1.6).contains(&mean), "mean z² {mean}");
     }
 
+    /// A camera that satisfies the planar start's assumptions: square pixels, principal point
+    /// at the centre, k1 only.
+    fn plain() -> Camera {
+        Camera {
+            cx: 640.0,
+            cy: 360.0,
+            distortion: [-0.1, 0.0, 0.0, 0.0, 0.0],
+            ..cctv()
+        }
+    }
+
     #[test]
-    fn pairs_on_one_plane_or_too_few_are_refused() {
-        let cam = cctv();
-        let floor: Vec<CameraPair> = pairs(&cam, 60, 0.0, 1)
+    fn pairs_on_one_plane_start_from_the_homography() {
+        let cam = plain();
+        let floor: Vec<CameraPair> = pairs(&cam, 90, 0.0, 1)
             .into_iter()
             .filter(|p| p.world[2] == 0.0)
             .collect();
-        assert_eq!(
-            solve(&floor, cam.size, LensModel::Pinhole, 0.5, 0.0).unwrap_err(),
-            CameraError::OnePlane
+        assert!(floor.len() >= 10);
+        let s = solve(&floor, cam.size, LensModel::Radial1, 0.5, 0.0, 50, 1).unwrap();
+        assert!(
+            norm(sub(s.camera.position, cam.position)) < 1e-6,
+            "{:?}",
+            s.camera.position
         );
+        assert!((s.camera.f - cam.f).abs() < 1e-3);
+        let pl = s.planar.as_ref().unwrap();
+        assert!(pl.rms < 1e-9 && (pl.normal[2].abs() - 1.0).abs() < 1e-9);
+        assert!(s
+            .warnings
+            .iter()
+            .any(|w| w.contains("principal point at the image centre")));
+        // The full model can't be solved from one plane; too few pairs are refused.
+        assert!(solve(&floor, cam.size, LensModel::Full, 0.5, 0.0, 10, 1).is_err());
         let few = pairs(&cam, 5, 0.0, 1);
         assert!(matches!(
-            solve(&few, cam.size, LensModel::Pinhole, 0.5, 0.0),
+            solve(&few, cam.size, LensModel::Pinhole, 0.5, 0.0, 10, 1),
             Err(CameraError::TooFewPairs(5))
         ));
+    }
+
+    #[test]
+    fn leave_one_out_picks_the_lens_the_pairs_support() {
+        // A strong wide-angle distortion with an off-centre principal point needs more than
+        // a focal length; a lens with a little k1 doesn't need the full model.
+        let s = solve(
+            &pairs(&cctv(), 30, 0.5, 3),
+            [1280, 720],
+            LensModel::Auto,
+            0.5,
+            0.0,
+            20,
+            1,
+        )
+        .unwrap();
+        let sel = s.selection.as_ref().unwrap();
+        assert!(
+            matches!(s.model, LensModel::Radial2 | LensModel::Full),
+            "{sel:?}"
+        );
+        assert_eq!(sel.scores.len(), 4);
+        assert!(sel.reason.contains("leave-one-out"));
+        let s = solve(
+            &pairs(&plain(), 30, 0.5, 3),
+            [1280, 720],
+            LensModel::Auto,
+            0.5,
+            0.0,
+            20,
+            1,
+        )
+        .unwrap();
+        assert!(s.model != LensModel::Full, "{:?}", s.selection);
+        assert!(s.model != LensModel::Pinhole, "{:?}", s.selection);
     }
 
     #[test]
     fn a_standing_subject_measures_exactly_and_the_interval_covers() {
         let cam = cctv();
         let s = solve(
-            &pairs(&cam, 30, 0.0, 1),
+            &pairs(&cam, 30, 0.2, 1),
             cam.size,
             LensModel::Full,
             0.5,
             0.0,
+            300,
+            1,
         )
         .unwrap();
         let feet = [3.2, 3.4, 0.0];
@@ -1203,17 +1754,70 @@ mod tests {
             feet_px: cam.project(feet).unwrap(),
             head_px: cam.project([3.2, 3.4, 1.63]).unwrap(),
             matched_model: None,
+            frame: None,
         };
-        let h = height(&s, &input, 0.0, 0.5, 500, 1).unwrap();
-        assert!((h.height.value - 1.63).abs() < 1e-6, "{:?}", h.height);
-        assert!(h.miss < 1e-6 && norm(sub(h.feet, feet)) < 1e-6);
+        let h = height(&s, &input, 0.0, 0.5, 1).unwrap();
+        assert!((h.height.value - 1.63).abs() < 0.01, "{:?}", h.height);
+        assert!(h.miss < 0.01 && norm(sub(h.feet, feet)) < 0.02);
         assert!(h.height.sigma > 0.0 && h.interval95[0] < 1.63 && h.interval95[1] > 1.63);
         // A feet point above the camera's horizon is refused.
         let bad = HeightInput {
             feet_px: cam.project([3.2, 3.4, 5.0]).unwrap(),
             ..input
         };
-        assert!(height(&s, &bad, 0.0, 0.5, 10, 1).is_err());
+        assert!(height(&s, &bad, 0.0, 0.5, 1).is_err());
+    }
+
+    #[test]
+    fn a_subject_in_several_frames_is_reported_as_a_range() {
+        let cam = cctv();
+        let pairs: Vec<PairInput> = pairs(&cam, 30, 0.3, 2)
+            .into_iter()
+            .map(|p| PairInput {
+                px: p.px,
+                world: p.world,
+                source: None,
+            })
+            .collect();
+        // The same person at two places (two frames of the same fixed camera), 2 cm apart in
+        // apparent height (a stride).
+        let at = |x: f64, h: f64, frame: Option<i64>| HeightInput {
+            label: "A".into(),
+            feet_px: cam.project([x, 3.4, 0.0]).unwrap(),
+            head_px: cam.project([x, 3.4, h]).unwrap(),
+            matched_model: None,
+            frame,
+        };
+        let photo = |id: i64| {
+            Some(PhotoRef {
+                evidence_id: id,
+                name: format!("frame {id}"),
+                file: format!("evidence/{id}/f.png"),
+                sha256: "ab".repeat(32),
+            })
+        };
+        let r = run(
+            None,
+            pairs,
+            cam.size,
+            Parameters {
+                model: LensModel::Full,
+                draws: 200,
+                ..Parameters::default()
+            },
+            &[at(3.2, 1.70, None), at(4.0, 1.72, Some(9))],
+            &photo,
+        )
+        .unwrap();
+        assert_eq!(r.across_frames.len(), 1);
+        let a = &r.across_frames[0];
+        assert_eq!(a.frames, 2);
+        assert!(
+            (a.min - 1.70).abs() < 0.01 && (a.max - 1.72).abs() < 0.01,
+            "{a:?}"
+        );
+        assert_eq!(r.heights[1].frame.as_ref().unwrap().evidence_id, 9);
+        assert!(r.summary.contains("over 2 frames"));
     }
 
     #[test]

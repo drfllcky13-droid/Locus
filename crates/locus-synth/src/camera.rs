@@ -59,23 +59,44 @@ impl Camera {
         let rot = self.rotation();
         let d = sub(x, self.position);
         let c = [dot(rot[0], d), dot(rot[1], d), dot(rot[2], d)];
-        if c[2] <= 1e-6 || (c[0] / c[2]).hypot(c[1] / c[2]) >= self.max_radius() {
+        if c[2] <= 1e-6 || !self.within_lens((c[0] / c[2]).powi(2) + (c[1] / c[2]).powi(2)) {
             return None;
         }
         let [ad, bd] = self.distort(c[0] / c[2], c[1] / c[2]);
         Some([self.fx * ad + self.cx, self.fy * bd + self.cy])
     }
 
-    /// The largest undistorted radius the lens model is valid for: where the radial
-    /// distortion stops increasing with radius. Beyond it the polynomial folds back, and a
-    /// point well outside the field of view would land inside the image.
-    pub fn max_radius(&self) -> f64 {
+    /// Is the lens model valid out to radius² `r2`: does the radial distortion keep
+    /// increasing with radius all the way there? Its slope, 1 + 3k1 x + 5k2 x² + 7k3 x³ in
+    /// x = r², is 1 at the centre; checked exactly at `r2` and at its turning points before it.
+    /// Past the first zero the polynomial folds back, and a point outside the field of view
+    /// would land in the image.
+    pub fn within_lens(&self, r2: f64) -> bool {
         let [k1, k2, k3, ..] = self.distortion;
-        let slope = |r2: f64| 1.0 + 3.0 * k1 * r2 + 5.0 * k2 * r2 * r2 + 7.0 * k3 * r2 * r2 * r2;
-        (1..=2000)
-            .map(|i| i as f64 * 0.005)
-            .find(|r2| slope(*r2) <= 0.0)
-            .map_or(f64::INFINITY, f64::sqrt)
+        let slope = |x: f64| 1.0 + 3.0 * k1 * x + 5.0 * k2 * x * x + 7.0 * k3 * x * x * x;
+        if slope(r2) <= 0.0 {
+            return false;
+        }
+        // Turning points: 3k1 + 10k2 x + 21k3 x² = 0.
+        let (a, b, c) = (21.0 * k3, 10.0 * k2, 3.0 * k1);
+        let roots: Vec<f64> = if a.abs() < 1e-300 {
+            if b.abs() < 1e-300 {
+                vec![]
+            } else {
+                vec![-c / b]
+            }
+        } else {
+            let d = b * b - 4.0 * a * c;
+            if d < 0.0 {
+                vec![]
+            } else {
+                vec![(-b - d.sqrt()) / (2.0 * a), (-b + d.sqrt()) / (2.0 * a)]
+            }
+        };
+        roots
+            .into_iter()
+            .filter(|x| *x > 0.0 && *x < r2)
+            .all(|x| slope(x) > 0.0)
     }
 
     /// Distorted normalised coordinates of undistorted ones (the lens model).

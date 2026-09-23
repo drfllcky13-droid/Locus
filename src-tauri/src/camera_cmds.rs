@@ -64,14 +64,16 @@ fn camera_run(scene: &Scene, project: &Project, req: &CameraRequest) -> CmdResul
         return Err("Give a pick uncertainty between 0 and 20 pixels.".into());
     }
     if !(100..=20_000).contains(&params.draws) {
-        return Err("Use between 100 and 20,000 Monte Carlo draws.".into());
+        return Err("Use between 100 and 20,000 bootstrap draws.".into());
     }
     for s in &req.subjects {
         if s.label.trim().is_empty() {
             return Err("Give each subject a label.".into());
         }
     }
-    camera::run(Some(photo), pairs, req.size, params, &req.subjects)
+    // Frames other than the camera's photo, named by their evidence records.
+    let frames = |id: i64| photo_ref(&evidence, id, "A subject's frame").ok();
+    camera::run(Some(photo), pairs, req.size, params, &req.subjects, &frames)
         .map_err(|e| capital(&e.to_string()))
 }
 
