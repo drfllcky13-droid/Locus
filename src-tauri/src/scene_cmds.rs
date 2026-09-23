@@ -527,6 +527,13 @@ pub struct AppInfo {
     webview: String,
 }
 
+/// Licences and attributions of the third-party data bundled in the app (also shipped as
+/// THIRD_PARTY_NOTICES.txt next to it).
+#[tauri::command]
+pub fn third_party_notices() -> &'static str {
+    include_str!("../../THIRD_PARTY_NOTICES.txt")
+}
+
 #[tauri::command]
 pub fn app_info() -> AppInfo {
     AppInfo {

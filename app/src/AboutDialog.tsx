@@ -41,6 +41,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
   const [app, setApp] = useState<{ version: string; webview: string } | null>(null);
   const [gpu] = useState(webglGpu);
   const [gpuWeb, setGpuWeb] = useState("checking…");
+  const [notices, setNotices] = useState<string | null>(null);
   useEffect(() => {
     void api.appInfo().then(setApp);
     void webgpu().then(setGpuWeb);
@@ -69,7 +70,19 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           On laptops with two GPUs, Locus asks for the dedicated one. If this shows integrated
           graphics, set Locus to &quot;High performance&quot; in Windows graphics settings.
         </p>
+        {notices !== null && (
+          <pre className="notices" aria-label="Third-party notices">
+            {notices}
+          </pre>
+        )}
         <div className="buttons">
+          <button
+            onClick={() =>
+              notices === null ? void api.thirdPartyNotices().then(setNotices) : setNotices(null)
+            }
+          >
+            {notices === null ? "Third-party notices" : "Hide notices"}
+          </button>
           <button onClick={onClose}>Close</button>
         </div>
       </div>

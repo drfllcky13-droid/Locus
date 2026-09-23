@@ -523,3 +523,15 @@ td.num {
   align-items: center;
   gap: 6px;
 }
+
+.notices {
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 0;
+}

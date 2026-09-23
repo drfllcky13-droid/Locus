@@ -143,6 +143,27 @@ impl Project {
         })
     }
 
+    /// Log that a report of registration `id` was written to `path`, with the file's hash, so
+    /// a printed or shared copy can be matched to the project.
+    pub fn record_report_export(
+        &mut self,
+        id: i64,
+        path: &str,
+        sha256: &str,
+        bytes: u64,
+    ) -> Result<()> {
+        self.logged("report.exported", |_| {
+            let details = json!({
+                "report": "registration",
+                "registration": id,
+                "path": path,
+                "sha256": sha256,
+                "bytes": bytes,
+            });
+            Ok(((), details))
+        })
+    }
+
     pub fn applied_registration(&self) -> Result<Option<i64>> {
         Ok(self.setting(APPLIED_KEY)?.and_then(|v| v.parse().ok()))
     }

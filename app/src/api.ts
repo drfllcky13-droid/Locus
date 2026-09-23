@@ -265,6 +265,7 @@ export const api = {
   cleanupSetActive: (id: number, active: boolean) =>
     invoke<StateView>("cleanup_set_active", { id, active }),
   appInfo: () => invoke<{ version: string; webview: string }>("app_info"),
+  thirdPartyNotices: () => invoke<string>("third_party_notices"),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),
   registrations: () => invoke<RegistrationRecord[]>("registrations"),
   registrationRun: (params: RegistrationParams) =>
@@ -273,4 +274,7 @@ export const api = {
     invoke<RegistrationRecord[]>("registration_edit", { id, delete: del, force }),
   registrationApply: (id: number | null) =>
     invoke<RegistrationRecord[]>("registration_apply", { id }),
+  /** Writes the PDF and returns its SHA-256 (also recorded in the audit log). */
+  registrationReport: (id: number, path: string) =>
+    invoke<string>("registration_report", { id, path }),
 };

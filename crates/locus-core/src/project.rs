@@ -92,7 +92,8 @@ pub(crate) fn meta_set(conn: &Connection, key: &str, value: &str) -> Result<()> 
     Ok(())
 }
 
-pub(crate) fn now() -> String {
+/// The current time as stored in the project (UTC, RFC 3339, milliseconds).
+pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 

@@ -22,3 +22,8 @@ ignore = true
 [[licenses.exceptions]]
 crate = "target-lexicon"
 allow = ["Apache-2.0 WITH LLVM-exception"]
+
+# Same licence; build-time only (psm's build script, via stacker in the Typst compiler).
+[[licenses.exceptions]]
+crate = "ar_archive_writer"
+allow = ["Apache-2.0 WITH LLVM-exception"]

@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { api, type RegistrationParams, type RegistrationRecord } from "../api";
 import { layout, type EdgeStyle } from "./graph";
@@ -104,6 +105,24 @@ export function RegistrationDialog({
     setBusy(id === null ? "Reverting…" : "Applying…");
     try {
       update(await api.registrationApply(id), false);
+    } catch (e) {
+      onNotice(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportPdf = async (id: number) => {
+    const path = await save({
+      title: "Save registration report",
+      defaultPath: `registration-${id}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!path) return;
+    setBusy("Writing report…");
+    try {
+      const sha = await api.registrationReport(id, path);
+      onNotice(`Report saved to ${path} (SHA-256 ${sha}; recorded in the audit log).`);
     } catch (e) {
       onNotice(String(e));
     } finally {
@@ -343,6 +362,11 @@ export function RegistrationDialog({
           {applied && (
             <button disabled={busy !== null} onClick={() => void apply(null)}>
               Revert to file poses
+            </button>
+          )}
+          {reg && (
+            <button disabled={busy !== null} onClick={() => void exportPdf(reg.id)}>
+              Export PDF…
             </button>
           )}
           {reg && !reg.applied && (

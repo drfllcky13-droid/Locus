@@ -15,7 +15,9 @@ pub use audit::AuditEntry;
 pub use contents::{
     Bounds, Contents, ExifField, ImageInfo, ImageKind, MeshInfo, ScanInfo, IDENTITY,
 };
-pub use project::{Error, EvidenceRecord, EvidenceStatus, IntegrityReport, Project, Result};
+pub use project::{
+    now as timestamp, Error, EvidenceRecord, EvidenceStatus, IntegrityReport, Project, Result,
+};
 pub use registration::{RegistrationRecord, ScanPose};
 pub use state::{
     CleanupRecord, CleanupScan, MeasurementRecord, OctreeRecord, DEFAULT_POINT_SIGMA_M,

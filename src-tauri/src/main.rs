@@ -48,11 +48,13 @@ fn main() {
             scene_cmds::cleanup_preview,
             scene_cmds::cleanup_set_active,
             scene_cmds::app_info,
+            scene_cmds::third_party_notices,
             scene_cmds::startup,
             register_cmds::registration_run,
             register_cmds::registration_edit,
             register_cmds::registrations,
             register_cmds::registration_apply,
+            register_cmds::registration_report,
         ])
         .register_asynchronous_uri_scheme_protocol("locus", |ctx, request, responder| {
             let app = ctx.app_handle().clone();

@@ -103,3 +103,16 @@ fn registrations_cannot_be_edited_or_deleted() {
         assert!(c.execute(sql, []).is_err(), "{sql} was allowed");
     }
 }
+
+#[test]
+fn a_report_export_is_logged_with_its_hash() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut p = Project::create(&dir.path().join("r.locus"), "R", "A").unwrap();
+    p.record_report_export(3, "E:/cases/report.pdf", "abc123", 4096)
+        .unwrap();
+    let e = p.audit_log().unwrap().pop().unwrap();
+    assert_eq!(e.action, "report.exported");
+    let d: serde_json::Value = serde_json::from_str(&e.details).unwrap();
+    assert_eq!(d["sha256"], "abc123");
+    assert_eq!(d["registration"], 3);
+}
