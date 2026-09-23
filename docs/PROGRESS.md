@@ -214,7 +214,7 @@ Acceptance criteria:
 - [x] Area of origin mean error under 10 cm on clean synthetic data: from the generator's stain photos (alignment, automatic edges, marked tails) 0.6 mm mean over 8 rooms, the truth inside the 95 % region in all 8; in the app, six stains gave 11.5 mm. With hand-measurement noise, 233 mm with the region covering the truth 95 % of the time.
 - [ ] All crime tools pass the `locus-validate` error bounds (bounds set with the generators, checked in Phase 13).
 
-Status (2026-09-23): items 1–4 done. Trajectory review decisions applied (hole-centre fits with the ellipse cross-check, angle conventions, both zones, report additions). Bloodstain area of origin built on the same pattern; paused for review before camera matching and height: see docs/phase6-bloodstain-review.txt.
+Status (2026-09-23): items 1–4 done and approved. Trajectory review decisions applied (hole-centre fits with the ellipse cross-check, angle conventions, both zones, report additions). Bloodstain review decisions applied: the conventional ray-distance point shown beside the angle fit with the validation comparison and literature, the near-round flag, an optional plan-view convergence of floor stains (separate 2-D result), and four-point perspective correction from the scale's corners. The blank close-ups were a real bug in the eye-dome pass (anything nearer than 1 m drawn as background), now fixed, with a close-up check in the viewer smoke test. Next: item 5, camera matching and height.
 
 ## Blocked
 
