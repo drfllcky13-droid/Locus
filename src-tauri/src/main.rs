@@ -4,6 +4,7 @@
 #![cfg_attr(feature = "spike", allow(dead_code))]
 
 mod analysis_cmds;
+mod bloodstain_cmds;
 mod commands;
 mod diagram_cmds;
 mod register_cmds;
@@ -73,6 +74,11 @@ fn main() {
             scene3d_cmds::sun_position,
             analysis_cmds::trajectory_preview,
             analysis_cmds::trajectory_save,
+            bloodstain_cmds::bloodstain_align,
+            bloodstain_cmds::bloodstain_edges,
+            bloodstain_cmds::bloodstain_stain,
+            bloodstain_cmds::bloodstain_preview,
+            bloodstain_cmds::bloodstain_save,
             analysis_cmds::analyses,
             analysis_cmds::analysis_withdraw,
             analysis_cmds::analysis_report,

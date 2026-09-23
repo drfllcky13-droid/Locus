@@ -4,7 +4,7 @@
 //! checked on the generator's stain photos.
 
 use locus_analysis::bloodstain::{
-    align_photo, fit_stain, run, stain_edges, AlignPair, Parameters, Run, StainInput,
+    align_photo, run, stain_edges, stain_from_photo, AlignPair, Parameters, Run, StainInput,
 };
 use locus_analysis::measure::Measured;
 use locus_synth::bloodstain::{self as gen, Flight, Options};
@@ -222,35 +222,31 @@ fn from_photos(seed: u64) -> (f64, bool) {
             .collect();
         let al = align_photo(&pairs, s.centre, s.normal).unwrap();
         let edges = stain_edges(&luma, w, h, [w as f64 / 2.0, h as f64 / 2.0], 126).unwrap();
-        let f = fit_stain(&edges, &al).unwrap();
+        // The examiner marks the tail's tip: a little beyond the stain's leading end.
+        let tip = [0, 1, 2].map(|k| s.centre[k] + s.travel[k] * s.length * 0.62);
+        let r = sub(tip, s.centre);
+        let half = w as f64 / 2.0;
+        let tail_px = [
+            half + dot(r, s.photo.u) * s.photo.scale,
+            half - dot(r, s.photo.v) * s.photo.scale,
+        ];
+        let st = stain_from_photo(&format!("{i}"), &s.surface, al, edges, tail_px).unwrap();
+        let f = st.fit.clone().unwrap();
         let rel = |m: f64, truth: f64| (m - truth).abs() / truth;
         worst_axis = worst_axis
             .max(rel(f.width.value, s.width))
             .max(rel(f.length.value, s.length));
         worst_centre = worst_centre.max(norm(sub(f.centre, s.centre)));
-        // The examiner marks the tail: the axis's sign.
-        let travel = if dot(f.long_axis, s.travel) >= 0.0 {
-            f.long_axis
-        } else {
-            f.long_axis.map(|v| -v)
-        };
         if s.length / s.width > 1.1 {
-            worst_angle =
-                worst_angle.max(dot(travel, s.travel).clamp(-1.0, 1.0).acos().to_degrees());
+            worst_angle = worst_angle.max(
+                dot(st.travel, s.travel)
+                    .clamp(-1.0, 1.0)
+                    .acos()
+                    .to_degrees(),
+            );
         }
-        inputs.push(StainInput {
-            label: format!("{i}"),
-            surface: s.surface.clone(),
-            centre: f.centre,
-            normal: s.normal,
-            width: f.width,
-            length: f.length,
-            travel,
-            travel_sigma_deg: f.axis_sigma_deg,
-            fit: Some(f),
-            alignment: Some(al),
-            ..Default::default()
-        });
+        assert!(dot(st.normal, s.normal) > 1.0 - 1e-12);
+        inputs.push(st);
     }
     eprintln!(
         "seed {seed}: {} photos: axes within {:.2} %, direction within {:.2}° (stains longer than 1.1 × wide), centre within {:.3} mm",

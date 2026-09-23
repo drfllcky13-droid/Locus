@@ -53,6 +53,24 @@ pub struct TrajectoryRequest {
     pub hole_radius: f64,
 }
 
+/// An image in the evidence, as an analysis records it.
+pub(crate) fn photo_ref(
+    evidence: &[locus_core::EvidenceRecord],
+    id: i64,
+    label: &str,
+) -> CmdResult<PhotoRef> {
+    let e = evidence
+        .iter()
+        .find(|e| e.id == id && !e.contents.images.is_empty())
+        .ok_or(format!("{label}: evidence item {id} is not an image."))?;
+    Ok(PhotoRef {
+        evidence_id: id,
+        name: e.contents.images[0].name.clone(),
+        file: e.stored_path.clone(),
+        sha256: e.sha256.clone(),
+    })
+}
+
 fn trajectory_run(scene: &Scene, project: &Project, req: &TrajectoryRequest) -> CmdResult<Run> {
     if req.points.len() < 2 {
         return Err(
@@ -73,21 +91,10 @@ fn trajectory_run(scene: &Scene, project: &Project, req: &TrajectoryRequest) -> 
                 index: r.index,
                 revision: p.pick.revision,
             });
-            let photo = match p.photo {
-                None => None,
-                Some(id) => {
-                    let e = evidence
-                        .iter()
-                        .find(|e| e.id == id && !e.contents.images.is_empty())
-                        .ok_or(format!("{label}: evidence item {id} is not an image."))?;
-                    Some(PhotoRef {
-                        evidence_id: id,
-                        name: e.contents.images[0].name.clone(),
-                        file: e.stored_path.clone(),
-                        sha256: e.sha256.clone(),
-                    })
-                }
-            };
+            let photo = p
+                .photo
+                .map(|id| photo_ref(&evidence, id, &label))
+                .transpose()?;
             if p.kind == "rod" {
                 if !(p.sigma.is_finite() && p.sigma > 0.0) {
                     return Err(format!("{label}: give a positive uncertainty."));
@@ -225,7 +232,7 @@ pub async fn analysis_withdraw(
     .await
 }
 
-fn meta(p: &Project, a: &AnalysisRecord) -> CmdResult<locus_report::analysis::Meta> {
+pub(crate) fn meta(p: &Project, a: &AnalysisRecord) -> CmdResult<locus_report::analysis::Meta> {
     Ok(locus_report::analysis::Meta {
         project: p.name().map_err(err)?,
         record_id: a.id,
@@ -278,6 +285,14 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                 (
                     locus_report::trajectory::report(&meta(p, &a)?, &run),
                     images,
+                )
+            }
+            "bloodstain" => {
+                let run: locus_analysis::bloodstain::Run =
+                    serde_json::from_value(a.record.clone()).map_err(err)?;
+                (
+                    locus_report::bloodstain::report(&meta(p, &a)?, &run),
+                    vec![],
                 )
             }
             t => return Err(format!("No report for {t} analyses yet.")),

@@ -9,7 +9,7 @@
 
 use crate::defect::{fit_ellipse, residuals, P2};
 use crate::measure::{cross, dot, eigen_sym, norm, sub, Measured, P3};
-use crate::trajectory::PhotoRef;
+use crate::trajectory::{PhotoRef, PointSource};
 use serde::{Deserialize, Serialize};
 
 pub const METHOD: &str = "bloodstain/1";
@@ -467,6 +467,61 @@ pub struct StainInput {
     pub alignment: Option<Alignment>,
     #[serde(default)]
     pub photo: Option<PhotoRef>,
+    /// The edge points fitted (pixels in the photo), and the seed and threshold when they
+    /// were found automatically.
+    #[serde(default)]
+    pub edges: Vec<P2>,
+    #[serde(default)]
+    pub auto_edge: Option<AutoEdge>,
+    /// The tail's tip as marked (pixel): it sets which way along the long axis the droplet
+    /// travelled.
+    #[serde(default)]
+    pub tail_px: Option<P2>,
+    /// The scan points the alignment's pairs resolved to, in order.
+    #[serde(default)]
+    pub sources: Vec<PointSource>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AutoEdge {
+    pub seed: P2,
+    pub threshold: u8,
+}
+
+/// A stain from its aligned photo: the ellipse fitted to its edge points, and the direction
+/// of travel along the long axis toward the marked tail.
+pub fn stain_from_photo(
+    label: &str,
+    surface: &str,
+    alignment: Alignment,
+    edges: Vec<P2>,
+    tail_px: P2,
+) -> Result<StainInput, BloodstainError> {
+    let fit = fit_stain(&edges, &alignment)?;
+    let tail = sub(alignment.to_world(tail_px), fit.centre);
+    let along = dot(tail, fit.long_axis);
+    // The tail must lie off the centre along the long axis, not across it.
+    if along.abs() < 0.5 * norm(tail) || norm(tail) < fit.width.value / 4.0 {
+        return Err(BloodstainError::Fit(
+            "mark the tail beyond the end of the stain, along its long axis",
+        ));
+    }
+    let travel = scale(fit.long_axis, along.signum());
+    Ok(StainInput {
+        label: label.into(),
+        surface: surface.into(),
+        centre: fit.centre,
+        normal: alignment.plane_normal,
+        width: fit.width,
+        length: fit.length,
+        travel,
+        travel_sigma_deg: fit.axis_sigma_deg,
+        fit: Some(fit),
+        alignment: Some(alignment),
+        edges,
+        tail_px: Some(tail_px),
+        ..Default::default()
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1244,6 +1299,16 @@ mod tests {
             "{ang}"
         );
         assert!(f.width.sigma > 0.0 && f.width.sigma < 0.6e-4);
+        // The tail sets the direction: beyond the leading end, along the axis.
+        let (c, sn) = (theta.cos(), theta.sin());
+        let tip = [120.0 + c * a * 1.2, 120.0 + sn * a * 1.2];
+        let st = stain_from_photo("t", "floor", al.clone(), edges.clone(), tip).unwrap();
+        assert!(dot(st.travel, [c, -sn, 0.0]) > 0.99, "{:?}", st.travel);
+        let back = [120.0 - c * a * 1.2, 120.0 - sn * a * 1.2];
+        let st = stain_from_photo("t", "floor", al.clone(), edges.clone(), back).unwrap();
+        assert!(dot(st.travel, [c, -sn, 0.0]) < -0.99);
+        let across = [120.0 - sn * b * 1.5, 120.0 + c * b * 1.5];
+        assert!(stain_from_photo("t", "floor", al, edges, across).is_err());
         // A seed outside the stain, or a stain off the edge, is refused.
         assert!(stain_edges(&img, w, w, [5.0, 5.0], 120).is_err());
         assert!(stain_edges(&img, w, w, [120.0, 120.0], 250).is_err());
