@@ -32,6 +32,7 @@ body,
 .app {
   display: grid;
   grid-template-columns: 340px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 
@@ -49,6 +50,9 @@ body,
 .viewer {
   display: grid;
   grid-template-columns: 1fr;
+  /* One row the height of the window (here and in .app): a long side panel scrolls, it
+     doesn't stretch the view. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 

@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ProjectInfo, type Resolved, type StateView } from "../api";
+import { api, type DiagramRevision, type ProjectInfo, type Resolved, type StateView } from "../api";
 import { formatCount } from "../format";
 import { Engine, type ClipMode, type Stats } from "./engine";
 import { TOOL_POINTS, type MeasurementRecord } from "./measureFormat";
@@ -32,9 +32,12 @@ const DEFAULT_SETTINGS: ViewSettings = {
 
 export function Viewport({
   project,
+  diagrams,
   onNotice,
 }: {
   project: ProjectInfo | null;
+  /** The project's diagrams at their newest revisions (for extruding). */
+  diagrams: DiagramRevision[];
   onNotice: (message: string | null) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -405,6 +408,7 @@ export function Viewport({
           <SceneBuilder
             key={project.root}
             engine={getEngine}
+            diagramList={diagrams}
             origin={shownScene?.origin.join() ?? ""}
             requestPick={(hint, then) => {
               setTool("orbit");

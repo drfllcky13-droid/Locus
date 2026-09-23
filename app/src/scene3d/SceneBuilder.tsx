@@ -111,11 +111,14 @@ const headingOf = (m: number[]) => (Math.atan2(m[1], m[0]) * 180) / Math.PI;
 
 export function SceneBuilder({
   engine,
+  diagramList,
   origin,
   requestPick,
   onNotice,
 }: {
   engine: () => Engine | null;
+  /** The project's diagrams at their newest revisions. */
+  diagramList: DiagramRevision[];
   /** The view's render origin; geometry is rebuilt relative to it when it changes. */
   origin: string;
   /** Ask the view for the next click on the point cloud. */
@@ -127,7 +130,6 @@ export function SceneBuilder({
   /** The document as last saved; it differs from `doc` while edits wait to be saved. */
   const [saved, setSaved] = useState<SceneDoc>(EMPTY_SCENE);
   const dirty = doc !== saved;
-  const [diagramList, setDiagramList] = useState<DiagramRevision[]>([]);
   const [diagrams, setDiagrams] = useState<Diagrams>(new Map());
   const [selected, setSelected] = useState<string | null>(null);
   const [move, setMove] = useState<"off" | "translate" | "rotate">("off");
@@ -147,7 +149,6 @@ export function SceneBuilder({
         }
       })
       .catch((e) => onNotice(String(e)));
-    api.diagrams().then(setDiagramList, (e) => onNotice(String(e)));
   }, [onNotice]);
 
   // The diagram revisions the scene's objects name.
