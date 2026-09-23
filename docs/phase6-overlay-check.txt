@@ -1,0 +1,83 @@
+Checking the bloodstain photo overlay in the app
+2026-09-23 (build 2faaa4e or later)
+
+WHAT WAS WRONG
+
+  The blank close-ups were a real rendering bug, not the overlay.
+  - Cause: the eye-dome lighting pass treated any pixel nearer than 1 m to the camera as
+    "nothing drawn" and painted it as background. It used a negative log depth as that
+    test, and log depth is negative under 1 m.
+  - Effect: at 1 m or closer, the scan vanished, and so did the photo overlay.
+  - Fix: the pass now tests the stored depth itself.
+  - Near-plane clipping: not the cause. The near plane is 5 mm.
+  - Depth fighting between the photo and the points: guarded against anyway. The photo is
+    lifted off the wall by three times the scan's RMS roughness there (at least 1 mm), and it
+    now writes depth.
+
+  Scripted screenshots at 1 m, 0.35 m and 0.15 m now show the scan and the photo; before, all
+  three were blank.
+
+STEPS (about 10 minutes)
+
+  Test data: the generated bloodstain room, already on disk.
+    Scan:   E:\Claude\scratch\locus\gt\bloodstain\scene.e57
+    Photos: E:\Claude\scratch\locus\gt\bloodstain\photos\stain-246.png (square on)
+            E:\Claude\scratch\locus\gt\bloodstain\photos\stain-246w.png (the same photo
+            warped as if taken 35° off square on)
+    Each photo has three small black crosses (fiducials) at three corners of a square. They
+    are the points to pair.
+
+  1. Open the app, create a new project, and import scene.e57 plus both photos.
+
+  2. Look closely at any wall with no tool open.
+     Orbit in and scroll until the wall is well under 1 m away.
+     - Expect: the scan stays visible all the way in. Very close, it breaks into separate dots
+       (points are drawn at most 8 px wide), but never goes blank.
+     This is the fix itself; it applies everywhere in the viewer, not only to bloodstain.
+
+  3. Open "Bloodstain area of origin", then "New area of origin…".
+     Choose stain-246 and click "Add stain", then "Edit on photo…".
+
+  4. Find the stain on the scan.
+     It is on the wall y = 3.5 m, about x = 0.14 m, 2.1 m up.
+     Get close enough that the three fiducials' positions are clear.
+
+  5. Pair the photo with the scan.
+     In "Point pairs" mode, three times: click a fiducial in the photo, then the same spot on
+     the scan.
+     - Expect: after the second pair, the photo appears on the wall.
+     - Expect: after the third, the status line reads about "20 px/mm; pairs fit to 0.x mm
+       RMS".
+
+  6. The check itself.
+     a. Set "Photo on the scan" to about 0.5.
+        Orbit to about 30 cm from the wall, then to 10 cm.
+        - The photo should sit flat on the wall, not blink or break up as you move.
+        - The scan's dots should show through only as much as the opacity lets them.
+     b. Set the opacity to 1.
+        - The photo should cover the scan completely.
+     c. Orbit behind the wall.
+        - The photo should be hidden by the wall, not float in front of it.
+
+  7. The perspective correction.
+     Add a second stain from stain-246w, pair its three fiducials the same way, then open
+     "Scale corners".
+     a. Type 36.3 and 36.3 mm as the width and height.
+     b. Click the four corners of the fiducial square in order around it. The fourth corner is
+        where the square would close; it has no cross. Estimate it.
+        - Expect: a purple outline and the status "perspective corrected (stretch 22 %…)".
+        - Expect: a red line about the large correction (the photo is 35° off square on).
+          That warning is correct.
+     c. Look at the overlay.
+        - The warped photo should now lie on the wall as a square, the same as stain-246.
+        - Its fiducials should sit on the scan fiducials you paired.
+
+  8. Optional: finish the stains to see the whole run.
+     For each stain, choose "Edge: automatic" and click inside the stain, then "Tail" and
+     click beyond the pointed end.
+     - Expect: both photos give an impact angle near 39.6° (the true value).
+
+WHAT TO REPORT BACK
+
+  - Any blank or blinking view at step 2 or step 6.
+  - A photo that sits off its fiducials, or shows through a wall from behind.
