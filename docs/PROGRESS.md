@@ -171,6 +171,8 @@ Acceptance criteria:
 - [ ] A diagram printed at 1:100 measures correctly on paper. *In the PDF: proven by test on the laid-out page (a 10 m line is 100.000 mm, the 5 m scale bar 50 mm, A4 landscape exactly 297 × 210 mm), and the app prints a saved revision with its hash in the title block and the audit log. The physical check with a ruler is under Blocked, to be done before release.*
 - [x] The legend updates live: it is derived from the document on every render (`legendItems`, tested), and in the app it follows added symbols and markers and drops a deleted symbol at once.
 
+Plan status (2026-09-22): items 1–8 are built. The room and road builders store their parameters with the geometry built from them (`builders.ts`, tested: wall faces, openings, door swing, lane offsets, 3 m / 9 m broken lines, tangent-arc curves), and the printer draws that stored geometry. Underlays: an evidence image calibrated from two or more known points by a closed-form least-squares similarity, with residuals shown and the calibration audit-logged (two points are flagged as giving no check); a point-cloud slice binned on the project grid, written as a hashed PNG and audit-logged. Both are hash-checked whenever shown or printed. Checked in the app: a room with a door, a road, a calibrated aerial image (50.00 mm/px from two points) and a slice, printed to PDF. Method note: `docs/methods/diagrams.md`.
+
 ## Blocked
 
 - **Physical print-scale check at 1:100** (2026-09-22): print a scaled diagram PDF at actual size and measure it (the 10 m line and the 100 mm calibration bar in the title block) with a ruler. The PDF geometry is proven by tests; the physical check must be done before release.
