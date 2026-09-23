@@ -2967,6 +2967,9 @@ dependencies = [
 [[package]]
 name = "locus-photo"
 version = "0.1.0"
+dependencies = [
+ "nalgebra",
+]
 
 [[package]]
 name = "locus-register"

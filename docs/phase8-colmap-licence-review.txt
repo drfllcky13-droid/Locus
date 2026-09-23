@@ -1,0 +1,113 @@
+PHASE 8: COLMAP AND ITS DEPENDENCIES, LICENCE REVIEW (2026-09-23)
+
+The review was made against COLMAP's main branch on GitHub (latest release 4.2.0).
+
+Verified means read from the source: the licence files, src/thirdparty/, CMakeLists.txt and the documentation's licence page. "To verify" means from my own knowledge; each of those must be checked against the exact source versions before anything ships.
+
+
+1. COLMAP ITSELF
+
+   BSD-3-Clause ("new BSD"). Verified on colmap.github.io/license.html.
+
+   The licence page says the licence covers COLMAP only; its third-party dependencies are licensed separately.
+
+
+2. CODE BUNDLED IN COLMAP'S SOURCE TREE (src/thirdparty/)
+
+   The folder is verified to hold five components.
+
+   LSD (line segment detector)
+     AGPL-3.0. Verified: thirdparty/LSD/LICENSE.
+     Rule 7 forbids it.
+     It can be switched off with the CMake option LSD_ENABLED=OFF. Only line detection uses it, and photogrammetry doesn't need line detection.
+
+   SiftGPU
+     Custom non-commercial licence. Verified. It grants use "for educational, research and non-profit purposes" only.
+     Rule 7 forbids it (unclear terms). Whether a government forensic unit counts as "non-profit" is a legal question, not mine to decide.
+     It is built whenever GPU_ENABLED, that is CUDA or OpenGL. Verified in thirdparty/CMakeLists.txt.
+     It gives GPU SIFT extraction and matching. Without it, COLMAP uses VLFeat's CPU SIFT: slower, same results.
+
+   PoissonRecon
+     MIT. Verified. Allowed.
+
+   VLFeat
+     BSD-2-Clause. To verify. Allowed.
+
+   Symforce-Caspar
+     Built only with CASPAR_ENABLED, which is OFF by default. Verified. Licence to verify. Not needed.
+
+
+3. FETCHED AT BUILD TIME
+
+   All to verify:
+   - PoseLib: BSD-3. Allowed.
+   - faiss: MIT. Allowed.
+   - ONNX Runtime (ONNX_ENABLED, default ON): MIT. Allowed.
+     But the learned-feature models it runs (ALIKED, LightGlue, LoMa) have their own weight licences. Leave ONNX off, or review each model before use.
+
+
+4. SYSTEM LIBRARIES COLMAP LINKS
+
+   All to verify.
+
+   Allowed under rule 7:
+   - Eigen: MPL-2.0.
+   - Ceres Solver: BSD-3.
+   - glog and gflags: BSD-3.
+   - METIS: Apache-2.0.
+   - OpenImageIO: Apache-2.0. Newer COLMAP uses it for image I/O. Its codecs (libjpeg-turbo, libpng, libtiff, zlib, OpenEXR) are all permissive, but each must be listed.
+
+   Not on rule 7's list; they need your yes:
+   - Boost: BSL-1.0. Permissive in substance.
+   - SQLite: public domain. COLMAP's database.
+
+   Forbidden or must be avoided:
+   - SuiteSparse / CHOLMOD. Parts are LGPL-2.1 and some GPL-2+ (the Supernodal module).
+     Ceres can run without it (Eigen's sparse solvers, slower on large scenes).
+     Build Ceres without SuiteSparse, or ask.
+   - CGAL: GPL-3 / LGPL-3. It can be switched off with CGAL_ENABLED=OFF. It is only used for Delaunay meshing, which we don't need.
+   - Qt: LGPL-3. It can be switched off with GUI_ENABLED=OFF. Locus drives the command line.
+   - FreeImage, used by older COLMAP: GPL or the FreeImage Public License. Use a COLMAP version with OpenImageIO.
+   - curl / OpenSSL (DOWNLOAD_ENABLED): permissive, but it is networking. Turn it OFF; the app is offline.
+
+   Proprietary runtimes:
+   - CUDA runtime (cudart, cuBLAS and others).
+     Dense reconstruction (PatchMatch stereo) needs CUDA. The HIP/ROCm path is AMD-only.
+     The DLLs are redistributable under NVIDIA's CUDA EULA "redistributable software" attachment, but that is a proprietary licence: rule 7 says to ask.
+   - OpenMP (MSVC vcomp) and the MSVC runtime: Microsoft redistributables. Their terms, not open source.
+
+
+5. WHAT THIS MEANS FOR SHIPPING
+
+   The official COLMAP Windows binaries are built with CUDA and the defaults. So they almost certainly include SiftGPU (non-commercial) and LSD (AGPL), and probably CGAL and Qt. Bundling them as-is would break rule 7.
+
+   Options:
+
+   A. Don't bundle COLMAP.
+      The examiner installs COLMAP (their own licence decision), and Locus finds it by a configured path. Each run records its version and SHA-256.
+      Nothing third-party ships with Locus, so nothing enters THIRD_PARTY_NOTICES.
+      Dense reconstruction works if their build has CUDA.
+
+   B. Bundle our own build of COLMAP, CPU only, with only permissive components:
+        CUDA_ENABLED=OFF, OPENGL_ENABLED=OFF (so no SiftGPU), LSD_ENABLED=OFF, CGAL_ENABLED=OFF, GUI_ENABLED=OFF, ONNX_ENABLED=OFF, DOWNLOAD_ENABLED=OFF, and Ceres without SuiteSparse.
+      Sparse reconstruction only: no dense MVS without CUDA.
+      Every component goes into THIRD_PARTY_NOTICES.
+      Costs: a pinned CMake/vcpkg build in CI (Windows minutes, which are scarce on the free plan) and a larger installer.
+
+   C. B plus a CUDA build for dense, with SiftGPU patched out of the build. COLMAP's CMake builds SiftGPU whenever the GPU is on, so this means a small build patch.
+      This bundles NVIDIA's redistributable runtime (proprietary: needs your yes).
+
+   Recommendation: A now, B later if you want a zero-install sparse path.
+   - A needs no licence decision.
+   - A matches how agencies usually deploy COLMAP.
+   - The sidecar code is the same for all three, so A doesn't block B or C.
+   - "Missing CUDA falls back gracefully" works in A: Locus reads COLMAP's build info, and when it lacks CUDA, runs sparse only with a clear message.
+
+
+6. ALSO NEEDING YOUR PERMISSION (downloads)
+
+   - A COLMAP Windows release, to develop and test the sidecar (official zip from github.com/colmap/colmap/releases, several hundred MB with CUDA).
+   - A public benchmark with ground truth for the 1 % acceptance test. For example:
+     - ETH3D high-resolution multi-view, one scene with its laser-scan ground truth (a few hundred MB);
+     - or Strecha's fountain-P11 (about 100 MB).
+   - Video frames. For video I plan to use Windows Media Foundation, which is part of the OS: nothing to download or ship. ffmpeg is LGPL/GPL, so avoid it unless you say otherwise.
