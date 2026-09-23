@@ -395,6 +395,11 @@ export const api = {
   cameraSave: (name: string, request: CameraRequest, revises: number | null) =>
     invoke<AnalysisRecord>("camera_save", { name, request, revises }),
   witnessPreview: (request: WitnessRequest) => invoke<WitnessRun>("witness_preview", { request }),
+  crashMarkLength: (picks: PickHit[]) =>
+    invoke<{ length: number; points: P3[] }>("crash_mark_length", { picks }),
+  crashPreview: (request: CrashRequest) => invoke<CrashRun>("crash_preview", { request }),
+  crashSave: (name: string, request: CrashRequest, revises: number | null) =>
+    invoke<AnalysisRecord>("crash_save", { name, request, revises }),
   witnessSave: (name: string, request: WitnessRequest, revises: number | null) =>
     invoke<AnalysisRecord>("witness_save", { name, request, revises }),
   analyses: () => invoke<AnalysisRecord[]>("analyses"),
@@ -538,11 +543,92 @@ export type AnalysisRecord = AnalysisBase &
     | { tool: "bloodstain"; record: BloodstainRun }
     | { tool: "camera"; record: CameraRun }
     | { tool: "witness"; record: WitnessRun }
+    | { tool: "skid" | "yaw" | "momentum" | "crush"; record: CrashRun }
   );
 export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
 export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
 export type CameraRecord = Extract<AnalysisRecord, { tool: "camera" }>;
 export type WitnessRecord = Extract<AnalysisRecord, { tool: "witness" }>;
+export type CrashRecord = Extract<AnalysisRecord, { tool: "skid" | "yaw" | "momentum" | "crush" }>;
+
+/** A crash tool's input: a value and the range it could be in (uniform, or normal with the
+ * range as ±2σ). */
+export interface CrashInput {
+  value: number;
+  low: number;
+  high: number;
+  normal?: boolean;
+}
+
+/** A crash result: the value, the range method's extremes and the Monte Carlo interval. */
+export interface Spread {
+  value: number;
+  low: number;
+  high: number;
+  mean: number;
+  sd: number;
+  interval95: [number, number];
+}
+
+export type CrashRequest =
+  | {
+      tool: "skid";
+      segments: {
+        label: string;
+        distance: CrashInput;
+        drag: CrashInput;
+        braking: CrashInput;
+        grade: CrashInput;
+        path: PickHit[];
+      }[];
+      end_speed: CrashInput;
+    }
+  | {
+      tool: "yaw";
+      chord: CrashInput | null;
+      ordinate: CrashInput | null;
+      points: PickHit[];
+      drag: CrashInput;
+      superelevation: CrashInput;
+      cg_offset: number;
+    }
+  | {
+      tool: "momentum";
+      vehicles: {
+        label: string;
+        mass: CrashInput;
+        approach_deg: CrashInput;
+        departure_deg: CrashInput;
+        departure_speed: CrashInput;
+      }[];
+    }
+  | {
+      tool: "crush";
+      label: string;
+      a: CrashInput;
+      b: CrashInput;
+      stiffness_source: string;
+      width: CrashInput;
+      depths: CrashInput[];
+      pdof_deg: CrashInput;
+      mass: CrashInput;
+    };
+
+/** A stored or previewed crash run: the fields the panel shows (the rest is in the record). */
+export interface CrashRun {
+  method: string;
+  summary: string;
+  speed?: Spread;
+  radius?: Spread;
+  speeds?: [Spread, Spread];
+  delta_v?: [Spread, Spread];
+  energy?: Spread;
+  ebs?: Spread;
+  warnings?: string[];
+  segments?: { path: P3[] }[];
+  circle?: { centre: P3; normal: P3; radius: number; arc_deg: number } | null;
+  radius_from?: { kind: "chord" } | { kind: "points"; points: P3[] };
+}
 
 export type LensModel = "pinhole" | "radial1" | "radial2" | "full" | "auto";
 

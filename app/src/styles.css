@@ -856,3 +856,10 @@ td.num {
 input.derived {
   color: #8a8a8a;
 }
+
+/* A value with its ± tolerance. */
+.val-field > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}

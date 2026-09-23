@@ -9,6 +9,7 @@ import { ScenePanel, type BuildStatus } from "./ScenePanel";
 import { SceneBuilder } from "../scene3d/SceneBuilder";
 import { BloodstainPanel } from "../tools/bloodstain/BloodstainPanel";
 import { CameraPanel } from "../tools/camera/CameraPanel";
+import { CrashPanel } from "../tools/crash/CrashPanel";
 import { WitnessPanel } from "../tools/camera/WitnessPanel";
 import { TrajectoryPanel } from "../tools/trajectory/TrajectoryPanel";
 
@@ -453,6 +454,16 @@ export function Viewport({
           />
           <WitnessPanel
             key={`w${project.root}`}
+            engine={getEngine}
+            origin={shownScene?.origin.join() ?? ""}
+            requestPick={(hint, then) => {
+              setTool("orbit");
+              setPickRequest({ hint, then });
+            }}
+            onNotice={onNotice}
+          />
+          <CrashPanel
+            key={`x${project.root}`}
             engine={getEngine}
             origin={shownScene?.origin.join() ?? ""}
             requestPick={(hint, then) => {
