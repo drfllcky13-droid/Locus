@@ -267,6 +267,7 @@ export function SceneBuilder({
       ? (diagrams.get(o.diagram.revision)?.entities ?? [])
           .filter((e) => e.kind === "room")
           .map((e) => ({
+            extrusion: o.id,
             diagram: o.diagram,
             room: e,
             base: o.params.base,
@@ -397,11 +398,12 @@ export function SceneBuilder({
                   name: `Roof (${r.diagram.name})`,
                   visible: true,
                   diagram: r.diagram,
+                  extrusion: r.extrusion,
                   room: r.room.id,
                   params: {
                     ...DEFAULT_ROOF,
                     type: rect ? "gable" : "flat",
-                    eaves: r.base + r.height,
+                    eaves: r.height,
                   },
                   material: preset("roof_tile"),
                 });
@@ -591,7 +593,7 @@ export function SceneBuilder({
                 </select>
               </label>
               {num(
-                "Eaves height (m)",
+                "Eaves above the floor (m)",
                 sel.params.eaves,
                 (eaves) => update({ ...sel, params: { ...sel.params, eaves } }),
                 0.01,

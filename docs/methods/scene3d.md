@@ -20,7 +20,7 @@ Extrusion calls the same functions that draw the plan (`walls` and `roadLines` i
 
 ## Roofs
 
-A roof sits on a room's outer wall outline. Every sloped plane passes through the wall line at the eaves height, so the roof meets the walls exactly. An overhang continues the slope outward and down.
+A roof sits on a room's outer wall outline, and belongs to the extrusion it was added to: its eaves height is measured above that extrusion's base, so moving the base moves the roof. Every sloped plane passes through the wall line at the eaves height, so the roof meets the walls exactly. An overhang continues the slope outward and down.
 
 - **Flat:** any outline, grown by the overhang, a slab of the given thickness.
 - **Shed, gable, hip:** rectangular outlines only (four corners square within 0.5°). The ridge of a gable or hip roof is at eaves + half the width × tan(pitch). The ridge of a hip roof is shorter than the building by its width (hips at 45° in plan). The gable end walls are included.

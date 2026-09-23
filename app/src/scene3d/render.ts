@@ -62,7 +62,12 @@ function label(text: string): THREE.CanvasTexture {
 /** Diagram revisions by revision id, loaded by the caller. */
 export type Diagrams = Map<number, Diagram>;
 
-function objectGroup(o: SceneObject, diagrams: Diagrams, origin: V3): THREE.Object3D | null {
+function objectGroup(
+  o: SceneObject,
+  diagrams: Diagrams,
+  origin: V3,
+  all: SceneObject[],
+): THREE.Object3D | null {
   const g = new THREE.Group();
   g.userData.sceneObject = o.id;
   switch (o.kind) {
@@ -80,7 +85,10 @@ function objectGroup(o: SceneObject, diagrams: Diagrams, origin: V3): THREE.Obje
       const r = d?.entities.find((e) => e.id === o.room);
       if (!r || r.kind !== "room") return null;
       const outer = walls(r.outline, r.thickness, []).map((w) => w.oa);
-      g.add(meshObject(roof(outer, o.params), origin, o.material, o.id));
+      const ext = all.find((x) => x.id === o.extrusion);
+      const base = ext?.kind === "extrusion" ? ext.params.base : 0;
+      const params = { ...o.params, eaves: base + o.params.eaves };
+      g.add(meshObject(roof(outer, params), origin, o.material, o.id));
       return g;
     }
     case "model": {
@@ -161,7 +169,7 @@ export function buildScene(doc: SceneDoc, diagrams: Diagrams, origin: V3): THREE
   root.name = "scene3d";
   for (const o of doc.objects) {
     if (!o.visible) continue;
-    const g = objectGroup(o, diagrams, origin);
+    const g = objectGroup(o, diagrams, origin, doc.objects);
     if (g) root.add(g);
   }
   if (doc.ambient > 0) root.add(new THREE.HemisphereLight(0xffffff, 0x444444, doc.ambient));
@@ -182,6 +190,8 @@ export function buildScene(doc: SceneDoc, diagrams: Diagrams, origin: V3): THREE
     cam.far = r * 5;
     light.shadow.mapSize.set(4096, 4096);
     light.shadow.bias = -0.0005;
+    // Offset along the surface normal as well, or lit faces stripe with their own shadow.
+    light.shadow.normalBias = 0.02;
     light.name = "sun";
     root.add(light, light.target);
   }

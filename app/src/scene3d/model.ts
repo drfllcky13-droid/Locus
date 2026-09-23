@@ -70,6 +70,8 @@ export type SceneObject =
   | (Base & {
       kind: "roof";
       diagram: DiagramRef;
+      /** The extrusion whose walls it sits on; `params.eaves` is above that extrusion's base. */
+      extrusion: string;
       /** The room entity in that diagram revision. */
       room: string;
       params: RoofParams;
