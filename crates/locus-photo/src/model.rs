@@ -26,6 +26,9 @@ pub struct Image {
     pub t: P3,
     /// Observations with a 3D point.
     pub observations: usize,
+    /// Every keypoint in the image (px), in COLMAP's order: a point's track refers to them by
+    /// index.
+    pub keypoints: Vec<[f64; 2]>,
 }
 
 impl Image {
@@ -66,6 +69,8 @@ pub struct Point {
     /// Mean reprojection error (px) and the number of images that see it.
     pub error: f64,
     pub track: usize,
+    /// The images that see it: (image id, keypoint index).
+    pub observations: Vec<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -137,12 +142,19 @@ pub fn read(cameras: &str, images: &str, points: &str) -> Result<Model, String> 
             return Err(format!("images.txt line {}: expected 10 fields", n + 1));
         }
         let g = |k: usize| num::<f64>("images.txt", n + 1, f.get(k));
-        let obs = lines.next().map_or(0, |(_, l)| {
-            l.split_whitespace()
-                .collect::<Vec<_>>()
-                .chunks(3)
-                .filter(|c| c.len() == 3 && c[2] != "-1")
-                .count()
+        let (obs, keypoints) = lines.next().map_or((0, vec![]), |(_, l)| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let c = f.chunks(3).filter(|c| c.len() == 3);
+            (
+                c.clone().filter(|c| c[2] != "-1").count(),
+                c.map(|c| {
+                    [
+                        c[0].parse().unwrap_or(f64::NAN),
+                        c[1].parse().unwrap_or(f64::NAN),
+                    ]
+                })
+                .collect(),
+            )
         });
         let im = Image {
             id: num("images.txt", n + 1, f.first())?,
@@ -151,6 +163,7 @@ pub fn read(cameras: &str, images: &str, points: &str) -> Result<Model, String> 
             camera: num("images.txt", n + 1, f.get(8))?,
             name: f[9..].join(" "),
             observations: obs,
+            keypoints,
         };
         if !m.cameras.contains_key(&im.camera) {
             return Err(format!(
@@ -176,6 +189,18 @@ pub fn read(cameras: &str, images: &str, points: &str) -> Result<Model, String> 
             ],
             error: g(7)?,
             track: (f.len() - 8) / 2,
+            observations: f[8..]
+                .chunks(2)
+                .filter(|c| c.len() == 2)
+                .map(|c| {
+                    Ok((
+                        c[0].parse()
+                            .map_err(|_| format!("points3D.txt line {n}: bad track"))?,
+                        c[1].parse()
+                            .map_err(|_| format!("points3D.txt line {n}: bad track"))?,
+                    ))
+                })
+                .collect::<Result<_, String>>()?,
         });
     }
     Ok(m)
@@ -209,6 +234,8 @@ mod tests {
             "{c:?}"
         );
         assert_eq!(m.points[0].track, 2);
+        assert_eq!(m.points[0].observations, vec![(1, 0), (2, 0)]);
+        assert_eq!(m.images[&1].keypoints, vec![[100.0, 200.0], [300.0, 400.0]]);
         assert!((m.mean_error() - 0.8).abs() < 1e-12);
         assert!(read(CAMERAS, "1 1 0 0 0 0 0 0 9 X.JPG\n\n", "").is_err());
     }

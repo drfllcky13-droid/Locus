@@ -7,3 +7,4 @@ publish.workspace = true
 
 [dependencies]
 nalgebra = "0.35.0"
+serde = { version = "1.0.229", features = ["derive"] }

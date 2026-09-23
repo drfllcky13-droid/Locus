@@ -2969,6 +2969,7 @@ name = "locus-photo"
 version = "0.1.0"
 dependencies = [
  "nalgebra",
+ "serde",
 ]
 
 [[package]]
