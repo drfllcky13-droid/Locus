@@ -41,7 +41,8 @@ export class Engine {
   /** Built 3D scene objects (scene3d/render.ts), and the gizmo that moves a placed model. */
   private built: THREE.Group | null = null;
   /** An analysis drawn over the scene (a trajectory), relative to the origin. */
-  private analysis: THREE.Group | null = null;
+  /** Analysis overlays, one per tool. */
+  private analysis = new Map<string, THREE.Group>();
   private modelGizmo: TransformControls;
   private moving: string | null = null;
   /** A placed model was moved with the gizmo: its new model-to-project matrix (f64). */
@@ -210,18 +211,25 @@ export class Engine {
   }
 
   /** Replace the analysis overlay (null to clear it). */
-  setAnalysisOverlay(group: THREE.Group | null) {
-    if (this.analysis) {
-      this.scene.remove(this.analysis);
-      this.analysis.traverse((o) => {
+  /** Replace one tool's analysis overlay (null removes it). */
+  setAnalysisOverlay(key: string, group: THREE.Group | null) {
+    const old = this.analysis.get(key);
+    if (old) {
+      this.scene.remove(old);
+      old.traverse((o) => {
         if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
           o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
+          const m = o.material as THREE.Material & { map?: THREE.Texture | null };
+          m.map?.dispose();
+          m.dispose();
         }
       });
+      this.analysis.delete(key);
     }
-    this.analysis = group;
-    if (group) this.scene.add(group);
+    if (group) {
+      this.analysis.set(key, group);
+      this.scene.add(group);
+    }
     this.requestRender();
   }
 

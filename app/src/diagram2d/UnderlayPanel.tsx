@@ -19,6 +19,7 @@ const urls = new Map<string, Promise<string>>();
 export function useUnderlayUrl(file: string, sha256: string): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
+    if (!file) return;
     const key = `${file}#${sha256}`;
     if (!urls.has(key))
       urls.set(

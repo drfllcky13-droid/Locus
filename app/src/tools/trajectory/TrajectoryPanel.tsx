@@ -10,6 +10,7 @@ import {
   type EvidenceRecord,
   type Measured,
   type TrajectoryParameters,
+  type TrajectoryRecord,
   type TrajectoryRequest,
   type TrajectoryRun,
 } from "../../api";
@@ -140,13 +141,14 @@ export function TrajectoryPanel({
   const error = building ? failure : null;
 
   // What's drawn: the preview while building, else a shown record.
-  const drawn = open ? preview : (records.find((r) => r.id === shown)?.record ?? null);
+  const trajectories = records.filter((r): r is TrajectoryRecord => r.tool === "trajectory");
+  const drawn = open ? preview : (trajectories.find((r) => r.id === shown)?.record ?? null);
   useEffect(() => {
     const e = engine();
     if (!e) return;
-    e.setAnalysisOverlay(drawn ? trajectoryOverlay(drawn, e.origin) : null);
+    e.setAnalysisOverlay("trajectory", drawn ? trajectoryOverlay(drawn, e.origin) : null);
   }, [drawn, engine, origin]);
-  useEffect(() => () => engine()?.setAnalysisOverlay(null), [engine]);
+  useEffect(() => () => engine()?.setAnalysisOverlay("trajectory", null), [engine]);
 
   const nextKind = (): Kind => {
     if (mode === "rod") return "rod";
@@ -202,7 +204,6 @@ export function TrajectoryPanel({
     }
   };
 
-  const trajectories = records.filter((r) => r.tool === "trajectory");
   return (
     <section className="panel-section trajectory">
       <h3>Bullet trajectory</h3>

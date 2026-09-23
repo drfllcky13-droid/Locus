@@ -372,6 +372,25 @@ export const api = {
     invoke<TrajectoryRun>("trajectory_preview", { request }),
   trajectorySave: (name: string, request: TrajectoryRequest, revises: number | null) =>
     invoke<AnalysisRecord>("trajectory_save", { name, request, revises }),
+  bloodstainAlign: (request: StainRequest["align"]) =>
+    invoke<Alignment>("bloodstain_align", { request }),
+  /** Edge points of the dark region around `seed` in a greyscale crop (crop pixels). */
+  bloodstainEdges: (
+    luma: number[],
+    width: number,
+    height: number,
+    seed: [number, number],
+    threshold: number,
+  ) => invoke<[number, number][]>("bloodstain_edges", { luma, width, height, seed, threshold }),
+  bloodstainStain: (request: StainRequest, parameters: BloodstainParameters) =>
+    invoke<{ input: StainInput; result: StainResult }>("bloodstain_stain", {
+      request,
+      parameters,
+    }),
+  bloodstainPreview: (request: BloodstainRequest) =>
+    invoke<BloodstainRun>("bloodstain_preview", { request }),
+  bloodstainSave: (name: string, request: BloodstainRequest, revises: number | null) =>
+    invoke<AnalysisRecord>("bloodstain_save", { name, request, revises }),
   analyses: () => invoke<AnalysisRecord[]>("analyses"),
   analysisWithdraw: (id: number, reason: string) =>
     invoke<AnalysisRecord[]>("analysis_withdraw", { id, reason }),
@@ -495,15 +514,112 @@ export interface TrajectoryRun {
   limitations: string[];
 }
 
-export interface AnalysisRecord {
+interface AnalysisBase {
   id: number;
-  tool: string;
   method: string;
   name: string;
-  record: TrajectoryRun;
   sha256: string;
   revises: number | null;
   created_at: string;
   created_by: string;
   withdrawn: { at: string; by: string; reason: string } | null;
+}
+
+/** A stored analysis run; `record` is the tool's run type. */
+export type AnalysisRecord = AnalysisBase &
+  ({ tool: "trajectory"; record: TrajectoryRun } | { tool: "bloodstain"; record: BloodstainRun });
+export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
+export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
+
+type P2 = [number, number];
+
+export interface BloodstainParameters {
+  floor_z: number;
+  bootstrap: number;
+  seed: number;
+  /** The examiner's reason for using stains not clearly moving upward. */
+  include_not_upward: string | null;
+  reference: string;
+  reference_deg: number;
+}
+
+/** A photo placed on its surface: pixel (x, y) is at origin + x·x_step + y·y_step. */
+export interface Alignment {
+  pairs: { px: P2; world: P3 }[];
+  plane_point: P3;
+  plane_normal: P3;
+  origin: P3;
+  x_step: P3;
+  y_step: P3;
+  pixels_per_metre: number;
+  residuals: number[];
+  rms: number | null;
+}
+
+export interface StainRequest {
+  label: string;
+  surface: string;
+  /** Evidence id of the stain's photo. */
+  photo: number;
+  align: { pairs: { px: P2; pick: PickHit }[]; eye: P3; plane_radius?: number };
+  edges: P2[];
+  auto_edge: { seed: P2; threshold: number } | null;
+  tail_px: P2;
+  excluded: string | null;
+}
+
+export interface BloodstainRequest {
+  stains: StainRequest[];
+  parameters: BloodstainParameters;
+}
+
+export interface StainInput {
+  label: string;
+  surface: string;
+  centre: P3;
+  normal: P3;
+  width: Measured;
+  length: Measured;
+  travel: P3;
+  travel_sigma_deg: number;
+  excluded: string | null;
+  fit: { edge_points: number; trimmed: number; rms: number; axis_sigma_deg: number } | null;
+  alignment: Alignment | null;
+}
+
+export interface StainResult {
+  impact: Measured;
+  directionality: Measured;
+  ray: P3;
+  upward: boolean;
+  clearly_upward: boolean;
+  used: boolean;
+  not_used: string | null;
+  residual: number;
+  residual_sigmas: number;
+  behind: boolean;
+}
+
+/** A stored or previewed bloodstain run (locus-analysis bloodstain::Run). */
+export interface BloodstainRun {
+  method: string;
+  inputs: StainInput[];
+  parameters: BloodstainParameters;
+  stains: StainResult[];
+  origin: {
+    point: P3;
+    height: Measured;
+    sigma: P3;
+    ellipsoid: { semi_axes: P3; axes: [P3, P3, P3] };
+    rms_residual: number;
+    chi2: number;
+    dof: number;
+    stains_used: number;
+    bootstrap: number;
+    bootstrap_failed: number;
+    conditioning: number;
+  };
+  summary: string;
+  assumptions: string[];
+  limitations: string[];
 }

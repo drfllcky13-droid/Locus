@@ -821,3 +821,33 @@ td.num {
 .swatch.examiner {
   background: #c9731a;
 }
+
+/* Bloodstain photo editor: over the left of the 3D view, so the scan stays clickable. */
+.stain-editor {
+  position: fixed;
+  left: 12px;
+  top: 56px;
+  width: min(52vw, 900px);
+  height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel, #232323);
+  border: 1px solid #444;
+  border-radius: 6px;
+  z-index: 20;
+}
+.stain-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.photo-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
