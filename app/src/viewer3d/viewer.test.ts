@@ -56,6 +56,31 @@ describe("picking the nearest surface", () => {
     expect(nearestSurface(px, size, (s) => depth(s))).toEqual({ kind: "hit", slot: 1, index: 13 });
   });
 
+  test("regression: a click between a close surface's points doesn't reach the wall behind", () => {
+    // As found in the app: a panel 0.4 m away scanned at 5 mm spacing is a 12 px grid of
+    // (at most) 8 px sprites; a wall 1.9 m away shows through the 4 px gaps. The click lands
+    // in a gap, so the pixel nearest the cursor is the wall's.
+    const size = 25; // the 12 px pick radius
+    const px = new Uint8Array(size * size * 4);
+    const put = (x: number, y: number, slot: number, index: number) =>
+      px.set(encode(slot, index), (y * size + x) * 4);
+    // The wall first (dense, everywhere), then the panel's sprites drawn over it.
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(x, y, 2, y * size + x);
+    let k = 0;
+    for (let gy = -12; gy <= 24; gy += 12)
+      for (let gx = -12; gx <= 24; gx += 12) {
+        k++;
+        for (let y = gy + 2; y < gy + 10; y++)
+          for (let x = gx + 2; x < gx + 10; x++)
+            if (x >= 0 && y >= 0 && x < size && y < size) put(x, y, 1, k);
+      }
+    const c = (size - 1) / 2; // the centre pixel (12, 12) is in a gap
+    expect(nearest(px, size)).toMatchObject({ slot: 2 });
+    const pick = nearestSurface(px, size, (slot) => (slot === 1 ? 0.4 : 1.9));
+    expect(pick).toMatchObject({ kind: "hit", slot: 1 });
+    expect(c).toBe(12);
+  });
+
   test("points on the same surface are chosen by distance from the cursor", () => {
     const px = new Uint8Array(size * size * 4);
     put(px, 3, 4, 1, 1); // 1 px from the centre, 1.000 m away

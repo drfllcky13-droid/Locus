@@ -10,7 +10,8 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 hex = "0.4.3"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+# Exact float round trips: stored coordinates and results read back bit for bit.
+serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
 sha2 = "0.11.0"
 thiserror = "2.0.20"
 

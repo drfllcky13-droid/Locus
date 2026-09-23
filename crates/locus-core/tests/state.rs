@@ -144,3 +144,37 @@ fn measurements_and_cleanups_cannot_be_rewritten_or_removed() {
         .is_err());
     assert!(c.execute("DELETE FROM cleanup_ops", []).is_err());
 }
+
+/// Picking changes (e.g. which point a click selects) never touch saved measurements: a
+/// measurement stores the coordinates resolved when it was made, and reads them back exactly,
+/// across closing and reopening the project.
+#[test]
+fn saved_measurements_keep_their_stored_coordinates() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("m.locus");
+    // Values that need every bit of an f64 (non-terminating in binary).
+    let (x, y, z) = (
+        431_201.0 + 1.0 / 3.0,
+        5_390_110.0 + 2f64.sqrt(),
+        1.0 + 1.0 / 7.0,
+    );
+    let points = json!([
+        { "scan": "1:0", "index": 12345, "project": [x, y, z] },
+        { "scan": "1:0", "index": 99, "project": [x + 0.1, y + 1.0 / 9.0, z / 3.0] }
+    ]);
+    let result = json!({ "value": 8f64.sqrt(), "sigma": 2f64.sqrt() / 500.0 });
+    let id = {
+        let mut p = Project::create(&root, "M", "A").unwrap();
+        p.add_measurement("distance", points.clone(), result.clone())
+            .unwrap()
+    };
+    let p = Project::open(&root, "B").unwrap();
+    let m = p
+        .measurements()
+        .unwrap()
+        .into_iter()
+        .find(|m| m.id == id)
+        .unwrap();
+    assert_eq!(m.points, points);
+    assert_eq!(m.result, result);
+}
