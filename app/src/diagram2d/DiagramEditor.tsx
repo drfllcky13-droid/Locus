@@ -188,14 +188,14 @@ export function DiagramEditor({
   const save = useCallback(() => {
     const { doc, name } = latest.current;
     return api
-      .diagramSave(initial.diagram_id, name, doc)
+      .diagramSave(initial.document_id, name, doc)
       .then((r) => {
         setSaved({ revision: r.number, sha: r.sha256 });
         setDirty(false);
         onSaved(r);
       })
       .catch((e) => onNotice(String(e)));
-  }, [initial.diagram_id, onNotice, onSaved]);
+  }, [initial.document_id, onNotice, onSaved]);
   useEffect(() => {
     if (!dirty) return;
     const t = setTimeout(() => void save(), AUTOSAVE_MS);
@@ -775,7 +775,7 @@ export function DiagramEditor({
                     try {
                       if (latest.current.dirty) await save();
                       const sha = await api.diagramPdf(
-                        initial.diagram_id,
+                        initial.document_id,
                         printing.scale,
                         printing.paper,
                         printing.landscape,

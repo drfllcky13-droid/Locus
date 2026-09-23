@@ -240,7 +240,7 @@ export interface RegistrationRecord {
 }
 
 export interface DiagramRevision {
-  diagram_id: number;
+  document_id: number;
   revision_id: number;
   number: number;
   name: string;

@@ -45,7 +45,7 @@ export function App() {
   const diagrams = project && loaded?.root === project.root ? loaded.list : [];
   const setDiagrams = (f: (ds: DiagramRevision[]) => DiagramRevision[]) =>
     setLoaded((l) => (l ? { ...l, list: f(l.list) } : l));
-  const shown = tab !== "scene" && diagrams.some((d) => d.diagram_id === tab) ? tab : "scene";
+  const shown = tab !== "scene" && diagrams.some((d) => d.document_id === tab) ? tab : "scene";
 
   useEffect(() => {
     if (!project) return;
@@ -60,7 +60,7 @@ export function App() {
     try {
       const d = await api.diagramCreate(`Diagram ${diagrams.length + 1}`, emptyDiagram());
       setDiagrams((ds) => [...ds, d]);
-      setTab(d.diagram_id);
+      setTab(d.document_id);
     } catch (e) {
       setNotice(String(e));
     }
@@ -156,9 +156,9 @@ export function App() {
             </button>
             {diagrams.map((d) => (
               <button
-                key={d.diagram_id}
-                className={shown === d.diagram_id ? "tab active" : "tab"}
-                onClick={() => setTab(d.diagram_id)}
+                key={d.document_id}
+                className={shown === d.document_id ? "tab active" : "tab"}
+                onClick={() => setTab(d.document_id)}
               >
                 {d.name}
               </button>
@@ -174,14 +174,14 @@ export function App() {
         </div>
         {shown !== "scene" &&
           diagrams
-            .filter((d) => d.diagram_id === shown)
+            .filter((d) => d.document_id === shown)
             .map((d) => (
               <DiagramEditor
-                key={d.diagram_id}
+                key={d.document_id}
                 initial={d}
                 onNotice={setNotice}
                 onSaved={(r) =>
-                  setDiagrams((ds) => ds.map((x) => (x.diagram_id === r.diagram_id ? r : x)))
+                  setDiagrams((ds) => ds.map((x) => (x.document_id === r.document_id ? r : x)))
                 }
               />
             ))}
