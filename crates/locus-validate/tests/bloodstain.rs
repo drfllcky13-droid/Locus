@@ -76,8 +76,11 @@ fn clean(t: &gen::Truth) -> Vec<StainInput> {
 }
 
 fn inside(r: &Run, truth: [f64; 3]) -> bool {
-    let e = &r.origin.ellipsoid;
-    let d = sub(truth, r.origin.point);
+    within(&r.origin.ellipsoid, r.origin.point, truth)
+}
+
+fn within(e: &locus_analysis::bloodstain::Ellipsoid, centre: [f64; 3], truth: [f64; 3]) -> bool {
+    let d = sub(truth, centre);
     (0..3)
         .map(|k| (dot(d, e.axes[k]) / e.semi_axes[k]).powi(2))
         .sum::<f64>()
@@ -90,6 +93,8 @@ fn inside(r: &Run, truth: [f64; 3]) -> bool {
 #[test]
 fn with_hand_measurement_noise_the_ellipsoid_stays_honest() {
     let (mut sum, mut worst, mut covered, mut runs, mut used) = (0.0f64, 0.0f64, 0, 0, 0);
+    // The conventional point (perpendicular distances) on the same stains, for comparison.
+    let (mut c_sum, mut c_worst, mut c_covered, mut round) = (0.0f64, 0.0f64, 0, 0.0);
     for seed in 1..=40 {
         let t = gen::truth(&Options {
             seed,
@@ -114,6 +119,12 @@ fn with_hand_measurement_noise_the_ellipsoid_stays_honest() {
         sum += err;
         worst = worst.max(err);
         covered += inside(&r, t.options.origin) as usize;
+        let c = r.conventional.as_ref().expect("conventional point");
+        let c_err = norm(sub(c.point, t.options.origin));
+        c_sum += c_err;
+        c_worst = c_worst.max(c_err);
+        c_covered += within(&c.ellipsoid, c.point, t.options.origin) as usize;
+        round += r.origin.near_round_share;
         if seed == 1 {
             eprintln!(
                 "seed 1: {} (error {:.1} mm; {} of {} upward)",
@@ -133,8 +144,18 @@ fn with_hand_measurement_noise_the_ellipsoid_stays_honest() {
         worst * 1000.0,
         cover * 100.0
     );
+    let c_mean = c_sum / runs as f64;
+    eprintln!(
+        "  conventional point on the same stains: mean error {:.0} mm, worst {:.0} mm; truth inside its 95 % ellipsoid {:.0} %; near-round stains carry {:.0} % of the angle fit on average",
+        c_mean * 1000.0,
+        c_worst * 1000.0,
+        c_covered as f64 / runs as f64 * 100.0,
+        round / runs as f64 * 100.0
+    );
     assert!(runs >= 30 && cover >= 0.85, "coverage {cover} over {runs}");
     assert!(mean < 0.35, "mean error {mean}");
+    // The reason the angle fit is primary (docs/methods/bloodstain.md).
+    assert!(c_mean > mean, "conventional {c_mean} vs angle fit {mean}");
 }
 
 #[test]
@@ -177,8 +198,12 @@ fn heavy_straight_lines_put_a_real_origin_too_high() {
 #[ignore = "heavy: about 1,700 stain photos rendered and fitted"]
 fn heavy_stain_photos_give_the_ellipse_and_the_origin_within_10_cm() {
     let (mut sum, mut worst, mut covered, mut runs) = (0.0f64, 0.0f64, 0, 0);
+    let (mut c_sum, mut c_worst, mut c_covered) = (0.0f64, 0.0f64, 0);
     for seed in 1..=8 {
-        let (err, inside) = from_photos(seed);
+        let (err, inside, c_err, c_inside) = from_photos(seed);
+        c_sum += c_err;
+        c_worst = c_worst.max(c_err);
+        c_covered += c_inside as usize;
         sum += err;
         worst = worst.max(err);
         covered += inside as usize;
@@ -189,11 +214,18 @@ fn heavy_stain_photos_give_the_ellipse_and_the_origin_within_10_cm() {
         sum / runs as f64 * 1000.0,
         worst * 1000.0
     );
+    eprintln!(
+        "  conventional point on the same stains: mean error {:.1} mm, worst {:.1} mm, truth inside its ellipsoid in {c_covered} of {runs}",
+        c_sum / runs as f64 * 1000.0,
+        c_worst * 1000.0
+    );
     assert!(sum / (runs as f64) < 0.10 && worst < 0.10);
     assert!(covered >= runs - 1);
 }
 
-fn from_photos(seed: u64) -> (f64, bool) {
+/// The origin's error and whether its region covers the truth, then the same for the
+/// conventional point.
+fn from_photos(seed: u64) -> (f64, bool, f64, bool) {
     let o = Options {
         seed,
         ..Options::default()
@@ -271,5 +303,11 @@ fn from_photos(seed: u64) -> (f64, bool) {
         r.origin.chi2,
         r.origin.dof
     );
-    (err, inside(&r, t.options.origin))
+    let c = r.conventional.as_ref().expect("conventional point");
+    (
+        err,
+        inside(&r, t.options.origin),
+        norm(sub(c.point, t.options.origin)),
+        within(&c.ellipsoid, c.point, t.options.origin),
+    )
 }

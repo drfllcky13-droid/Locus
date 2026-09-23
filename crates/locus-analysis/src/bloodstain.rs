@@ -90,11 +90,12 @@ fn f_quantile(d1: f64, d2: f64, p: f64) -> f64 {
     (lo + hi) / 2.0
 }
 
-/// The squared Mahalanobis radius of a 95 % region for a point estimated from `n` stains,
-/// with its covariance also estimated from them (Hotelling's T²): p n / (n − p) ·
-/// F(p, n − p) for p = 3. It tends to χ²₃ (7.81) for many stains and grows for few.
-fn radius2_95(n: usize) -> f64 {
-    let (p, n) = (3.0, n as f64);
+/// The squared Mahalanobis radius of a 95 % region for a point in `p` dimensions estimated
+/// from `n` stains, with its covariance also estimated from them (Hotelling's T²):
+/// p n / (n − p) · F(p, n − p). For p = 3 it tends to χ²₃ (7.81) for many stains and grows
+/// for few.
+fn radius2_95(p: usize, n: usize) -> f64 {
+    let (p, n) = (p as f64, n as f64);
     p * n / (n - p) * f_quantile(p, n - p, 0.95)
 }
 
@@ -102,7 +103,7 @@ pub const ASSUMPTIONS: &[&str] = &[
     "Each droplet travelled in a straight line from the origin to its stain. Gravity and air drag are ignored (see the limitations).",
     "Each stain is the ellipse of a spherical droplet striking a flat, smooth surface: width over length is the sine of the impact angle, and the long axis lies along the direction of travel, toward the tail.",
     "The droplets came from one origin, at about the same time.",
-    "Each photo is flat on the stain's surface and taken square on to it, so the alignment is a similarity (scale, rotation and shift) in the surface's plane.",
+    "Each photo is flat on the stain's surface. It is either taken square on to it, so the alignment is a similarity (scale, rotation and shift) in the surface's plane, or corrected for perspective from four corners of a rectangular scale lying in that plane.",
     "Only wall stains clearly moving upward at impact are used (upward by more than twice the direction's 1σ), unless the examiner has included the others with a stated reason.",
 ];
 
@@ -112,6 +113,7 @@ pub const LIMITATIONS: &[&str] = &[
     "Rough, absorbent or textured surfaces, satellite spatter, and stains that ran, dried unevenly or overlap distort the ellipse.",
     "The ellipsoid is from resampling the stains used. It does not include any bias from the straight-line model, the photo alignment, or stains chosen from one side of the pattern.",
     "The origin is where the rays pass closest together. It does not say what caused the pattern, or how many events there were.",
+    "A photo taken at an angle to the surface is corrected from four corners of its scale, assuming a pinhole camera: lens distortion is not modelled. Photos taken square on are better evidence.",
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +159,177 @@ pub fn surface_axes(n: P3) -> (P3, P3) {
 }
 
 // ---------------------------------------------------------------------------------------
+// Perspective correction
+// ---------------------------------------------------------------------------------------
+
+type H3 = [[f64; 3]; 3];
+
+fn mat3(a: H3, b: H3) -> H3 {
+    std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
+}
+
+fn apply_h(h: &H3, p: P2) -> P2 {
+    let w = h[2][0] * p[0] + h[2][1] * p[1] + h[2][2];
+    [
+        (h[0][0] * p[0] + h[0][1] * p[1] + h[0][2]) / w,
+        (h[1][0] * p[0] + h[1][1] * p[1] + h[1][2]) / w,
+    ]
+}
+
+/// The homography taking four points exactly onto four others (h₃₃ = 1), from the 8 × 8
+/// linear system on Hartley-normalised points (each set centred, mean distance 1).
+fn homography(from: &[P2; 4], to: &[P2; 4]) -> Option<H3> {
+    let centred = |p: &[P2; 4]| {
+        let c = [
+            p.iter().map(|v| v[0]).sum::<f64>() / 4.0,
+            p.iter().map(|v| v[1]).sum::<f64>() / 4.0,
+        ];
+        let s = p
+            .iter()
+            .map(|v| (v[0] - c[0]).hypot(v[1] - c[1]))
+            .sum::<f64>()
+            / 4.0;
+        (c, s)
+    };
+    let ((cf, sf), (ct, st)) = (centred(from), centred(to));
+    if !(sf > 0.0 && st > 0.0) {
+        return None;
+    }
+    let mut a = [[0.0; 9]; 8];
+    for (k, (f, t)) in from.iter().zip(to).enumerate() {
+        let (x, y) = ((f[0] - cf[0]) / sf, (f[1] - cf[1]) / sf);
+        let (u, v) = ((t[0] - ct[0]) / st, (t[1] - ct[1]) / st);
+        a[2 * k] = [x, y, 1.0, 0.0, 0.0, 0.0, -u * x, -u * y, u];
+        a[2 * k + 1] = [0.0, 0.0, 0.0, x, y, 1.0, -v * x, -v * y, v];
+    }
+    // Gauss–Jordan with partial pivoting.
+    for c in 0..8 {
+        let p = (c..8).max_by(|&i, &j| a[i][c].abs().total_cmp(&a[j][c].abs()))?;
+        if a[p][c].abs() < 1e-10 {
+            return None;
+        }
+        a.swap(c, p);
+        let pivot = a[c];
+        for (r, row) in a.iter_mut().enumerate() {
+            if r != c {
+                let f = row[c] / pivot[c];
+                for (x, y) in row[c..].iter_mut().zip(&pivot[c..]) {
+                    *x -= f * y;
+                }
+            }
+        }
+    }
+    let g: [f64; 8] = std::array::from_fn(|i| a[i][8] / a[i][i]);
+    let hn = [[g[0], g[1], g[2]], [g[3], g[4], g[5]], [g[6], g[7], 1.0]];
+    // H = T_to⁻¹ · Hn · T_from.
+    let t_from = [
+        [1.0 / sf, 0.0, -cf[0] / sf],
+        [0.0, 1.0 / sf, -cf[1] / sf],
+        [0.0, 0.0, 1.0],
+    ];
+    let t_to_inv = [[st, 0.0, ct[0]], [0.0, st, ct[1]], [0.0, 0.0, 1.0]];
+    let h = mat3(mat3(t_to_inv, hn), t_from);
+    Some(h.map(|row| row.map(|v| v / h[2][2])))
+}
+
+/// How much `h` stretches one direction more than another at `p`: the ratio of its local
+/// Jacobian's singular values, minus 1. 0 for a similarity; about 1/cos θ − 1 for a photo
+/// taken θ off square-on.
+fn stretch_at(h: &H3, p: P2) -> f64 {
+    let w = h[2][0] * p[0] + h[2][1] * p[1] + h[2][2];
+    let q = apply_h(h, p);
+    let j = [
+        [
+            (h[0][0] - q[0] * h[2][0]) / w,
+            (h[0][1] - q[0] * h[2][1]) / w,
+        ],
+        [
+            (h[1][0] - q[1] * h[2][0]) / w,
+            (h[1][1] - q[1] * h[2][1]) / w,
+        ],
+    ];
+    let (e, f) = ((j[0][0] + j[1][1]) / 2.0, (j[0][0] - j[1][1]) / 2.0);
+    let (g, k) = ((j[1][0] + j[0][1]) / 2.0, (j[1][0] - j[0][1]) / 2.0);
+    let (big, small) = (e.hypot(k), f.hypot(g));
+    (big + small) / (big - small).abs() - 1.0
+}
+
+/// A photo's perspective correction, from four corners of a rectangle of known size lying on
+/// the surface (a scale), clicked in order around it; the first two span its width.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Rectification {
+    pub corners_px: [P2; 4],
+    /// The rectangle's width and height (m).
+    pub size: [f64; 2],
+    /// 1σ of each corner's click (px); its effect on each stain is found by Monte Carlo.
+    pub corner_sigma_px: f64,
+    /// Pixel → rectified pixel (x right, y down, at the scale's mean resolution), row-major.
+    pub h: [[f64; 3]; 3],
+    /// Rectified pixels per metre, from the scale's size.
+    pub pixels_per_metre: f64,
+    /// How far from square-on the photo was, at the scale (`stretch_at`).
+    pub stretch: f64,
+}
+
+/// A correction this large (10 %, about 25° off square-on) is warned about: an uncorrected
+/// photo would have misstated width over length by up to that much, and the corrected one
+/// rests on four clicks.
+pub const LARGE_PERSPECTIVE: f64 = 0.10;
+/// 1σ of a corner click (px), unless the examiner states otherwise.
+pub const CORNER_SIGMA_PX: f64 = 1.0;
+/// Monte Carlo draws of the corners, and the most edge points refitted in each.
+const PERSPECTIVE_DRAWS: usize = 64;
+const PERSPECTIVE_POINTS: usize = 300;
+
+/// The perspective correction taking a scale's four clicked corners onto a `size` rectangle
+/// (m), at the photo's own mean resolution there.
+pub fn rectify(
+    corners_px: [P2; 4],
+    size: [f64; 2],
+    corner_sigma_px: f64,
+) -> Result<Rectification, BloodstainError> {
+    if !(size[0] > 0.0 && size[1] > 0.0) {
+        return Err(BloodstainError::Alignment(
+            "give the scale rectangle's width and height",
+        ));
+    }
+    let edge = |i: usize| {
+        let (a, b) = (corners_px[i], corners_px[(i + 1) % 4]);
+        [b[0] - a[0], b[1] - a[1]]
+    };
+    let turns: Vec<f64> = (0..4)
+        .map(|i| {
+            let (a, b) = (edge(i), edge((i + 1) % 4));
+            a[0] * b[1] - a[1] * b[0]
+        })
+        .collect();
+    if !(turns.iter().all(|t| *t > 0.0) || turns.iter().all(|t| *t < 0.0)) {
+        return Err(BloodstainError::Alignment(
+            "click the scale's four corners in order around it",
+        ));
+    }
+    let len = |i: usize| edge(i)[0].hypot(edge(i)[1]);
+    let k = ((len(0) + len(2)) / size[0] + (len(1) + len(3)) / size[1]) / 4.0;
+    // Keep the clicked corners' turning sense, so the correction never mirrors the photo.
+    let (w, h) = (size[0] * k, size[1] * k * turns[0].signum());
+    let hm = homography(&corners_px, &[[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]]).ok_or(
+        BloodstainError::Alignment("the scale's corners are on top of each other"),
+    )?;
+    let c = [
+        corners_px.iter().map(|v| v[0]).sum::<f64>() / 4.0,
+        corners_px.iter().map(|v| v[1]).sum::<f64>() / 4.0,
+    ];
+    Ok(Rectification {
+        corners_px,
+        size,
+        corner_sigma_px,
+        h: hm,
+        pixels_per_metre: k,
+        stretch: stretch_at(&hm, c),
+    })
+}
+
+// ---------------------------------------------------------------------------------------
 // Photo alignment
 // ---------------------------------------------------------------------------------------
 
@@ -168,7 +341,8 @@ pub struct AlignPair {
     pub world: P3,
 }
 
-/// A photo placed on its surface: pixel (x, y) is at `origin + x · x_step + y · y_step`.
+/// A photo placed on its surface: pixel p is at `origin + q.x · x_step + q.y · y_step`, for q
+/// the pixel after the perspective correction (p itself without one).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Alignment {
     pub pairs: Vec<AlignPair>,
@@ -187,13 +361,32 @@ pub struct Alignment {
     /// 1σ of the photo's rotation on the surface (degrees), from the scan points' 1σ (or
     /// the pairs' own scatter, if larger) and how far apart the pairs are.
     pub rotation_sigma_deg: f64,
+    /// The perspective correction from a scale's corners, when given.
+    #[serde(default)]
+    pub rectification: Option<Rectification>,
+    /// With a correction: the photo's resolution from the pairs over that from the scale's
+    /// stated size (1 when the scale and the scan agree).
+    #[serde(default)]
+    pub scale_ratio: Option<f64>,
+    /// RMS distance of the scan points around the pairs from the fitted plane (m): how flat
+    /// the surface is there.
+    #[serde(default)]
+    pub plane_rms: f64,
 }
 
 impl Alignment {
+    /// A pixel after the perspective correction (itself without one).
+    pub fn rectified(&self, px: P2) -> P2 {
+        self.rectification
+            .as_ref()
+            .map_or(px, |r| apply_h(&r.h, px))
+    }
+
     pub fn to_world(&self, px: P2) -> P3 {
+        let q = self.rectified(px);
         add(
             self.origin,
-            add(scale(self.x_step, px[0]), scale(self.y_step, px[1])),
+            add(scale(self.x_step, q[0]), scale(self.y_step, q[1])),
         )
     }
 
@@ -214,6 +407,17 @@ pub fn align_photo(
     plane_normal: P3,
     point_sigma: f64,
 ) -> Result<Alignment, BloodstainError> {
+    align_photo_rectified(pairs, plane_point, plane_normal, point_sigma, None)
+}
+
+/// As `align_photo`, with the photo's perspective first corrected by `rectification`.
+pub fn align_photo_rectified(
+    pairs: &[AlignPair],
+    plane_point: P3,
+    plane_normal: P3,
+    point_sigma: f64,
+    rectification: Option<Rectification>,
+) -> Result<Alignment, BloodstainError> {
     if pairs.len() < 2 {
         return Err(BloodstainError::Alignment(
             "give at least two point pairs (three to check the fit)",
@@ -229,7 +433,13 @@ pub fn align_photo(
         })
         .collect();
     // Image y runs down; flip it so both frames are right-handed.
-    let q: Vec<P2> = pairs.iter().map(|a| [a.px[0], -a.px[1]]).collect();
+    let q: Vec<P2> = pairs
+        .iter()
+        .map(|a| {
+            let r = rectification.as_ref().map_or(a.px, |r| apply_h(&r.h, a.px));
+            [r[0], -r[1]]
+        })
+        .collect();
     let k = pairs.len() as f64;
     let mean = |v: &[P2]| {
         [
@@ -270,24 +480,7 @@ pub fn align_photo(
     let origin = add(plane_point, on(t));
     let x_step = on([a, b]);
     let y_step = on([b, -a]);
-    let residuals: Vec<f64> = pairs
-        .iter()
-        .map(|pr| {
-            let w = add(
-                origin,
-                add(scale(x_step, pr.px[0]), scale(y_step, pr.px[1])),
-            );
-            norm(sub(w, pr.world))
-        })
-        .collect();
-    let rms = (pairs.len() > 2).then(|| (residuals.iter().map(|r| r * r).sum::<f64>() / k).sqrt());
-    // A similarity fitted to n pairs leaves 2n − 4 degrees of freedom; the rotation's
-    // variance is σ² / Σ|p − p̄|² for a point σ in each coordinate.
-    let scatter = rms.map_or(0.0, |r| {
-        r * (2.0 * k / (2.0 * k - 4.0)).sqrt() / 2f64.sqrt()
-    });
-    let rotation_sigma_deg = (point_sigma.max(scatter) / spp.sqrt()).to_degrees();
-    Ok(Alignment {
+    let mut al = Alignment {
         pairs: pairs.to_vec(),
         plane_point,
         plane_normal: n,
@@ -295,10 +488,27 @@ pub fn align_photo(
         x_step,
         y_step,
         pixels_per_metre: 1.0 / s,
-        residuals,
-        rms,
-        rotation_sigma_deg,
-    })
+        residuals: vec![],
+        rms: None,
+        rotation_sigma_deg: 0.0,
+        scale_ratio: rectification.as_ref().map(|r| 1.0 / s / r.pixels_per_metre),
+        rectification,
+        plane_rms: 0.0,
+    };
+    let residuals: Vec<f64> = pairs
+        .iter()
+        .map(|pr| norm(sub(al.to_world(pr.px), pr.world)))
+        .collect();
+    let rms = (pairs.len() > 2).then(|| (residuals.iter().map(|r| r * r).sum::<f64>() / k).sqrt());
+    // A similarity fitted to n pairs leaves 2n − 4 degrees of freedom; the rotation's
+    // variance is σ² / Σ|p − p̄|² for a point σ in each coordinate.
+    let scatter = rms.map_or(0.0, |r| {
+        r * (2.0 * k / (2.0 * k - 4.0)).sqrt() / 2f64.sqrt()
+    });
+    al.rotation_sigma_deg = (point_sigma.max(scatter) / spp.sqrt()).to_degrees();
+    al.residuals = residuals;
+    al.rms = rms;
+    Ok(al)
 }
 
 // ---------------------------------------------------------------------------------------
@@ -388,6 +598,70 @@ pub struct StainFit {
     /// The long axis in the surface (unit; its sign is set by the tail, not the fit).
     pub long_axis: P3,
     pub axis_sigma_deg: f64,
+    /// With a perspective correction: its stretch at the stain and the 1σ its corners'
+    /// click error adds (included in the σ above).
+    #[serde(default)]
+    pub perspective: Option<Perspective>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Perspective {
+    /// `stretch_at` the stain's centre.
+    pub stretch: f64,
+    /// 1σ added to the full width and length (m) and the long axis (degrees).
+    pub width_sigma: f64,
+    pub length_sigma: f64,
+    pub axis_sigma_deg: f64,
+}
+
+/// The spread of a stain's ellipse over its photo's corner-click error: the corners are
+/// redrawn from their 1σ, the photo re-corrected and re-aligned, and the ellipse refitted to
+/// the same edge points (at most `PERSPECTIVE_POINTS` of them, evenly).
+fn perspective_spread(
+    rect: &Rectification,
+    al: &Alignment,
+    px: &[P2],
+    e: &[f64; 5],
+) -> Perspective {
+    let step = px.len().div_ceil(PERSPECTIVE_POINTS).max(1);
+    let px: Vec<P2> = px.iter().step_by(step).copied().collect();
+    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    let (mut sw, mut sl, mut sa, mut k) = (0.0, 0.0, 0.0, 0.0);
+    for _ in 0..PERSPECTIVE_DRAWS {
+        let sd = rect.corner_sigma_px;
+        let corners = rect
+            .corners_px
+            .map(|c| [c[0] + sd * rng.gauss(), c[1] + sd * rng.gauss()]);
+        let Ok(r) = rectify(corners, rect.size, sd) else {
+            continue;
+        };
+        let Ok(a) = align_photo_rectified(&al.pairs, al.plane_point, al.plane_normal, 0.0, Some(r))
+        else {
+            continue;
+        };
+        let pts: Vec<P2> = px.iter().map(|p| a.to_plane(*p)).collect();
+        let Some((f, _)) = fit_ellipse(&pts) else {
+            continue;
+        };
+        let half = std::f64::consts::FRAC_PI_2;
+        let d = (f[4] - e[4] + half).rem_euclid(std::f64::consts::PI) - half;
+        sw += (2.0 * (f[3] - e[3])).powi(2);
+        sl += (2.0 * (f[2] - e[2])).powi(2);
+        sa += d * d;
+        k += 1.0;
+    }
+    let k: f64 = f64::max(k, 1.0);
+    let n = px.len().max(1) as f64;
+    let c = [
+        px.iter().map(|p| p[0]).sum::<f64>() / n,
+        px.iter().map(|p| p[1]).sum::<f64>() / n,
+    ];
+    Perspective {
+        stretch: stretch_at(&rect.h, c),
+        width_sigma: (sw / k).sqrt(),
+        length_sigma: (sl / k).sqrt(),
+        axis_sigma_deg: (sa / k).sqrt().to_degrees(),
+    }
 }
 
 /// The edge method's systematic error, measured on the generator's stain photos
@@ -404,6 +678,7 @@ pub fn fit_stain(edges_px: &[P2], al: &Alignment) -> Result<StainFit, Bloodstain
     let all: Vec<P2> = edges_px.iter().map(|p| al.to_plane(*p)).collect();
     let pixel = 1.0 / al.pixels_per_metre;
     let mut kept = all.clone();
+    let mut keep = vec![true; all.len()];
     let mut fit = None;
     for _ in 0..10 {
         if kept.len() < 8 {
@@ -416,10 +691,11 @@ pub fn fit_stain(edges_px: &[P2], al: &Alignment) -> Result<StainFit, Bloodstain
         let mut abs: Vec<f64> = residuals(&e, &kept).iter().map(|v| v.abs()).collect();
         abs.sort_by(f64::total_cmp);
         let cut = (3.0 * 1.4826 * abs[abs.len() / 2]).max(pixel);
+        let mask: Vec<bool> = r.iter().map(|v| v.abs() <= cut).collect();
         let next: Vec<P2> = all
             .iter()
-            .zip(&r)
-            .filter(|(_, v)| v.abs() <= cut)
+            .zip(&mask)
+            .filter(|(_, k)| **k)
             .map(|(p, _)| *p)
             .collect();
         let done = next.len() == kept.len();
@@ -428,6 +704,7 @@ pub fn fit_stain(edges_px: &[P2], al: &Alignment) -> Result<StainFit, Bloodstain
             break;
         }
         kept = next;
+        keep = mask;
     }
     let (e, inv) = fit.expect("at least one fit");
     let r = residuals(&e, &kept);
@@ -436,6 +713,18 @@ pub fn fit_stain(edges_px: &[P2], al: &Alignment) -> Result<StainFit, Bloodstain
     let sd = |k: usize| (s2 * inv[k][k]).max(0.0).sqrt();
     let (e1, e2) = surface_axes(al.plane_normal);
     let on = |u: f64, v: f64| add(scale(e1, u), scale(e2, v));
+    let perspective = al.rectification.as_ref().map(|rect| {
+        let px: Vec<P2> = edges_px
+            .iter()
+            .zip(&keep)
+            .filter(|(_, k)| **k)
+            .map(|(p, _)| *p)
+            .collect();
+        perspective_spread(rect, al, &px, &e)
+    });
+    let (pw, pl, pa) = perspective.map_or((0.0, 0.0, 0.0), |p| {
+        (p.width_sigma, p.length_sigma, p.axis_sigma_deg)
+    });
     Ok(StainFit {
         edge_points: all.len(),
         trimmed: all.len() - kept.len(),
@@ -443,14 +732,19 @@ pub fn fit_stain(edges_px: &[P2], al: &Alignment) -> Result<StainFit, Bloodstain
         centre: add(al.plane_point, on(e[0], e[1])),
         width: Measured {
             value: 2.0 * e[3],
-            sigma: (2.0 * sd(3)).hypot(2.0 * e[3] * EDGE_SYSTEMATIC.0),
+            sigma: (2.0 * sd(3))
+                .hypot(2.0 * e[3] * EDGE_SYSTEMATIC.0)
+                .hypot(pw),
         },
         length: Measured {
             value: 2.0 * e[2],
-            sigma: (2.0 * sd(2)).hypot(2.0 * e[2] * EDGE_SYSTEMATIC.0),
+            sigma: (2.0 * sd(2))
+                .hypot(2.0 * e[2] * EDGE_SYSTEMATIC.0)
+                .hypot(pl),
         },
         long_axis: on(e[4].cos(), e[4].sin()),
-        axis_sigma_deg: sd(4).to_degrees().hypot(EDGE_SYSTEMATIC.1),
+        axis_sigma_deg: sd(4).to_degrees().hypot(EDGE_SYSTEMATIC.1).hypot(pa),
+        perspective,
     })
 }
 
@@ -553,6 +847,10 @@ pub struct Parameters {
     /// project +y.
     pub reference: String,
     pub reference_deg: f64,
+    /// Also find where floor stains' directions converge in plan: a separate 2-D result,
+    /// never mixed into the 3-D origin.
+    #[serde(default)]
+    pub floor_convergence: bool,
 }
 
 impl Default for Parameters {
@@ -564,6 +862,7 @@ impl Default for Parameters {
             include_not_upward: None,
             reference: "project north (+y)".into(),
             reference_deg: 0.0,
+            floor_convergence: false,
         }
     }
 }
@@ -591,7 +890,16 @@ pub struct StainResult {
     pub residual_sigmas: f64,
     /// The origin is behind the stain along its ray (the ray points away from it).
     pub behind: bool,
+    /// Its share of the information the origin fit has (the trace of JᵀJ at the origin, of
+    /// the stains used); 0 for a stain not used.
+    #[serde(default)]
+    pub influence: f64,
 }
+
+/// Stains this near round (impact angle 70° or more) say little about the impact angle; the
+/// fit is flagged when they carry most of it.
+pub const NEAR_ROUND_DEG: f64 = 70.0;
+pub const NEAR_ROUND_DOMINANT: f64 = 0.5;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ellipsoid {
@@ -621,6 +929,47 @@ pub struct Origin {
     /// How well the rays pin the point down: the smallest eigenvalue of the mean of
     /// (I − r rᵀ), between 0 (all parallel) and 2/3 (spread evenly in every direction).
     pub conditioning: f64,
+    /// The share of the fit's information from near-round stains (`NEAR_ROUND_DEG`).
+    #[serde(default)]
+    pub near_round_share: f64,
+}
+
+/// The conventional origin, for comparison: the least-squares point nearest the rays used
+/// (perpendicular distances, unweighted), with its own bootstrap region from the same
+/// resamples.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Conventional {
+    pub point: P3,
+    pub height: Measured,
+    pub sigma: P3,
+    pub ellipsoid: Ellipsoid,
+    /// RMS perpendicular distance from the rays used (m).
+    pub rms_residual: f64,
+    /// Its distance from the origin fitted in angles (m).
+    pub shift: f64,
+}
+
+/// Where floor stains' directions converge in plan: a separate 2-D result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Convergence {
+    /// Plan position (x, y, m) and its 1σ from the bootstrap.
+    pub point: P2,
+    pub sigma: P2,
+    /// 95 % ellipse: semi-axes (m), largest first, and the first's direction (unit, plan).
+    pub semi_axes: [f64; 2],
+    pub axis: P2,
+    /// The conventional point: least squares on the lines' perpendicular distances.
+    pub conventional: P2,
+    /// Σ of the squared direction misfits in σ units, on n − 2 degrees of freedom.
+    pub chi2: f64,
+    pub dof: usize,
+    /// The stains used (indices into the run's stains), each one's plan distance from the
+    /// point (m), and whether the point is behind it.
+    pub stains: Vec<usize>,
+    pub residuals: Vec<f64>,
+    pub behind: Vec<bool>,
+    pub bootstrap: usize,
+    pub bootstrap_failed: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -630,6 +979,13 @@ pub struct Run {
     pub parameters: Parameters,
     pub stains: Vec<StainResult>,
     pub origin: Origin,
+    #[serde(default)]
+    pub conventional: Option<Conventional>,
+    /// The plan-view convergence of floor stains, when asked for, or why there is none.
+    #[serde(default)]
+    pub convergence: Option<Convergence>,
+    #[serde(default)]
+    pub convergence_note: Option<String>,
     pub summary: String,
     pub assumptions: Vec<String>,
     pub limitations: Vec<String>,
@@ -682,6 +1038,7 @@ pub fn stain(s: &StainInput, p: &Parameters) -> Result<StainResult, BloodstainEr
         residual: 0.0,
         residual_sigmas: 0.0,
         behind: false,
+        influence: 0.0,
     })
 }
 
@@ -730,6 +1087,18 @@ impl Ray {
         let [a, b] = self.misfit(x);
         a * a + b * b
     }
+    /// The misfit and its derivatives in x (forward differences).
+    fn jacobian(&self, x: P3) -> ([f64; 2], [[f64; 2]; 3]) {
+        let r0 = self.misfit(x);
+        let h = 1e-6;
+        let jac = std::array::from_fn(|k| {
+            let mut xh = x;
+            xh[k] += h;
+            let r1 = self.misfit(xh);
+            [(r1[0] - r0[0]) / h, (r1[1] - r0[1]) / h]
+        });
+        (r0, jac)
+    }
 }
 
 /// The plain least-squares point nearest the rays (Σ (I − r rᵀ)(x − c) = 0): the starting
@@ -775,14 +1144,7 @@ fn nearest(rays: &[Ray]) -> Option<P3> {
         let mut jtj = [[0.0; 3]; 3];
         let mut g = [0.0; 3];
         for ray in rays {
-            let r0 = ray.misfit(x);
-            let h = 1e-6;
-            let jac: [[f64; 2]; 3] = std::array::from_fn(|k| {
-                let mut xh = x;
-                xh[k] += h;
-                let r1 = ray.misfit(xh);
-                [(r1[0] - r0[0]) / h, (r1[1] - r0[1]) / h]
-            });
+            let (r0, jac) = ray.jacobian(x);
             for p in 0..3 {
                 for q in 0..2 {
                     g[p] -= jac[p][q] * r0[q];
@@ -842,12 +1204,241 @@ fn distance_to_ray(x: P3, c: P3, r: P3) -> (f64, bool) {
 /// Deterministic uniform stream (xorshift64*), for the bootstrap.
 struct Rng(u64);
 impl Rng {
-    fn below(&mut self, n: usize) -> usize {
+    fn next(&mut self) -> u64 {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
-        (self.0.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 11) as usize % n
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 11
     }
+    fn below(&mut self, n: usize) -> usize {
+        self.next() as usize % n
+    }
+    /// Standard normal (Box–Muller).
+    fn gauss(&mut self) -> f64 {
+        let u = (self.next() as f64 + 0.5) / (1u64 << 53) as f64;
+        let v = self.next() as f64 / (1u64 << 53) as f64;
+        (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()
+    }
+}
+
+/// Spread of points about their mean: 1σ per axis, and the ellipsoid of squared Mahalanobis
+/// radius `q` (semi-axes largest first).
+fn spread(xs: &[P3], q: f64) -> (P3, Ellipsoid) {
+    let mut cov = [[0.0; 3]; 3];
+    let m = xs.len().max(2) as f64 - 1.0;
+    let mean = xs
+        .iter()
+        .fold([0.0; 3], |a, b| add(a, *b))
+        .map(|v| v / xs.len().max(1) as f64);
+    for b in xs {
+        let d = sub(*b, mean);
+        for i in 0..3 {
+            for j in 0..3 {
+                cov[i][j] += d[i] * d[j] / m;
+            }
+        }
+    }
+    let (vals, vecs) = eigen_sym(cov);
+    let mut order = [0, 1, 2];
+    order.sort_by(|&a, &b| vals[b].total_cmp(&vals[a]));
+    (
+        [0, 1, 2].map(|k| cov[k][k].max(0.0).sqrt()),
+        Ellipsoid {
+            semi_axes: order.map(|k| (q * vals[k].max(0.0)).sqrt()),
+            axes: order.map(|k| vecs[k]),
+        },
+    )
+}
+
+// ---------------------------------------------------------------------------------------
+// Plan-view convergence of floor stains
+// ---------------------------------------------------------------------------------------
+
+/// A floor stain in plan: its centre, the unit direction back along its path, that
+/// direction's angle and its 1σ (radians).
+#[derive(Clone, Copy)]
+struct Line2 {
+    c: P2,
+    back: P2,
+    phi: f64,
+    s: f64,
+}
+
+impl Line2 {
+    /// The bearing from the stain to `x` against the one measured, in σ units.
+    fn misfit(&self, x: P2) -> f64 {
+        let b = (x[1] - self.c[1]).atan2(x[0] - self.c[0]);
+        let pi = std::f64::consts::PI;
+        ((b - self.phi + pi).rem_euclid(std::f64::consts::TAU) - pi) / self.s.max(MIN_SIGMA)
+    }
+}
+
+fn solve2(a: [[f64; 2]; 2], b: P2) -> Option<P2> {
+    let det = a[0][0] * a[1][1] - a[0][1] * a[1][0];
+    let tr = a[0][0] + a[1][1];
+    (det > 1e-9 * tr * tr).then(|| {
+        [
+            (a[1][1] * b[0] - a[0][1] * b[1]) / det,
+            (a[0][0] * b[1] - a[1][0] * b[0]) / det,
+        ]
+    })
+}
+
+/// The plain least-squares point nearest the lines (perpendicular distances).
+fn lines_2d(ls: &[Line2]) -> Option<P2> {
+    let (mut a, mut b) = ([[0.0; 2]; 2], [0.0; 2]);
+    for l in ls {
+        for (i, (row, bi)) in a.iter_mut().zip(b.iter_mut()).enumerate() {
+            for (j, aij) in row.iter_mut().enumerate() {
+                let m = (i == j) as u8 as f64 - l.back[i] * l.back[j];
+                *aij += m;
+                *bi += m * l.c[j];
+            }
+        }
+    }
+    solve2(a, b)
+}
+
+/// The point whose bearings from the stains best match their measured directions, in σ
+/// units (Levenberg–Marquardt from `lines_2d`): the plan-view counterpart of `nearest`.
+fn convergence_2d(ls: &[Line2]) -> Option<P2> {
+    let mut x = lines_2d(ls)?;
+    let cost = |x: P2| ls.iter().map(|l| l.misfit(x).powi(2)).sum::<f64>();
+    let mut c0 = cost(x);
+    let mut lambda = 1e-3;
+    for _ in 0..100 {
+        let (mut a, mut g) = ([[0.0; 2]; 2], [0.0; 2]);
+        for l in ls {
+            let r0 = l.misfit(x);
+            let j = [0, 1].map(|k| {
+                let mut xh = x;
+                xh[k] += 1e-6;
+                (l.misfit(xh) - r0) / 1e-6
+            });
+            for p in 0..2 {
+                g[p] -= j[p] * r0;
+                for q in 0..2 {
+                    a[p][q] += j[p] * j[q];
+                }
+            }
+        }
+        let mut stepped = false;
+        for _ in 0..12 {
+            let mut ad = a;
+            ad[0][0] *= 1.0 + lambda;
+            ad[1][1] *= 1.0 + lambda;
+            let Some(dx) = solve2(ad, g) else {
+                lambda *= 10.0;
+                continue;
+            };
+            let x2 = [x[0] + dx[0], x[1] + dx[1]];
+            let c2 = cost(x2);
+            if c2 < c0 {
+                let small = dx[0].hypot(dx[1]) < 1e-7;
+                (x, c0) = (x2, c2);
+                lambda = (lambda / 3.0).max(1e-9);
+                stepped = !small;
+                break;
+            }
+            lambda *= 10.0;
+        }
+        if !stepped {
+            break;
+        }
+    }
+    Some(x)
+}
+
+/// The plan-view convergence of the floor stains not excluded (normal within about 25° of
+/// straight up), with a bootstrap 95 % ellipse (Hotelling's T², p = 2).
+fn floor_convergence(
+    stains: &[StainResult],
+    inputs: &[StainInput],
+    p: &Parameters,
+) -> Result<Convergence, String> {
+    let idx: Vec<usize> = (0..inputs.len())
+        .filter(|&i| unit(inputs[i].normal)[2] > 0.9 && inputs[i].excluded.is_none())
+        .collect();
+    if idx.len() < 4 {
+        return Err(format!(
+            "{} floor stains; the plan-view convergence needs at least 4",
+            idx.len()
+        ));
+    }
+    let lines: Vec<Line2> = idx
+        .iter()
+        .map(|&i| {
+            let t = inputs[i].travel;
+            let b = unit([-t[0], -t[1], 0.0]);
+            Line2 {
+                c: [inputs[i].centre[0], inputs[i].centre[1]],
+                back: [b[0], b[1]],
+                phi: b[1].atan2(b[0]),
+                s: stains[i].directionality.sigma.to_radians(),
+            }
+        })
+        .collect();
+    let parallel =
+        || "the floor stains' directions are nearly parallel, so they don't converge".to_string();
+    let x = convergence_2d(&lines).ok_or_else(parallel)?;
+    let conventional = lines_2d(&lines).ok_or_else(parallel)?;
+    let mut rng = Rng((p.seed.max(1).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x5bd1_e995) | 1);
+    let (mut xs, mut failed) = (vec![], 0);
+    let mut sample = Vec::with_capacity(lines.len());
+    for _ in 0..p.bootstrap {
+        sample.clear();
+        sample.extend((0..lines.len()).map(|_| lines[rng.below(lines.len())]));
+        match convergence_2d(&sample) {
+            Some(b) => xs.push(b),
+            None => failed += 1,
+        }
+    }
+    let k = xs.len().max(1) as f64;
+    let mean = [
+        xs.iter().map(|v| v[0]).sum::<f64>() / k,
+        xs.iter().map(|v| v[1]).sum::<f64>() / k,
+    ];
+    let m = xs.len().max(2) as f64 - 1.0;
+    let (mut c00, mut c01, mut c11) = (0.0, 0.0, 0.0);
+    for v in &xs {
+        let (dx, dy) = (v[0] - mean[0], v[1] - mean[1]);
+        c00 += dx * dx / m;
+        c01 += dx * dy / m;
+        c11 += dy * dy / m;
+    }
+    let (mid, r) = ((c00 + c11) / 2.0, ((c00 - c11) / 2.0).hypot(c01));
+    let (l1, l2) = (mid + r, (mid - r).max(0.0));
+    let axis = if c01.abs() > 1e-300 {
+        let (ax, ay) = (l1 - c11, c01);
+        let n = ax.hypot(ay);
+        [ax / n, ay / n]
+    } else if c00 >= c11 {
+        [1.0, 0.0]
+    } else {
+        [0.0, 1.0]
+    };
+    let q = radius2_95(2, lines.len());
+    let (mut residuals, mut behind) = (vec![], vec![]);
+    for l in &lines {
+        let d = [x[0] - l.c[0], x[1] - l.c[1]];
+        let along = d[0] * l.back[0] + d[1] * l.back[1];
+        residuals.push((d[0] * l.back[1] - d[1] * l.back[0]).abs());
+        behind.push(along < 0.0);
+    }
+    Ok(Convergence {
+        point: x,
+        sigma: [c00.max(0.0).sqrt(), c11.max(0.0).sqrt()],
+        semi_axes: [(q * l1).sqrt(), (q * l2).sqrt()],
+        axis,
+        conventional,
+        chi2: lines.iter().map(|l| l.misfit(x).powi(2)).sum(),
+        dof: lines.len() - 2,
+        stains: idx,
+        residuals,
+        behind,
+        bootstrap: xs.len(),
+        bootstrap_failed: failed,
+    })
 }
 
 pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, BloodstainError> {
@@ -918,10 +1509,21 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
             "the stains' paths are nearly parallel, so they don't cross near one point".into(),
         ));
     };
+    let info = |ray: &Ray| {
+        let (_, j) = ray.jacobian(x);
+        j.iter().flatten().map(|v| v * v).sum::<f64>()
+    };
+    let total_info: f64 = rays.iter().map(info).sum::<f64>().max(1e-300);
     for ((s, i), ray) in stains.iter_mut().zip(&inputs).zip(&all) {
         (s.residual, s.behind) = distance_to_ray(x, i.centre, s.ray);
         s.residual_sigmas = ray.chi2(x).sqrt();
+        s.influence = if s.used { info(ray) / total_info } else { 0.0 };
     }
+    let near_round_share = stains
+        .iter()
+        .filter(|s| s.used && s.impact.value >= NEAR_ROUND_DEG)
+        .map(|s| s.influence)
+        .sum::<f64>();
     let chi2 = rays.iter().map(|r| r.chi2(x)).sum::<f64>();
     let rms_residual = (stains
         .iter()
@@ -931,9 +1533,10 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
         / rays.len() as f64)
         .sqrt();
 
-    // Bootstrap: resample the stains used, with replacement.
+    // Bootstrap: resample the stains used, with replacement; the conventional point is
+    // recomputed on the same resamples.
     let mut rng = Rng(p.seed.max(1).wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
-    let mut xs = vec![];
+    let (mut xs, mut ls) = (vec![], vec![]);
     let mut failed = 0;
     let mut sample = Vec::with_capacity(rays.len());
     for _ in 0..p.bootstrap {
@@ -943,35 +1546,43 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
             Some(b) => xs.push(b),
             None => failed += 1,
         }
+        ls.extend(nearest_lines(&sample));
     }
-    let mut cov = [[0.0; 3]; 3];
-    let m = xs.len().max(2) as f64 - 1.0;
-    let mean = xs
-        .iter()
-        .fold([0.0; 3], |a, b| add(a, *b))
-        .map(|v| v / xs.len().max(1) as f64);
-    for b in &xs {
-        let d = sub(*b, mean);
-        for i in 0..3 {
-            for j in 0..3 {
-                cov[i][j] += d[i] * d[j] / m;
-            }
+    let q = radius2_95(3, rays.len());
+    let (sigma, ellipsoid) = spread(&xs, q);
+    let conventional = nearest_lines(&rays).map(|c| {
+        let (sigma, ellipsoid) = spread(&ls, q);
+        let rms = (rays
+            .iter()
+            .map(|r| distance_to_ray(c, r.c, r.r).0.powi(2))
+            .sum::<f64>()
+            / rays.len() as f64)
+            .sqrt();
+        Conventional {
+            point: c,
+            height: Measured {
+                value: c[2] - p.floor_z,
+                sigma: sigma[2],
+            },
+            sigma,
+            ellipsoid,
+            rms_residual: rms,
+            shift: norm(sub(c, x)),
         }
-    }
-    let (vals, vecs) = eigen_sym(cov);
-    let mut order = [0, 1, 2];
-    order.sort_by(|&a, &b| vals[b].total_cmp(&vals[a]));
-    let q = radius2_95(rays.len());
-    let ellipsoid = Ellipsoid {
-        semi_axes: order.map(|k| (q * vals[k].max(0.0)).sqrt()),
-        axes: order.map(|k| vecs[k]),
+    });
+    let (convergence, convergence_note) = if p.floor_convergence {
+        match floor_convergence(&stains, &inputs, p) {
+            Ok(c) => (Some(c), None),
+            Err(e) => (None, Some(e)),
+        }
+    } else {
+        (None, None)
     };
-    let sigma = [0, 1, 2].map(|k| cov[k][k].max(0.0).sqrt());
     let height = Measured {
         value: x[2] - p.floor_z,
         sigma: sigma[2],
     };
-    let summary = format!(
+    let mut summary = format!(
         "Origin at ({:.3}, {:.3}, {:.3}) m, {:.2} m above the floor (95 % ellipsoid {:.2} × {:.2} × {:.2} m), from {} of {} stains",
         x[0],
         x[1],
@@ -983,6 +1594,12 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
         rays.len(),
         stains.len()
     );
+    if let Some(c) = &convergence {
+        summary += &format!(
+            "; floor stains converge in plan at ({:.3}, {:.3}) m",
+            c.point[0], c.point[1]
+        );
+    }
     Ok(Run {
         method: METHOD.into(),
         inputs,
@@ -999,7 +1616,11 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
             bootstrap: xs.len(),
             bootstrap_failed: failed,
             conditioning,
+            near_round_share,
         },
+        conventional,
+        convergence,
+        convergence_note,
         stains,
         summary,
         assumptions: ASSUMPTIONS.iter().map(|s| s.to_string()).collect(),
@@ -1214,7 +1835,8 @@ mod tests {
             assert!((f_quantile(3.0, d2, 0.95) - f).abs() < 1e-3, "{d2}");
         }
         // Many stains: the χ²₃ radius, 7.815.
-        assert!((radius2_95(100_000) - 7.8147).abs() < 1e-3);
+        assert!((radius2_95(3, 100_000) - 7.8147).abs() < 1e-3);
+        assert!((radius2_95(2, 100_000) - 5.9915).abs() < 1e-3);
     }
 
     #[test]
@@ -1377,5 +1999,263 @@ mod tests {
         // A seed outside the stain, or a stain off the edge, is refused.
         assert!(stain_edges(&img, w, w, [5.0, 5.0], 120).is_err());
         assert!(stain_edges(&img, w, w, [120.0, 120.0], 250).is_err());
+    }
+
+    /// A pinhole camera `dist` from the point (0, u0, v0) on the wall x = 0, turned `deg`
+    /// about the vertical: world → pixel (x right, y down), focal length 3000 px.
+    fn camera(dist: f64, deg: f64, u0: f64, v0: f64) -> impl Fn(P3) -> P2 {
+        let t = deg.to_radians();
+        let target = [0.0, u0, v0];
+        let c = add(target, [dist * t.cos(), dist * t.sin(), 0.0]);
+        let fwd = unit(sub(target, c));
+        let right = unit(cross(fwd, [0.0, 0.0, 1.0]));
+        let down = cross(fwd, right);
+        move |p: P3| {
+            let r = sub(p, c);
+            let z = dot(r, fwd);
+            [
+                2000.0 + 3000.0 * dot(r, right) / z,
+                1500.0 + 3000.0 * dot(r, down) / z,
+            ]
+        }
+    }
+
+    #[test]
+    fn a_homography_maps_four_points_exactly() {
+        let from = [[10.0, 20.0], [900.0, 60.0], [870.0, 800.0], [40.0, 700.0]];
+        let to = [[0.0, 0.0], [500.0, 0.0], [500.0, 400.0], [0.0, 400.0]];
+        let h = homography(&from, &to).unwrap();
+        for (f, t) in from.iter().zip(&to) {
+            let q = apply_h(&h, *f);
+            assert!(
+                (q[0] - t[0]).abs() < 1e-8 && (q[1] - t[1]).abs() < 1e-8,
+                "{q:?}"
+            );
+        }
+        // A similarity has no stretch.
+        let sim = homography(&to, &to.map(|p| [2.0 * p[0] + 5.0, 2.0 * p[1] - 3.0])).unwrap();
+        assert!(stretch_at(&sim, [100.0, 100.0]).abs() < 1e-9);
+        // Corners out of order are refused.
+        let crossed = [from[0], from[2], from[1], from[3]];
+        assert!(rectify(crossed, [0.05, 0.04], 1.0).is_err());
+    }
+
+    #[test]
+    fn a_photo_taken_at_an_angle_is_corrected_by_the_scale_corners() {
+        // A 50 × 50 mm scale and a 6 × 3 mm stain at 30° on the wall x = 0, photographed
+        // 35° off square-on from 0.4 m.
+        let px = camera(0.4, 35.0, 1.08, 1.03);
+        let on_wall = |u: f64, v: f64| [0.0, u, v];
+        let corners = [
+            on_wall(1.00, 1.05),
+            on_wall(1.05, 1.05),
+            on_wall(1.05, 1.00),
+            on_wall(1.00, 1.00),
+        ]
+        .map(&px);
+        let (cu, cv, a, b, th) = (1.12, 1.03, 0.003, 0.0015, 30f64.to_radians());
+        let edges: Vec<P2> = (0..400)
+            .map(|k| {
+                let t = k as f64 / 400.0 * std::f64::consts::TAU;
+                let (x, y) = (a * t.cos(), b * t.sin());
+                px(on_wall(
+                    cu + x * th.cos() - y * th.sin(),
+                    cv + x * th.sin() + y * th.cos(),
+                ))
+            })
+            .collect();
+        let pairs: Vec<AlignPair> = [on_wall(0.98, 1.08), on_wall(1.16, 1.07), on_wall(1.1, 0.97)]
+            .iter()
+            .map(|w| AlignPair {
+                px: px(*w),
+                world: *w,
+            })
+            .collect();
+        let rect = rectify(corners, [0.05, 0.05], 1.0).unwrap();
+        // Foreshortening across the line of sight at the scale: 1/cos of the angle between
+        // the line of sight and the wall's normal, minus 1.
+        let cam = add(
+            [0.0, 1.08, 1.03],
+            [
+                0.4 * 35f64.to_radians().cos(),
+                0.4 * 35f64.to_radians().sin(),
+                0.0,
+            ],
+        );
+        let sight = unit(sub(cam, on_wall(1.025, 1.025)));
+        let expected = 1.0 / sight[0] - 1.0;
+        assert!(
+            (rect.stretch - expected).abs() < 0.03,
+            "stretch {} vs {expected}",
+            rect.stretch
+        );
+        let al = align_photo_rectified(&pairs, [0.0, 1.1, 1.0], [1.0, 0.0, 0.0], 0.0, Some(rect))
+            .unwrap();
+        assert!(al.rms.unwrap() < 1e-6, "{:?}", al.rms);
+        assert!((al.scale_ratio.unwrap() - 1.0).abs() < 1e-4);
+        let f = fit_stain(&edges, &al).unwrap();
+        assert!(
+            (f.length.value - 2.0 * a).abs() < 0.01 * 2.0 * a,
+            "{:?}",
+            f.length
+        );
+        assert!(
+            (f.width.value - 2.0 * b).abs() < 0.01 * 2.0 * b,
+            "{:?}",
+            f.width
+        );
+        let ang = f.long_axis[2].atan2(f.long_axis[1]);
+        let d = (ang - th).rem_euclid(std::f64::consts::PI);
+        assert!(
+            d.min(std::f64::consts::PI - d) < 0.5f64.to_radians(),
+            "{ang}"
+        );
+        let p = f.perspective.unwrap();
+        assert!(p.stretch > LARGE_PERSPECTIVE);
+        assert!(
+            p.width_sigma > 0.0 && p.width_sigma < 0.03 * 2.0 * b,
+            "{p:?}"
+        );
+        // The same corners clicked the other way round give the same correction.
+        let back = [corners[0], corners[3], corners[2], corners[1]];
+        let al2 = align_photo_rectified(
+            &pairs,
+            [0.0, 1.1, 1.0],
+            [1.0, 0.0, 0.0],
+            0.0,
+            Some(rectify(back, [0.05, 0.05], 1.0).unwrap()),
+        )
+        .unwrap();
+        assert!(norm(sub(al2.to_world(edges[7]), al.to_world(edges[7]))) < 1e-9);
+        // Without the correction the photo can't be placed and the shape is wrong.
+        let plain = align_photo(&pairs, [0.0, 1.1, 1.0], [1.0, 0.0, 0.0], 0.0).unwrap();
+        assert!(plain.rms.unwrap() > 0.002, "{:?}", plain.rms);
+    }
+
+    #[test]
+    fn the_conventional_point_and_near_round_share_are_reported() {
+        let o = [1.4, 1.5, 1.1];
+        let r = run(wall_stains(o), Parameters::default()).unwrap();
+        let c = r.conventional.unwrap();
+        assert!(c.shift < 1e-9 && c.rms_residual < 1e-9);
+        let total: f64 = r.stains.iter().map(|s| s.influence).sum();
+        assert!((total - 1.0).abs() < 1e-9);
+        // Mostly near-round stains (steep impacts close under the origin) carry the fit.
+        let mut s = vec![];
+        for (k, (y, z)) in [
+            (1.45, 1.15),
+            (1.55, 1.18),
+            (1.5, 1.22),
+            (1.42, 1.2),
+            (1.58, 1.14),
+        ]
+        .iter()
+        .enumerate()
+        {
+            s.push(stain_from(
+                o,
+                [1.0, *y, *z],
+                [1.0, 0.0, 0.0],
+                &format!("r{k}"),
+            ));
+        }
+        s.push(stain_from(o, [0.0, 0.5, 1.6], [1.0, 0.0, 0.0], "far"));
+        let r = run(s, Parameters::default()).unwrap();
+        assert!(
+            r.stains
+                .iter()
+                .filter(|s| s.impact.value >= NEAR_ROUND_DEG)
+                .count()
+                >= 4
+        );
+        assert!(
+            r.origin.near_round_share > NEAR_ROUND_DOMINANT,
+            "{}",
+            r.origin.near_round_share
+        );
+    }
+
+    /// Floor stains (normal up) at the given plan points, from a straight path from `o`.
+    fn floor_stains(o: P3, at: &[(f64, f64)]) -> Vec<StainInput> {
+        at.iter()
+            .enumerate()
+            .map(|(k, (x, y))| stain_from(o, [*x, *y, 0.0], [0.0, 0.0, 1.0], &format!("f{k}")))
+            .collect()
+    }
+
+    #[test]
+    fn floor_stains_converge_in_plan_as_a_separate_result() {
+        let o = [1.4, 1.5, 1.1];
+        let mut s = wall_stains(o);
+        s.extend(floor_stains(
+            o,
+            &[(0.6, 0.9), (2.3, 1.1), (1.9, 2.4), (0.8, 2.2), (1.5, 0.4)],
+        ));
+        let r = run(s.clone(), Parameters::default()).unwrap();
+        assert!(r.convergence.is_none() && r.convergence_note.is_none());
+        let p = Parameters {
+            floor_convergence: true,
+            ..Parameters::default()
+        };
+        let r = run(s.clone(), p.clone()).unwrap();
+        let c = r.convergence.as_ref().unwrap();
+        assert!((c.point[0] - o[0]).abs() < 1e-9 && (c.point[1] - o[1]).abs() < 1e-9);
+        assert_eq!(c.stains, vec![6, 7, 8, 9, 10]);
+        assert!(c.behind.iter().all(|b| !b));
+        // Never mixed into the 3-D origin.
+        assert_eq!(r.origin.stains_used, 6);
+        assert!(r.summary.contains("converge in plan"));
+        // Too few floor stains: a note, and the 3-D result stands.
+        let r = run(s[..9].to_vec(), p).unwrap();
+        assert!(r.convergence.is_none());
+        assert!(r.convergence_note.unwrap().contains("at least 4"));
+    }
+
+    #[test]
+    fn the_plan_view_ellipse_covers_the_truth_about_95_percent_of_the_time() {
+        let o = [1.6, 1.4, 1.0];
+        let mut rng = Rng(99);
+        let (mut inside, runs) = (0, 200);
+        for k in 0..runs {
+            let at: Vec<(f64, f64)> = (0..20)
+                .map(|i| {
+                    let a = i as f64 / 20.0 * std::f64::consts::TAU;
+                    let r = 0.5 + 0.8 * ((i * 7) % 5) as f64 / 5.0;
+                    (o[0] + r * a.cos(), o[1] + r * a.sin())
+                })
+                .collect();
+            let mut s = wall_stains(o);
+            for mut st in floor_stains(o, &at) {
+                let th = 3f64.to_radians() * rng.gauss();
+                let t = st.travel;
+                st.travel = [
+                    t[0] * th.cos() - t[1] * th.sin(),
+                    t[0] * th.sin() + t[1] * th.cos(),
+                    0.0,
+                ];
+                st.travel_sigma_deg = 3.0;
+                s.push(st);
+            }
+            let r = run(
+                s,
+                Parameters {
+                    bootstrap: 300,
+                    seed: k + 1,
+                    floor_convergence: true,
+                    ..Parameters::default()
+                },
+            )
+            .unwrap();
+            let c = r.convergence.unwrap();
+            let d = [o[0] - c.point[0], o[1] - c.point[1]];
+            let a1 = d[0] * c.axis[0] + d[1] * c.axis[1];
+            let a2 = -d[0] * c.axis[1] + d[1] * c.axis[0];
+            if (a1 / c.semi_axes[0]).powi(2) + (a2 / c.semi_axes[1]).powi(2) <= 1.0 {
+                inside += 1;
+            }
+        }
+        let cover = inside as f64 / runs as f64;
+        eprintln!("plan-view 95 % ellipse coverage: {cover}");
+        assert!((0.91..=0.99).contains(&cover), "coverage {cover}");
     }
 }
