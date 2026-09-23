@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
 import { dist, endpoints, foot, segments, snap, type Snap } from "./geometry";
+import { MeasureDialog } from "./MeasureDialog";
 import type { Diagram, Entity, EntityInput, Layer, Pt } from "./model";
 import {
   commit,
@@ -16,7 +17,16 @@ import {
 } from "./view";
 
 type Tool =
-  "select" | "line" | "polyline" | "arc" | "dimension" | "text" | "point" | "north" | "scalebar";
+  | "select"
+  | "line"
+  | "polyline"
+  | "arc"
+  | "dimension"
+  | "text"
+  | "point"
+  | "measure"
+  | "north"
+  | "scalebar";
 
 const TOOLS: [Tool, string][] = [
   ["select", "Select"],
@@ -26,6 +36,7 @@ const TOOLS: [Tool, string][] = [
   ["dimension", "Dimension"],
   ["text", "Text"],
   ["point", "Point"],
+  ["measure", "Measured point"],
   ["north", "North arrow"],
   ["scalebar", "Scale bar"],
 ];
@@ -47,6 +58,7 @@ const STEPS: Record<Tool, string[]> = {
   ],
   text: ["Click where the text goes."],
   point: ["Click to place a point, or type its coordinates below."],
+  measure: ["Enter the tape measurements in the panel."],
   north: ["Click where the north arrow goes."],
   scalebar: ["Click where the scale bar starts."],
 };
@@ -229,6 +241,8 @@ export function DiagramEditor({
         return;
       case "north":
         add({ kind: "north", at: p, rotation: 0 });
+        return;
+      case "measure":
         return;
       case "text":
       case "point":
@@ -550,6 +564,15 @@ export function DiagramEditor({
               </span>
             )}
           </div>
+          {tool === "measure" && (
+            <MeasureDialog
+              points={visible.filter(
+                (e): e is Extract<Entity, { kind: "point" }> => e.kind === "point",
+              )}
+              onPlace={add}
+              onClose={() => setTool("select")}
+            />
+          )}
           {pending && (
             <div
               className="dg-form"

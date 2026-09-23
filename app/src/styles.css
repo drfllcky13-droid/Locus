@@ -713,3 +713,40 @@ td.num {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 11px;
 }
+
+.dg-measure {
+  width: 340px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+}
+
+.dg-ref {
+  display: flex;
+  gap: 4px;
+}
+
+.dg-ref select {
+  flex: 1;
+  min-width: 0;
+}
+
+.dg-ref input {
+  width: 80px;
+}
+
+.dg-precision {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+}
+
+.dg-precision input {
+  width: 100%;
+}
+
+.dg-result {
+  background: var(--raised);
+  border-radius: 4px;
+  padding: 6px;
+  font-family: ui-monospace, Consolas, monospace;
+}
