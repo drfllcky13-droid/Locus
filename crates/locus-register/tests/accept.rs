@@ -69,8 +69,8 @@ fn params() -> Params {
 }
 
 #[test]
-#[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
-fn hybrid_registration_meets_2_mm_and_0_02_degrees() {
+#[ignore = "heavy: synthetic scans of millions of points (see .config/nextest.toml)"]
+fn heavy_hybrid_registration_meets_2_mm_and_0_02_degrees() {
     let opts = Options {
         scans: 6,
         points_per_scan: 4_000_000,
@@ -112,8 +112,8 @@ fn hybrid_registration_meets_2_mm_and_0_02_degrees() {
 }
 
 #[test]
-#[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
-fn an_injected_bad_link_is_flagged_and_the_rest_still_meets_accuracy() {
+#[ignore = "heavy: synthetic scans of millions of points (see .config/nextest.toml)"]
+fn heavy_an_injected_bad_link_is_flagged_and_the_rest_still_meets_accuracy() {
     let opts = Options {
         scans: 6,
         points_per_scan: 4_000_000,
@@ -167,8 +167,8 @@ fn an_injected_bad_link_is_flagged_and_the_rest_still_meets_accuracy() {
 }
 
 #[test]
-#[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
-fn without_rough_poses_a_scan_placed_by_shape_alone_is_marked_for_review() {
+#[ignore = "heavy: synthetic scans of millions of points (see .config/nextest.toml)"]
+fn heavy_without_rough_poses_a_scan_placed_by_shape_alone_is_marked_for_review() {
     // The synthetic room is nearly symmetric under a half turn, so shape matching alone can
     // place a scan flipped, consistently across all its links. That can't be tested for; it
     // must be marked.

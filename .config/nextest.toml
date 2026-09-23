@@ -1,0 +1,22 @@
+# cargo-nextest configuration (CI runs tests with nextest; plain `cargo test` works too).
+#
+# Heavy tests are named heavy_* and marked #[ignore = "heavy: …"]: registration on synthetic
+# scans of millions of points, and the 100M-point E57 import. `cargo test` and per-push CI on
+# Windows skip them. Run them with
+#
+#     cargo nextest run --workspace --release --run-ignored only
+#
+# CI runs them on Linux for every push, and on Linux and Windows nightly, on demand and for
+# release tags. They run one at a time: each is parallel inside and memory-hungry, and the
+# E57 test checks its own process's peak memory.
+
+[test-groups]
+heavy = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(/(^|::)heavy_/)'
+test-group = 'heavy'
+slow-timeout = { period = "120s" }
+
+[profile.ci]
+fail-fast = false

@@ -5,6 +5,8 @@
 //! included, so it overstates what import alone uses. Run with:
 //!
 //!     cargo test -p locus-io --release --test e57_memory -- --ignored --nocapture
+//!
+//! (or with the other heavy tests: `cargo nextest run --workspace --release --run-ignored only`).
 
 use locus_core::{LinearUnit, Project};
 use locus_io::{commit, preview};
@@ -134,8 +136,8 @@ fn peak_memory() -> (u64, u64) {
 }
 
 #[test]
-#[ignore = "generates a 1 GB fixture; run explicitly (see file header)"]
-fn import_100m_point_e57_under_4gb() {
+#[ignore = "heavy: generates a 1 GB fixture (see .config/nextest.toml)"]
+fn heavy_import_100m_point_e57_under_4gb() {
     // Calibrate the instrument: touch 64 MiB so a working meter must report at least that.
     const PROBE: usize = 64 << 20;
     let probe = vec![1u8; PROBE];

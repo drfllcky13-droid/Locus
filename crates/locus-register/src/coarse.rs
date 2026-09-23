@@ -592,8 +592,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
-    fn aligns_two_scans_with_no_starting_pose_then_icp_reaches_the_truth() {
+    #[ignore = "heavy: synthetic scans of millions of points (see .config/nextest.toml)"]
+    fn heavy_aligns_two_scans_with_no_starting_pose_then_icp_reaches_the_truth() {
         // Two scene layouts; each pair shares a good part of the room from different stations.
         for (seed, from, to) in [(5, 1, 0), (9, 2, 0)] {
             let opts = Options {

@@ -198,8 +198,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
-    fn refines_a_perturbed_pose_to_the_truth() {
+    #[ignore = "heavy: synthetic scans of millions of points (see .config/nextest.toml)"]
+    fn heavy_refines_a_perturbed_pose_to_the_truth() {
         let opts = Options {
             scans: 2,
             points_per_scan: 1_500_000,

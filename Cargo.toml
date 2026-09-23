@@ -11,15 +11,26 @@ license = "UNLICENSED"
 publish = false
 
 # Registration and scene generation are numeric hot loops; unoptimised, their tests take
-# minutes. Dependencies are optimised too (kd-tree, linear algebra).
+# minutes. So are the kd-tree, linear algebra and LAZ decompression they use. Everything
+# else (Typst, Tauri, …) builds unoptimised and without debug info: optimising every
+# dependency made a cold Windows test build take most of an hour.
 [profile.dev.package.locus-register]
 opt-level = 2
 
 [profile.dev.package.locus-synth]
 opt-level = 2
 
-[profile.dev.package."*"]
+[profile.dev.package.kiddo]
 opt-level = 2
+
+[profile.dev.package.nalgebra]
+opt-level = 2
+
+[profile.dev.package.laz]
+opt-level = 2
+
+[profile.dev.package."*"]
+debug = false
 
 # hypher with the Slovak (GPL-2.0-or-later) and Hungarian (MPL-1.1/GPL/LGPL) hyphenation
 # patterns removed; see patches/hypher/PATCH.md and docs/DECISIONS.md.
