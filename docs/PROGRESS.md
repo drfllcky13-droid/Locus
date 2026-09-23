@@ -141,13 +141,13 @@ Plan (step 1 comes first: every accuracy criterion is measured against it):
 3. **Pose graph.** *Built: one adjustment over target, cloud and control links as point pairs (hybrid mode), χ² link test at 99.9 %, worst-first set-aside, untested lone links.* Links between scans (target, cloud or control) with covariances, then global optimisation over all scans. Each link is tested against the solution: a link whose residual is statistically inconsistent is flagged red, with the test and threshold shown.
 4. **Storage and audit.** *Built: schema 3 (registrations, registration_poses, both immutable; applied registration in settings), step-by-step migration, scene uses the applied poses.* Schema 3: registrations, links, per-scan poses, detected targets; every run and every manual link change (delete, force) audit-logged. Applying a registration only updates scan poses (octrees stay as built).
 5. **Graph view.** *Built: Scans → Register Scans… (Ctrl+R): run settings, stored registrations, top-view graph coloured by link status with unverified scans ringed, link figures, delete/force and re-solve, apply/revert.* Scans as nodes, links as edges coloured by error; delete or force a link and re-optimise.
-6. **Registration report.** *Contents built and tested (`locus_register::report`, recomputed from stored links and poses, matches the adjustment); PDF rendering waits on the report-engine decision (`report-pdf-question.txt`).* Per-link error, overlap %, max and mean target residuals, overall statistics; exported to PDF (PDF crate chosen for its licence, logged here).
+6. **Registration report.** *Built: Typst PDF (`locus-report`, Go fonts), exported from the Register dialog, audit-logged with its SHA-256; bundled third-party data listed in THIRD_PARTY_NOTICES.txt (Help → About, shipped with the app, checked in CI).*
 7. **Method notes** in `docs/methods/registration.md`. *Written.*
 
 Acceptance criteria:
 - [x] On synthetic scans with known poses, registration error is under 2 mm and 0.02° (relative to the first scan): 6 scans × 4M points, targets + cloud links from rough poses (0.5 m, 5° off), worst error 0.22 mm and 0.0008° (`crates/locus-register/tests/accept.rs`).
 - [x] Bad links injected by the test are flagged: a 2 cm / 0.1° wrong cloud link fails the χ² test (252 per dof against 1.89) and is set aside, with accuracy kept. Without rough poses or shared targets, scans placed by shape alone are reported unverified (a flipped scan in the symmetric synthetic room is caught this way, not by χ²). *Red in the graph view once the UI exists.*
-- [ ] Report numbers match the internal computation.
+- [x] Report numbers match the internal computation: the report is rebuilt from the stored links and poses, and tests check the laid-out PDF text against the adjustment's figures for every link, the target residuals and the scan poses.
 
 ## Blocked
 
