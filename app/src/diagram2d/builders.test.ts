@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { area, dashes, offset, road, room, type Segment } from "./builders";
+import { area, dashes, fillet, offset, road, room, type Segment } from "./builders";
 import { dist } from "./geometry";
 import type { Pt } from "./model";
 
@@ -123,6 +123,24 @@ describe("road", () => {
         [10, 17],
       ],
     ]);
+  });
+
+  it("rounds corners with tangent arcs, and lanes follow them concentrically", () => {
+    const bend: Pt[] = [
+      [0, 0],
+      [20, 0],
+      [20, 20],
+    ];
+    const c = fillet(bend, 10);
+    // A left turn of 90° with radius 10: the arc runs from (10, 0) to (20, 10) about (10, 10).
+    expect(close(c[1], [10, 0])).toBe(true);
+    expect(close(c[c.length - 2], [20, 10])).toBe(true);
+    for (const q of c.slice(1, -1)) expect(dist(q, [10, 10])).toBeCloseTo(10, 9);
+    // The inside edge 3 m left of the centreline lies on radius 7 (to within the chords' sag).
+    const g = road(bend, { lanes: [1, 1], laneWidth: 3, shoulder: 0, centre: "none", radius: 10 });
+    const inner = g.segments.filter((s) => dist(s.a, [10, 10]) < 8);
+    expect(inner.length).toBeGreaterThan(40);
+    for (const s of inner) expect(dist(s.a, [10, 10])).toBeCloseTo(7, 3);
   });
 
   it("offsets a bend with mitred corners", () => {

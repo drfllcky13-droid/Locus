@@ -148,6 +148,7 @@ export function BuiltPanel({
         (laneWidth) => laneWidth > 0 && set({ laneWidth }),
       )}
       {num("Shoulder (m)", entity.road.shoulder, (shoulder) => set({ shoulder }))}
+      {num("Curve radius at corners (m)", entity.road.radius ?? 0, (radius) => set({ radius }), 1)}
       <label>
         Centre line
         <select
@@ -160,7 +161,10 @@ export function BuiltPanel({
           <option value="none">None</option>
         </select>
       </label>
-      <p className="muted">Broken lines are drawn 3 m painted, 9 m gap.</p>
+      <p className="muted">
+        Broken lines are drawn 3 m painted, 9 m gap. A corner too short for the radius gets the
+        largest curve that fits.
+      </p>
     </div>
   );
 }

@@ -178,6 +178,41 @@ export interface RoadParams {
   /** Paved shoulder beyond the edge line on each side (m). */
   shoulder: number;
   centre: "dashed" | "solid" | "double" | "none";
+  /** Radius of the centreline's curves at its corners (m); 0 keeps sharp corners. */
+  radius?: number;
+}
+
+/**
+ * Round a polyline's corners with circular arcs of radius `r`, tangent to both edges, drawn
+ * as chords of at most 2°. A corner whose edges are too short for the full radius gets the
+ * largest arc that fits (tangent points at most halfway along each edge).
+ */
+export function fillet(pts: Pt[], r: number): Pt[] {
+  if (r <= 0 || pts.length < 3) return pts;
+  const out: Pt[] = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [a, v, b] = [pts[i - 1], pts[i], pts[i + 1]];
+    const [u1, u2] = [unit(sub(v, a)), unit(sub(b, v))];
+    const turn = Math.atan2(u1[0] * u2[1] - u1[1] * u2[0], u1[0] * u2[0] + u1[1] * u2[1]);
+    if (Math.abs(turn) < 1e-9) {
+      out.push(v);
+      continue;
+    }
+    const half = Math.tan(Math.abs(turn) / 2);
+    const t = Math.min(r * half, dist(a, v) / 2, dist(v, b) / 2);
+    const rr = t / half;
+    const side = Math.sign(turn); // +1 turning left: the centre is on the left
+    const p1 = add(v, scale(u1, -t));
+    const centre = add(p1, scale(left(u1), side * rr));
+    const start = Math.atan2(p1[1] - centre[1], p1[0] - centre[0]);
+    const steps = Math.max(1, Math.ceil(Math.abs(turn) / ((2 * Math.PI) / 180)));
+    for (let k = 0; k <= steps; k++) {
+      const ang = start + (turn * k) / steps;
+      out.push([centre[0] + rr * Math.cos(ang), centre[1] + rr * Math.sin(ang)]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
 }
 
 /** Broken-line markings: 3 m painted, 9 m gap (a common lane-line pattern). */
@@ -207,7 +242,8 @@ export function dashes(pts: Pt[], [on, off]: [number, number] = DASH): Segment[]
  * A road along a centreline: the centre marking, dashed lane dividers, solid edge lines, and
  * the outer edges of the shoulders. Dashed markings are drawn as their painted pieces.
  */
-export function road(centreline: Pt[], p: RoadParams): Geometry {
+export function road(drawn: Pt[], p: RoadParams): Geometry {
+  const centreline = fillet(drawn, p.radius ?? 0);
   const segments: Segment[] = [];
   const line = (pts: Pt[], dashed: boolean) => {
     if (dashed) segments.push(...dashes(pts));
