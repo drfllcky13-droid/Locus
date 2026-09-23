@@ -8,6 +8,7 @@ pub mod crash;
 pub mod defect;
 pub mod handmeasure;
 pub mod measure;
+pub mod stiffness;
 pub mod sun;
 pub mod surface;
 pub mod trajectory;

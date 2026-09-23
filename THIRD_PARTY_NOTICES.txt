@@ -4379,6 +4379,27 @@ Attribution:
   Copyright the generator-rs authors (Xudong Huang).
 
 ==============================================================================
+[nhtsa-crash-tests] NHTSA Vehicle Crash Test Database: frontal barrier tests
+==============================================================================
+Crate:   locus-analysis 0.1.0 (this repository)
+Licence: LicenseRef-US-Government-Works
+What:
+  Full-width frontal rigid flat-barrier crash tests (test number, vehicle,
+  test mass, impact speed, width, crush profile) selected from the NHTSA
+  Vehicle Crash Test Database by tools/nhtsa/fetch.py and embedded by locus-
+  analysis, which derives CRASH3 stiffness coefficients from them
+  (docs/methods/crash-stiffness.md). Values as published; only the columns
+  used are kept.
+Files:
+  data/nhtsa-frontal-barrier.csv
+Attribution:
+  Source: National Highway Traffic Safety Administration, US Department of
+  Transportation, Vehicle Crash Test Database
+  (https://nrd.api.nhtsa.dot.gov/), retrieved 2026-09-23. A work of the US
+  Government, not subject to copyright in the United States (17 U.S.C. 105);
+  listed on data.gov under the USA.gov Public Domain License 1.0.
+
+==============================================================================
 Licence texts
 ==============================================================================
 
@@ -5137,6 +5158,13 @@ Canonical text: https://github.com/CosmicHorrorDev/two-face/blob/v0.4.5/xtask/re
 
 Permission to copy, use, modify, sell and distribute this software is granted. This software is provided "as is" without express or implied warranty, and with no claim as to its suitability for any purpose.
 (Applies to files in https://github.com/sublimehq/Packages unless a file or an accompanying *-license file says otherwise.)
+
+------------------------------------------------------------------------------
+LicenseRef-US-Government-Works
+------------------------------------------------------------------------------
+Canonical text: https://www.usa.gov/government-works
+
+Works of the US Government are not subject to copyright in the United States (17 U.S.C. 105) and may be used and redistributed freely; no licence text applies.
 
 ------------------------------------------------------------------------------
 LicenseRef-hyph-bg

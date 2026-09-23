@@ -817,6 +817,128 @@ pub fn momentum(
 }
 
 // ---------------------------------------------------------------------------------------
+// Crush profile measured on the scan
+// ---------------------------------------------------------------------------------------
+
+/// One measuring station across the damage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Station {
+    /// The station on the undamaged face line, and the damaged surface found behind it (m).
+    pub at: P3,
+    pub surface: P3,
+    /// Residual crush: the surface's distance behind the face line (m), and its 1σ.
+    pub depth: f64,
+    pub sigma: f64,
+    /// Scan points in the station's strip.
+    pub points: usize,
+}
+
+/// A crush profile measured on a damaged vehicle's scan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrushProfile {
+    /// The ends of the damage on the undamaged face line, as picked (m), and the horizontal
+    /// direction into the vehicle.
+    pub start: P3,
+    pub end: P3,
+    pub inward: P3,
+    /// The measuring height (the ends' mean) and the half-height of the band of points used.
+    pub height: f64,
+    pub band: f64,
+    /// The damage width: the ends' horizontal distance (m).
+    pub width: f64,
+    pub stations: Vec<Station>,
+    #[serde(default)]
+    pub sources: Vec<PointSource>,
+}
+
+/// Points behind the face line nearer than this are taken as the damaged surface: the depth
+/// is this low percentile of the strip's depths, so a few stray points don't set it.
+const SURFACE_PERCENTILE: f64 = 0.05;
+/// Points more than this far in front of the face line (m) aren't the vehicle.
+const PROUD: f64 = 0.10;
+
+/// Measure a crush profile: `n` equally spaced stations between `start` and `end` (the
+/// undamaged face line at the ends of the damage), each a strip across the line (half as wide
+/// as the stations' spacing, at most 50 mm and at least 20 mm) within `band` of the ends' mean
+/// height; its depth is where the surviving surface begins, the 5th percentile of the strip's
+/// distances behind the line. `inside` is any point within the vehicle, for the inward side.
+pub fn crush_profile(
+    start: P3,
+    end: P3,
+    inside: P3,
+    points: &[P3],
+    n: usize,
+    band: f64,
+    point_sigma: f64,
+) -> Result<CrushProfile, CrashError> {
+    if !(2..=10).contains(&n) {
+        return err("use 2 to 10 stations (2, 4 or 6 in the usual protocols)");
+    }
+    if !(band > 0.0 && band <= 0.5) {
+        return err("the height band must be between 0 and 0.5 m");
+    }
+    let d = [end[0] - start[0], end[1] - start[1]];
+    let width = d[0].hypot(d[1]);
+    if width < 0.1 {
+        return err("the ends of the damage are less than 0.1 m apart");
+    }
+    let u = [d[0] / width, d[1] / width, 0.0];
+    let mut w = [-u[1], u[0], 0.0];
+    if (inside[0] - start[0]) * w[0] + (inside[1] - start[1]) * w[1] < 0.0 {
+        w = [-w[0], -w[1], 0.0];
+    }
+    let height = (start[2] + end[2]) / 2.0;
+    let half = (width / (n - 1) as f64 / 4.0).clamp(0.02, 0.05);
+    let mut stations = vec![];
+    for k in 0..n {
+        let s = width * k as f64 / (n - 1) as f64;
+        let at = [start[0] + u[0] * s, start[1] + u[1] * s, height];
+        let mut depths: Vec<(f64, P3)> = points
+            .iter()
+            .filter(|p| (p[2] - height).abs() <= band)
+            .filter_map(|p| {
+                let r = [p[0] - at[0], p[1] - at[1]];
+                let along = r[0] * u[0] + r[1] * u[1];
+                let into = r[0] * w[0] + r[1] * w[1];
+                (along.abs() <= half && (-PROUD..=2.0).contains(&into)).then_some((into, *p))
+            })
+            .collect();
+        if depths.len() < 5 {
+            return err(format!(
+                "station C{}: fewer than 5 scan points in its strip; widen the height band or check the ends",
+                k + 1
+            ));
+        }
+        depths.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let q = |f: f64| {
+            depths[((f * (depths.len() - 1) as f64).round() as usize).min(depths.len() - 1)]
+        };
+        let (d5, surface) = q(SURFACE_PERCENTILE);
+        let d15 = q(0.15).0;
+        // 1σ: the scan points', the face line's (the ends are picks), and how sharply the
+        // surface begins (the spread between the 5th and 15th percentiles).
+        let sigma = (2.0 * point_sigma * point_sigma + (d15 - d5).powi(2)).sqrt();
+        stations.push(Station {
+            at,
+            surface,
+            depth: d5.max(0.0),
+            sigma,
+            points: depths.len(),
+        });
+    }
+    Ok(CrushProfile {
+        start,
+        end,
+        inward: w,
+        height,
+        band,
+        width,
+        stations,
+        sources: vec![],
+    })
+}
+
+// ---------------------------------------------------------------------------------------
 // Crush energy (Campbell / CRASH3)
 // ---------------------------------------------------------------------------------------
 
@@ -825,10 +947,22 @@ pub fn momentum(
 /// equally spaced measurements; times (1 + tan² α) for a principal direction of force α off
 /// the face's normal.
 pub fn crush_energy(a: f64, b: f64, width: f64, depths: &[f64], pdof_deg: f64) -> Option<f64> {
+    crush_energy_g(a, b, a * a / (2.0 * b), width, depths, pdof_deg)
+}
+
+/// As `crush_energy`, with G given (CRASH3's own tables list G beside A and B, rounded
+/// separately from A²/2B).
+pub fn crush_energy_g(
+    a: f64,
+    b: f64,
+    g: f64,
+    width: f64,
+    depths: &[f64],
+    pdof_deg: f64,
+) -> Option<f64> {
     if depths.len() < 2 || !(a > 0.0 && b > 0.0 && width > 0.0) {
         return None;
     }
-    let g = a * a / (2.0 * b);
     let step = width / (depths.len() - 1) as f64;
     let e: f64 = depths
         .windows(2)
@@ -848,6 +982,13 @@ pub struct CrushRun {
     pub a: Input,
     pub b: Input,
     pub stiffness_source: String,
+    /// The bundled table's entry A and B came from (its NHTSA tests), when not entered by the
+    /// examiner.
+    #[serde(default)]
+    pub table_entry: Option<crate::stiffness::Entry>,
+    /// The profile as measured on the scan, when the width and depths came from it.
+    #[serde(default)]
+    pub profile: Option<CrushProfile>,
     /// Width of the damage (m) and the crush depths, equally spaced across it (m).
     pub width: Input,
     pub depths: Vec<Input>,
@@ -939,6 +1080,8 @@ pub fn crush(
         a,
         b,
         stiffness_source: stiffness_source.trim().into(),
+        table_entry: None,
+        profile: None,
         width,
         depths,
         pdof_deg,
@@ -1163,6 +1306,141 @@ mod tests {
         }
         assert!((row.at_low[0] - 19.259_259).abs() < 1e-5);
         assert!((row.at_low[1] - 15.757_576).abs() < 1e-5);
+    }
+
+    // The CRASH3 User's Guide and Technical Manual (NHTSA, 1979), §5 sample run, vehicle 1
+    // (category 4 front: A 356 lb/in, B 34 lb/in², G 1874 lb, Table 8-2): L 73.0 in, C1 2.7,
+    // C2 3.6 in (two points), no oblique correction in the printout; printed energy
+    // 19,245.3 ft-lb. Vehicle 2 (category 4 side: A 143, B 50, G 203): L 84.5 in,
+    // C1–C6 6.2, 8.3, 9.2, 5.9, 4.4, 0.8 in, 45° (× 2); printed 31,220.8 ft-lb. The printout
+    // gives the inputs to 0.1 in, so each printed energy must lie within the range of the
+    // formula over the inputs ± 0.05 in (and the manual's equations (2)–(4) are the integral
+    // used here).
+    #[test]
+    fn the_crash3_manuals_sample_energies_are_reproduced() {
+        let inch = 0.0254;
+        let lbf = 4.448_221_615_260_5;
+        let ftlb = 1.355_817_948_331_4;
+        let a_unit = lbf / inch; // lb/in → N/m
+        let b_unit = lbf / (inch * inch); // lb/in² → N/m²
+        let check = |a: f64, b: f64, g: f64, l: f64, c: &[f64], ang: f64, printed: f64| {
+            let e = |l: f64, c: &[f64]| {
+                crush_energy_g(
+                    a * a_unit,
+                    b * b_unit,
+                    g * lbf,
+                    l * inch,
+                    &c.iter().map(|v| v * inch).collect::<Vec<_>>(),
+                    ang,
+                )
+                .unwrap()
+                    / ftlb
+            };
+            let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+            for mask in 0..(1u32 << (c.len() + 1)) {
+                let s = |k: usize| if mask >> k & 1 == 1 { 0.05 } else { -0.05 };
+                let cc: Vec<f64> = c
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| (v + s(k + 1)).max(0.0))
+                    .collect();
+                let v = e(l + s(0), &cc);
+                lo = lo.min(v);
+                hi = hi.max(v);
+            }
+            let nominal = e(l, c);
+            assert!(
+                lo <= printed && printed <= hi,
+                "{printed} outside {lo}–{hi} (nominal {nominal})"
+            );
+            nominal
+        };
+        let v1 = check(356.0, 34.0, 1874.0, 73.0, &[2.7, 3.6], 0.0, 19_245.3);
+        assert!((v1 - 19_245.3).abs() / 19_245.3 < 0.001, "{v1}");
+        let v2 = check(
+            143.0,
+            50.0,
+            203.0,
+            84.5,
+            &[6.2, 8.3, 9.2, 5.9, 4.4, 0.8],
+            45.0,
+            31_220.8,
+        );
+        assert!((v2 - 31_220.8).abs() / 31_220.8 < 0.005, "{v2}");
+        // Equation (2) in closed form equals the span-by-span integral.
+        let c = [0.1, 0.25, 0.31, 0.2, 0.12, 0.05];
+        let (a, b, g, l) = (40_000.0, 500_000.0, 1_600.0, 1.6);
+        let closed = l / 5.0
+            * (a / 2.0 * (c[0] + 2.0 * (c[1] + c[2] + c[3] + c[4]) + c[5])
+                + b / 6.0
+                    * (c[0] * c[0]
+                        + 2.0 * (c[1] * c[1] + c[2] * c[2] + c[3] * c[3] + c[4] * c[4])
+                        + c[5] * c[5]
+                        + c[0] * c[1]
+                        + c[1] * c[2]
+                        + c[2] * c[3]
+                        + c[3] * c[4]
+                        + c[4] * c[5])
+                + 5.0 * g);
+        assert!((crush_energy_g(a, b, g, l, &c, 0.0).unwrap() - closed).abs() < 1e-6);
+    }
+
+    /// A damaged front: the undamaged face along y = 0 (the vehicle at y > 0), dented over
+    /// x 0–2 m to 0.3 (1 − (x − 1)²) m, with points behind the surface (the engine bay) and the
+    /// bumper band 0.3–0.7 m high.
+    #[test]
+    fn a_crush_profile_is_measured_from_the_damaged_surface() {
+        let mut pts = vec![];
+        let mut rng = Rng(3);
+        for i in 0..=300 {
+            let x = -0.3 + 2.6 * i as f64 / 300.0;
+            let dent = if (0.0..=2.0).contains(&x) {
+                0.3 * (1.0 - (x - 1.0).powi(2))
+            } else {
+                0.0
+            };
+            for j in 0..=20 {
+                let z = 0.3 + 0.4 * j as f64 / 20.0;
+                pts.push([x, dent + 0.002 * rng.gauss(), z]);
+                // Parts behind the surface.
+                pts.push([x, dent + 0.2 + 0.5 * rng.uniform(), z]);
+            }
+        }
+        let p = crush_profile(
+            [0.0, 0.0, 0.5],
+            [2.0, 0.0, 0.5],
+            [1.0, 1.0, 0.5],
+            &pts,
+            6,
+            0.15,
+            0.002,
+        )
+        .unwrap();
+        assert!((p.width - 2.0).abs() < 1e-12 && p.inward[1] > 0.99);
+        for (k, st) in p.stations.iter().enumerate() {
+            let x = 2.0 * k as f64 / 5.0;
+            let truth = 0.3 * (1.0 - (x - 1.0f64).powi(2));
+            // The strip is ±50 mm wide, and the curve's lowest point in it sets the depth.
+            assert!(
+                (st.depth - truth).abs() < 0.03,
+                "C{}: {} vs {truth}",
+                k + 1,
+                st.depth
+            );
+            assert!(st.sigma > 0.0 && st.points > 20);
+        }
+        // The inside point on the other side flips the direction, and nothing is found.
+        assert!(crush_profile(
+            [0.0, 0.0, 0.5],
+            [2.0, 0.0, 0.5],
+            [1.0, -1.0, 0.5],
+            &pts,
+            6,
+            0.15,
+            0.002
+        )
+        .map(|p| p.stations.iter().all(|s| s.depth < 0.01))
+        .unwrap_or(true));
     }
 
     // Uniform crush 0.3 m over 1.5 m, A = 50,000 N/m, B = 1,000,000 N/m²: G = 1,250 N;

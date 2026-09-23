@@ -22,7 +22,7 @@ OUT = os.path.join(REPO, 'THIRD_PARTY_NOTICES.txt')
 # Any LPPL version and any W3C licence variant counts.
 # CLAUDE.md rule 7's data-file exception (never for code).
 DATA_ONLY = ('CC-BY-4.0', 'CC-BY-SA-3.0', 'FSFAP', 'LicenseRef-hyph-bg', 'LicenseRef-hyph-sa',
-             'LicenseRef-Sublime-Packages')
+             'LicenseRef-Sublime-Packages', 'LicenseRef-US-Government-Works')
 DATA_ONLY_PREFIXES = ('LPPL', 'W3C')
 FIRST_PARTY = 'LicenseRef-Locus-Proprietary'
 
