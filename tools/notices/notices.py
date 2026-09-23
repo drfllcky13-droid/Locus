@@ -6,8 +6,10 @@
 
 `generate` writes THIRD_PARTY_NOTICES.txt at the repo root from tools/notices/data.json.
 `check` fails if the dependency graph embeds a data file no manifest entry covers, if a
-manifest version differs from Cargo.lock, if a licence is outside the rule, or if
-THIRD_PARTY_NOTICES.txt is stale. Stdlib only.
+manifest version differs from Cargo.lock, if a licence is outside the rule, if an `ignored`
+entry is unexplained (neither behind a feature that is off nor verifiably test-only) or no
+longer matches anything, or if THIRD_PARTY_NOTICES.txt is stale. Our own embedded files are
+listed under `first_party` (LicenseRef-Locus-Proprietary), not ignored. Stdlib only.
 """
 import fnmatch, glob, json, os, re, subprocess, sys, textwrap, tomllib, zlib
 
@@ -22,6 +24,7 @@ OUT = os.path.join(REPO, 'THIRD_PARTY_NOTICES.txt')
 DATA_ONLY = ('CC-BY-4.0', 'CC-BY-SA-3.0', 'FSFAP', 'LicenseRef-hyph-bg', 'LicenseRef-hyph-sa',
              'LicenseRef-Sublime-Packages')
 DATA_ONLY_PREFIXES = ('LPPL', 'W3C')
+FIRST_PARTY = 'LicenseRef-Locus-Proprietary'
 
 # ---------------------------------------------------------------- dependency graph
 
@@ -370,6 +373,34 @@ def generate(data):
 
 # ---------------------------------------------------------------- check
 
+def unexplained(g, pat):
+    """Why an `ignored` entry is not acceptable (empty if it is). An ignore must be either
+    behind a feature (`unless_feature`, checked to be off below) or test-only: `test_only`
+    names the source file that includes it, and the include must come after a #[cfg(test)]
+    or #[test] in that file."""
+    if g.get('unless_feature'):
+        return []
+    t = g.get('test_only')
+    if not t:
+        return ['unexplained: give unless_feature or test_only (or list it under first_party)']
+    d = registry_dir(g['crate'], g['version'])
+    if not d:
+        return []  # source not downloaded here; the version check reports a mismatch
+    path = os.path.join(d, t)
+    if not os.path.exists(path):
+        return [f'test_only file {t} does not exist']
+    text = open(path, encoding='utf-8', errors='replace').read()
+    stem = pat.split('*')[0].lstrip('./')
+    for m in re.finditer(r'include(_bytes|_str|)!', text):
+        line = text[m.start():text.find('\n', m.start())]
+        if stem in line or stem in text[m.start():m.start() + 200]:
+            before = text[:m.start()]
+            if '#[cfg(test)]' in before or '#[test]' in before:
+                return []
+            return [f'{t} includes it outside #[cfg(test)] / #[test]']
+    return [f'no include of {stem} found in {t}']
+
+
 def check(data, meta, strict):
     errors, warnings = [], []
     allow = code_allowlist()
@@ -381,8 +412,8 @@ def check(data, meta, strict):
 
     ids = [g['id'] for g in data['groups']]
     errors += [f'duplicate group id {i}' for i in sorted({i for i in ids if ids.count(i) > 1})]
-    for g in data['groups'] + data['ignored']:
-        tag = g.get('id') or f"ignored {g['crate']}"
+    for g in data['groups'] + data['ignored'] + data['first_party']:
+        tag = g.get('id') or f"{'ignored' if g in data['ignored'] else 'first-party'} {g['crate']}"
         if g['version'] not in versions.get(g['crate'], ()):
             errors.append(f"{tag}: manifest says {g['crate']} {g['version']}, Cargo.lock has "
                           f"{', '.join(sorted(versions.get(g['crate'], []))) or 'no such crate'}")
@@ -407,19 +438,38 @@ def check(data, meta, strict):
                     if lic and 'by-sa/3.0' not in lic:
                         errors.append(f"{g['id']}: {f} states licence {lic}")
 
+    for g in data['first_party']:
+        if g.get('licence') != FIRST_PARTY:
+            errors.append(f"first-party {g['crate']}: licence must be {FIRST_PARTY}")
+        d = crate_dir(meta, g['crate'], g['version'])
+        for pat in g['files']:
+            if d and not glob.glob(os.path.join(d, pat)):
+                errors.append(f"first-party {g['crate']}: '{pat}' matches nothing")
+    for g in data['ignored']:
+        errors += [f"ignored {g['crate']} {pat}: {e}" for pat in g['files'] for e in unexplained(g, pat)]
+
+    def matches(entries, p, f):
+        return [g for g in entries if g['crate'] == p['name'] and g['version'] == p['version']
+                and any(fnmatch.fnmatchcase(f, pat) for pat in g['files'])]
+
+    used_ignores = set()
     for p, feats in graph:
         for f in scan(p):
-            cover = [g for g in data['groups'] if g['crate'] == p['name'] and g['version'] == p['version']
-                     and any(fnmatch.fnmatchcase(f, pat) for pat in g['files'])]
-            if cover:
+            if matches(data['groups'] + data['first_party'], p, f):
                 continue
-            ign = [g for g in data['ignored'] if g['crate'] == p['name'] and g['version'] == p['version']
-                   and any(fnmatch.fnmatchcase(f, pat) for pat in g['files'])]
+            ign = matches(data['ignored'], p, f)
+            used_ignores.update(id(g) for g in ign)
             live = [g for g in ign if g.get('unless_feature') in feats]
             if ign and not live:
                 continue
             why = (f" (ignored only while feature '{live[0]['unless_feature']}' is off, and it is on)" if live else '')
             errors.append(f"{p['name']} {p['version']} embeds {f}, which no data.json entry covers{why}")
+
+    # An ignore that no longer matches anything the scan finds is stale: it could silently
+    # cover a new file later.
+    for g in data['ignored']:
+        if id(g) not in used_ignores and g['crate'] in {p['name'] for p, _ in graph}:
+            errors.append(f"ignored {g['crate']} {g['files']}: matches nothing the scan finds; remove it")
 
     # Data excluded by decision must not come back (a hypher update without the patch, or a
     # feature switched on).
