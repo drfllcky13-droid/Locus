@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FURNITURE,
   POSES,
+  STATURE,
   VEHICLES,
   WEAPONS,
   bounds,
@@ -44,6 +45,15 @@ describe("asset library", () => {
     expect(lying.lo[2]).toBeCloseTo(0, 9);
     const sitting = size(build({ type: "person", height: 1.78, pose: POSES.sitting }));
     expect(sitting.z).toBeLessThan(1.4);
+  });
+
+  it("follows Drillis and Contini's proportions", () => {
+    // Shoulder width across the arms, and the chin below the head's top.
+    const standing = size(
+      build({ type: "person", height: 1.0, pose: { ...POSES.standing, abduct: [0, 0] } }),
+    );
+    expect(standing.y).toBeCloseTo(STATURE.shoulderWidth, 2);
+    expect(standing.x).toBeGreaterThan(STATURE.footLength * 0.95);
   });
 
   it.each(Object.keys(FURNITURE) as FurnitureItem[])("a %s fills its box", (item) => {

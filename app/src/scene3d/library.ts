@@ -329,11 +329,33 @@ function vehicle(a: Extract<Asset, { type: "vehicle" }>): Model {
 // ---------- people ----------
 
 /**
- * A standing figure of the given height (proportions from common anthropometric ratios:
- * head about 1/8 of height, hips at 0.53, shoulders at 0.82), posed by joint angles.
+ * Body proportions as fractions of stature (floor to top of head, standing, without
+ * footwear): Drillis and Contini (1966), as reproduced in Winter, "Biomechanics and Motor
+ * Control of Human Movement", 4th ed., 2009, Fig. 4.1. The same values as the camera
+ * generator (crates/locus-synth/src/camera.rs); docs/methods/camera-height.md.
+ */
+export const STATURE = {
+  ankle: 0.039,
+  knee: 0.285,
+  hip: 0.53,
+  shoulder: 0.818,
+  chin: 0.87,
+  upperArm: 0.186,
+  forearm: 0.146,
+  hand: 0.108,
+  shoulderWidth: 0.259,
+  hipWidth: 0.191,
+  footLength: 0.152,
+  footWidth: 0.055,
+} as const;
+
+/**
+ * A figure of the given stature, posed by joint angles, with the proportions above. Standing,
+ * it is exactly `height` from the soles to the top of the head.
  */
 function person(a: Extract<Asset, { type: "person" }>): Model {
-  // Proportions give a standing figure slightly shorter than h; scale so it is exactly h.
+  // The mesh's facets leave the soles a millimetre or two short of the proportions' floor;
+  // scale so the standing figure is exactly `height`.
   const [lo, hi] = bounds(figure(1, POSES.standing));
   return figure(a.height / (hi[2] - lo[2]), a.pose);
 }
@@ -342,33 +364,46 @@ function figure(h: number, p: Pose): Model {
   const skin = mesh();
   const cloth = mesh();
   const rad = (d: number) => (d * Math.PI) / 180;
+  const S = STATURE;
   // Build upright, then turn: joints in the sagittal plane x (forward), z (up).
-  const hipZ = 0.53 * h;
-  const thigh = 0.245 * h;
-  const shin = 0.245 * h;
-  const torso = 0.29 * h;
-  const upper = 0.17 * h;
-  const fore = 0.15 * h;
-  const hipW = 0.09 * h;
-  const shW = 0.11 * h;
+  const hipZ = S.hip * h;
+  const thigh = (S.hip - S.knee) * h;
+  const shin = (S.knee - S.ankle) * h;
+  const torso = (S.shoulder - S.hip) * h;
+  const upper = S.upperArm * h;
+  const fore = S.forearm * h;
+  const [thighR, shinR, armR, foreR] = [0.03 * h, 0.025 * h, 0.022 * h, 0.018 * h];
+  // Joint centres inside the body's widths.
+  const hipW = (S.hipWidth / 2) * h - thighR;
+  const shW = (S.shoulderWidth / 2) * h - armR;
+  const footR = (S.ankle / 2) * h; // the foot's thickness is the ankle's height
   const lean = rad(p.torso);
+  const up: V3 = [Math.sin(lean), 0, Math.cos(lean)];
   const pelvis: V3 = [0, 0, hipZ];
-  const neck: V3 = [torso * Math.sin(lean), 0, hipZ + torso * Math.cos(lean)];
-  const limb = (from: V3, a1: number, len: number): V3 => [
-    from[0] + len * Math.sin(a1),
-    from[1],
-    from[2] - len * Math.cos(a1),
+  const neck: V3 = [torso * up[0], 0, hipZ + torso * up[2]];
+  const along = (from: V3, d: V3, len: number): V3 => [
+    from[0] + len * d[0],
+    from[1] + len * d[1],
+    from[2] + len * d[2],
   ];
+  const down = (a1: number): V3 => [Math.sin(a1), 0, -Math.cos(a1)];
   const parts: [V3, V3, number, Mesh][] = [];
   for (const [i, s] of [
     [0, 1],
     [1, -1],
   ] as const) {
     const hip: V3 = [0, s * hipW, hipZ];
-    const knee = limb(hip, rad(p.hip[i]), thigh);
-    const ankle = limb(knee, rad(p.hip[i] - p.knee[i]), shin);
-    parts.push([hip, knee, 0.06 * h * 0.5, cloth], [knee, ankle, 0.05 * h * 0.5, cloth]);
-    const sh: V3 = [neck[0], s * shW, neck[2] - 0.02 * h];
+    const knee = along(hip, down(rad(p.hip[i])), thigh);
+    const shinDir = down(rad(p.hip[i] - p.knee[i]));
+    const ankle = along(knee, shinDir, shin);
+    // The foot: its sole at the ankle's height below the ankle, along the shin, and a
+    // quarter of its length behind it.
+    const toeDir: V3 = [-shinDir[2], 0, shinDir[0]];
+    const mid = along(ankle, shinDir, S.ankle * h - footR);
+    const heel = along(mid, toeDir, -0.25 * S.footLength * h + footR);
+    const toe = along(mid, toeDir, 0.75 * S.footLength * h - footR);
+    parts.push([hip, knee, thighR, cloth], [knee, ankle, shinR, cloth], [heel, toe, footR, cloth]);
+    const sh: V3 = [neck[0], s * shW, neck[2]];
     const ab = rad(p.abduct[i]);
     const fl = rad(p.shoulder[i]);
     const elbow: V3 = [
@@ -377,17 +412,24 @@ function figure(h: number, p: Pose): Model {
       sh[2] - upper * Math.cos(fl) * Math.cos(ab),
     ];
     const el = fl + rad(p.elbow[i]);
-    const wrist: V3 = [
-      elbow[0] + fore * Math.sin(el) * Math.cos(ab),
-      elbow[1] + s * fore * Math.sin(ab),
-      elbow[2] - fore * Math.cos(el) * Math.cos(ab),
+    const foreDir: V3 = [
+      Math.sin(el) * Math.cos(ab),
+      s * Math.sin(ab),
+      -Math.cos(el) * Math.cos(ab),
     ];
-    parts.push([sh, elbow, 0.022 * h, cloth], [elbow, wrist, 0.018 * h, skin]);
+    const wrist = along(elbow, foreDir, fore);
+    parts.push(
+      [sh, elbow, armR, cloth],
+      [elbow, wrist, foreR, skin],
+      [wrist, along(wrist, foreDir, S.hand * h), 0.012 * h, skin],
+    );
   }
-  parts.push([pelvis, neck, 0.075 * h, cloth]);
+  const chin = along(neck, up, (S.chin - S.shoulder) * h);
+  parts.push([pelvis, neck, 0.075 * h, cloth], [neck, chin, 0.025 * h, skin]);
   for (const [a0, a1, r, m] of parts) cylinder(m, a0, a1, r, 10);
-  const head: V3 = [neck[0] + 0.06 * h * Math.sin(lean), 0, neck[2] + 0.065 * h];
-  sphere(skin, head, 0.0625 * h, 10);
+  // The head: from the chin to the top of the head (1 − chin), as a sphere.
+  const headR = ((1 - S.chin) / 2) * h;
+  sphere(skin, along(chin, up, headR), headR, 10);
   // Stand the figure on the ground: its lowest point at z = 0 (seated figures rest on
   // their pelvis's height above whatever they sit on; the examiner places that).
   const lowest = Math.min(
