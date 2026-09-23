@@ -248,10 +248,10 @@ Plan (the Phase 6 pattern: pure, tested math in `locus-analysis` with uncertaint
 8. **Reports and method notes** for each tool (`docs/methods/crash-*.md`), with references.
 
 Acceptance criteria:
-- [ ] Every formula matches hand-worked examples in tests (worked independently here and shown in the tests; published textbook examples are cited, not copied).
-- [ ] Sensitivity tables reproduce known textbook cases.
+- [x] Every formula matches hand-worked examples in tests (worked independently here and shown in the tests and `docs/methods/crash.md`; published textbook examples are cited, not copied): skid (level, grade, braking efficiency, two surfaces, end speed), yaw (chord and ordinate, superelevation, CG offset, fitted circle), momentum (a locked-together collision recovered exactly, delta-V), crush (uniform, triangular, force-direction factor, equivalent barrier speed). Items 6–7 still to test.
+- [ ] Sensitivity tables reproduce known textbook cases: the momentum table reproduces a hand-worked case (B's mass at its low end); textbook cases to be cited once chosen.
 
-Status (2026-09-23): planning done; starting item 1.
+Status (2026-09-23): items 1–5 built (the crush profile entered; from the point cloud still to do): vehicle specifications; skid, yaw (chord or a circle fitted to picked points), two-vehicle momentum with its sensitivity table, and CRASH3 crush energy, each with the range method and a Monte Carlo interval, a PDF report and the method note `docs/methods/crash.md`; checked in the app. Next: the crush profile from the cloud, volumetric crush (item 6), EDR (item 7), and the NHTSA coefficient table (needs permission to download).
 
 ## Blocked
 
