@@ -6,6 +6,7 @@
 mod commands;
 mod diagram_cmds;
 mod register_cmds;
+mod scene3d_cmds;
 mod scene_cmds;
 #[cfg(feature = "spike")]
 mod spike;
@@ -62,6 +63,13 @@ fn main() {
             diagram_cmds::diagram_history,
             diagram_cmds::hand_solve,
             diagram_cmds::diagram_pdf,
+            scene3d_cmds::scenes,
+            scene3d_cmds::scene_create,
+            scene3d_cmds::scene_save,
+            scene3d_cmds::scene_history,
+            scene3d_cmds::diagram_revision,
+            scene3d_cmds::surface_at,
+            scene3d_cmds::sun_position,
             diagram_cmds::underlay_images,
             diagram_cmds::underlay_bytes,
             diagram_cmds::underlay_slice,

@@ -260,13 +260,13 @@ pub async fn analysis_state(app: AppHandle) -> CmdResult<StateView> {
 /// What the GPU pick pass identified: a served point, never a coordinate.
 #[derive(Deserialize)]
 pub struct Pick {
-    scan: String,
+    pub scan: String,
     node: usize,
     k: usize,
     revision: u64,
 }
 
-fn resolve(scene: &Scene, pick: &Pick) -> CmdResult<Resolved> {
+pub fn resolve(scene: &Scene, pick: &Pick) -> CmdResult<Resolved> {
     let key = ScanKey::parse(&pick.scan).ok_or("bad scan key")?;
     scene
         .resolve(key, pick.node, pick.k, pick.revision)

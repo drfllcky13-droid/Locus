@@ -197,6 +197,20 @@ impl Scene {
 
     /// Render origin: the centre of all scans' project-frame bounds. Kept in f64 on the CPU;
     /// everything sent to the GPU is relative to it.
+    /// Every visible point (project frame) within `radius` of `c`.
+    pub fn points_within(&self, c: [f64; 3], radius: f64) -> Result<Vec<[f64; 3]>> {
+        let (lo, hi) = (c.map(|v| v - radius), c.map(|v| v + radius));
+        let mut out = vec![];
+        for cloud in self.scans.values() {
+            crate::cleanup::for_points_near(cloud, lo, hi, &mut |_, _, p| {
+                if (0..3).map(|k| (p[k] - c[k]).powi(2)).sum::<f64>() <= radius * radius {
+                    out.push(p);
+                }
+            })?;
+        }
+        Ok(out)
+    }
+
     pub fn origin(&self) -> [f64; 3] {
         let mut lo = [f64::INFINITY; 3];
         let mut hi = [f64::NEG_INFINITY; 3];
