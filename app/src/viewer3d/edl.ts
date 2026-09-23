@@ -39,21 +39,23 @@ export class EdlPass {
           uniform vec2 texel; uniform float near; uniform float far; uniform float strength;
           uniform vec3 background;
           varying vec2 vUv;
-          float logDepth(vec2 uv) {
-            float d = texture2D(tDepth, uv).x;
-            if (d >= 1.0) return -1.0;
+          // Nothing drawn is tested on the stored depth (the far plane), not on the log
+          // depth: that is negative for anything nearer than 1 m, which a sign test once
+          // blanked (close-ups of a wall came out empty).
+          float logDepth(float d) {
             float z = d * 2.0 - 1.0;
             return log2(2.0 * near * far / (far + near - z * (far - near)));
           }
           void main() {
             vec4 color = texture2D(tColor, vUv);
-            float dc = logDepth(vUv);
-            if (dc < 0.0) { gl_FragColor = vec4(background, 1.0); return; }
+            float d0 = texture2D(tDepth, vUv).x;
+            if (d0 >= 1.0) { gl_FragColor = vec4(background, 1.0); return; }
+            float dc = logDepth(d0);
             float sum = 0.0;
             for (int i = 0; i < 8; i++) {
               float a = float(i) * 0.7853982;
-              float dn = logDepth(vUv + vec2(cos(a), sin(a)) * texel * 1.4);
-              sum += dn < 0.0 ? 1.0 : max(0.0, dc - dn);
+              float dn = texture2D(tDepth, vUv + vec2(cos(a), sin(a)) * texel * 1.4).x;
+              sum += dn >= 1.0 ? 1.0 : max(0.0, dc - logDepth(dn));
             }
             gl_FragColor = vec4(color.rgb * exp(-sum * 40.0 * strength / 8.0), 1.0);
             #include <colorspace_fragment>

@@ -131,6 +131,17 @@ try {
       if (hit && !("refused" in hit)) break;
     }
     out.pick = hit;
+    // Close up: 0.4 m from a drawn point, looking at it. Log depth is negative nearer than
+    // 1 m, and the EDL pass once took that for "nothing drawn" and blanked close-ups.
+    const node = e.layer.group.children.find((c) => c.visible && c.geometry.attributes.position.count > 0);
+    const p = node.geometry.attributes.position;
+    const at = e.camera.position.clone().fromBufferAttribute(p, Math.floor(p.count / 2)).applyMatrix4(node.matrixWorld);
+    const back = e.camera.position.clone().sub(at).normalize().multiplyScalar(0.4);
+    e.camera.position.copy(at).add(back);
+    e.controls.target.copy(at);
+    e.controls.update();
+    await e.benchmark(3);
+    out.coverage.closeUp = await nonBackground();
     return out;
   });
   console.log("viewer smoke:", JSON.stringify(summary, null, 1));
