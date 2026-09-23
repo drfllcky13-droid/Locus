@@ -65,6 +65,13 @@ export type Entity =
 
 export type EntityKind = Entity["kind"];
 
+/** An entity before it gets its id and layer (Omit applied to each variant). */
+export type EntityInput = Entity extends infer E
+  ? E extends Entity
+    ? Omit<E, "id" | "layer">
+    : never
+  : never;
+
 export interface Diagram {
   version: 1;
   layers: Layer[];

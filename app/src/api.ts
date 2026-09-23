@@ -3,6 +3,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { PickHit, SceneData } from "./viewer3d/pointcloud";
 import type { MeasurementRecord } from "./viewer3d/measureFormat";
+import type { Diagram } from "./diagram2d/model";
 
 export type LinearUnit = "meter" | "centimeter" | "millimeter" | "foot" | "us_survey_foot" | "inch";
 
@@ -238,6 +239,39 @@ export interface RegistrationRecord {
   created_by: string;
 }
 
+export interface DiagramRevision {
+  diagram_id: number;
+  revision_id: number;
+  number: number;
+  name: string;
+  document: Diagram;
+  sha256: string;
+  created_at: string;
+  created_by: string;
+}
+
+export type HandRequest =
+  | {
+      method: "baseline_offset";
+      from: [number, number];
+      to: [number, number];
+      along: number;
+      offset: number;
+      side: "Left" | "Right";
+    }
+  | {
+      method: "triangulation";
+      refs: [[number, number], number][];
+      side: "Left" | "Right" | null;
+    };
+
+export interface HandSolved {
+  position: [number, number];
+  covariance: [[number, number], [number, number]];
+  residuals: number[];
+  worst_normalised: number | null;
+}
+
 export const api = {
   projectCreate: (parent: string, name: string, examinerName: string) =>
     invoke<ProjectInfo>("project_create", { parent, name, examinerName }),
@@ -266,6 +300,13 @@ export const api = {
     invoke<StateView>("cleanup_set_active", { id, active }),
   appInfo: () => invoke<{ version: string; webview: string }>("app_info"),
   thirdPartyNotices: () => invoke<string>("third_party_notices"),
+  diagrams: () => invoke<DiagramRevision[]>("diagrams"),
+  diagramCreate: (name: string, document: Diagram) =>
+    invoke<DiagramRevision>("diagram_create", { name, document }),
+  diagramSave: (diagramId: number, name: string, document: Diagram) =>
+    invoke<DiagramRevision>("diagram_save", { diagramId, name, document }),
+  handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
+    invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),
   registrations: () => invoke<RegistrationRecord[]>("registrations"),
   registrationRun: (params: RegistrationParams) =>

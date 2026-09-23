@@ -1,12 +1,14 @@
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
-import { api, type EvidenceRecord, type ProjectInfo } from "./api";
+import { api, type DiagramRevision, type EvidenceRecord, type ProjectInfo } from "./api";
 import { formatBytes, formatCount, integrityProblems, unitSymbol } from "./format";
 import { AboutDialog } from "./AboutDialog";
 import { ImportDialog } from "./ImportDialog";
 import { ProjectDialog } from "./ProjectDialog";
 import { RegistrationDialog } from "./registration/RegistrationDialog";
+import { DiagramEditor } from "./diagram2d/DiagramEditor";
+import { emptyDiagram } from "./diagram2d/model";
 import { Viewport } from "./viewer3d/Viewport";
 
 const IMPORT_EXTENSIONS = [
@@ -36,6 +38,33 @@ export function App() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // What the main area shows: the 3D scene, or a diagram by id. The diagram list is kept with
+  // the project it was loaded for, so a stale list never shows for another project.
+  const [tab, setTab] = useState<"scene" | number>("scene");
+  const [loaded, setLoaded] = useState<{ root: string; list: DiagramRevision[] } | null>(null);
+  const diagrams = project && loaded?.root === project.root ? loaded.list : [];
+  const setDiagrams = (f: (ds: DiagramRevision[]) => DiagramRevision[]) =>
+    setLoaded((l) => (l ? { ...l, list: f(l.list) } : l));
+  const shown = tab !== "scene" && diagrams.some((d) => d.diagram_id === tab) ? tab : "scene";
+
+  useEffect(() => {
+    if (!project) return;
+    const root = project.root;
+    void api
+      .diagrams()
+      .then((list) => setLoaded({ root, list }))
+      .catch((e) => setNotice(String(e)));
+  }, [project]);
+
+  const newDiagram = async () => {
+    try {
+      const d = await api.diagramCreate(`Diagram ${diagrams.length + 1}`, emptyDiagram());
+      setDiagrams((ds) => [...ds, d]);
+      setTab(d.diagram_id);
+    } catch (e) {
+      setNotice(String(e));
+    }
+  };
   const [verifying, setVerifying] = useState(false);
 
   const startImport = useCallback(async () => {
@@ -117,7 +146,45 @@ export function App() {
         )}
       </aside>
       <main className="main">
-        <Viewport project={project} onNotice={setNotice} />
+        {project && (
+          <nav className="tabs" aria-label="Views">
+            <button
+              className={shown === "scene" ? "tab active" : "tab"}
+              onClick={() => setTab("scene")}
+            >
+              3D scene
+            </button>
+            {diagrams.map((d) => (
+              <button
+                key={d.diagram_id}
+                className={shown === d.diagram_id ? "tab active" : "tab"}
+                onClick={() => setTab(d.diagram_id)}
+              >
+                {d.name}
+              </button>
+            ))}
+            <button className="tab" onClick={() => void newDiagram()}>
+              + New diagram
+            </button>
+          </nav>
+        )}
+        {/* The 3D view stays mounted, so its point clouds don't reload on every switch. */}
+        <div className="main-view" style={{ display: shown === "scene" ? undefined : "none" }}>
+          <Viewport project={project} onNotice={setNotice} />
+        </div>
+        {shown !== "scene" &&
+          diagrams
+            .filter((d) => d.diagram_id === shown)
+            .map((d) => (
+              <DiagramEditor
+                key={d.diagram_id}
+                initial={d}
+                onNotice={setNotice}
+                onSaved={(r) =>
+                  setDiagrams((ds) => ds.map((x) => (x.diagram_id === r.diagram_id ? r : x)))
+                }
+              />
+            ))}
       </main>
 
       {(dialog?.kind === "new" || dialog?.kind === "open") && (
