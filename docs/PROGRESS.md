@@ -210,8 +210,10 @@ Plan (ground truth first, then the tools in order of complexity; the trajectory 
 5. **Camera matching, height and witness perspective.** Before height analysis: person models defined as floor to top of head, standing, without footwear, with proportions scaled from published anthropometric data, cited in `docs/methods`. Camera solve (PnP with distortion) from 6 or more image-to-scan pairs, with the photo overlaid on the scene; subject height by reverse projection with a posable person, with uncertainty from the camera solve; witness perspective at a stated eye height with line-of-sight tests. Method note `docs/methods/camera-height.md`.
 
 Acceptance criteria:
-- [ ] Synthetic multi-surface trajectory recovered within 0.5°.
+- [x] Synthetic multi-surface trajectory recovered within 0.5°: worst 0.066° over 50 generated scenes (three panels, 2 mm picking noise), the stated 95 % cone covering the truth in 94.5 % of 400 runs; in the app, picking the generated scene's defects gave 0.105°.
 - [ ] All crime tools pass the `locus-validate` error bounds (bounds set with the generators, checked in Phase 13).
+
+Status (2026-09-23): items 1–3 done (generators for all three tools; the analysis record, report pattern and trajectory tool). Paused for review of the analysis pattern before bloodstain and camera/height copy it: see docs/phase6-trajectory-review.txt.
 
 ## Blocked
 

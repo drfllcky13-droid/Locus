@@ -1,0 +1,140 @@
+PHASE 6: THE ANALYSIS PATTERN, FOR REVIEW (trajectory tool done)
+2026-09-23
+
+The bloodstain and camera/height tools will copy what is described here. Please review it
+before they are built.
+
+
+1. WHAT'S BUILT
+
+Ground-truth generators (all three tools), `locus-validate gen-* --out DIR`:
+  - gen-trajectory: a straight path through three panels (vehicle door 1 mm at 35°, interior
+    wall 12.5 mm at 22°, wardrobe side 18 mm at 12°). It gives the true entry and exit
+    centres, picks with 2 mm in-plane and 1 mm scan noise, a probe rod with random play
+    within what its hole allows, and the panels as an E57 with the holes cut out.
+  - gen-bloodstain: droplets from a known origin onto the floor and walls, flying either
+    straight or ballistic (gravity plus drag). It gives each stain's true impact and
+    directional angles; the measured ellipse, with edge noise of 0.1 mm + 1.5 % per edge;
+    stain photos at 20 px/mm with three fiducials each; and the surfaces as an E57.
+    Measured impact angles come out about 7° RMS at 20–60° for these 2–5 mm stains, and
+    about 12° at 70–80°, where asin(w/l) is ill-conditioned.
+  - gen-camera: a room with 30 control markers and three standing people (1.63, 1.84 and
+    1.72 m), rendered through two cameras: a CCTV camera with strong barrel distortion and
+    a handheld photo. It gives each marker's true and picked pixels and each person's head
+    and feet pixels, and the room as an E57. The people are built from Drillis & Contini
+    proportions (via Winter 2009) with stature defined as floor to top of head, no
+    footwear. The person model in the app still uses its older ratios; it will be brought
+    in line, with the citation, before height analysis, as you asked.
+
+The analysis framework (shared by all tools):
+  - Schema 6, table `analyses`. A run is one immutable record: tool, method version
+    ("trajectory/1"), name, the run as JSON, the SHA-256 of that JSON, the run it revises
+    (if any), and who ran it and when. The database refuses edits and deletes.
+  - The run JSON holds:
+      inputs        every pick, re-resolved in Rust from stored data, with its uncertainty
+                    and any plane fitted around it
+      parameters    everything the examiner set
+      results       with 1σ uncertainties, plus the fit's diagnostics
+      assumptions   stored as text with the run
+      limitations   likewise
+      summary       one line, for lists and the audit log
+  - Withdrawing a run needs a reason, which is audit-logged. The record stays, marked.
+  - Audit actions: analysis.created, analysis.withdrawn, analysis.reported (with the PDF's
+    path and hash).
+  - Preview vs save: the UI previews live from the backend (same code as the saved run),
+    and nothing is stored until "Save analysis".
+
+The report pattern:
+  - One Typst layout for every tool (templates/analysis.typ). Title block: project, record
+    name and id, method version, record SHA-256, who ran it and when, who printed it and
+    when, app version, and the audit log's head hash.
+  - Then a red "Needs attention" box when anything warrants it: withdrawn, χ² inflation,
+    the fit's cone wider than the drawn cone, or everything resting on one thin surface.
+  - Then the tool's sections, built only from the stored record, so a report can be
+    reprinted any time and says exactly what was stored. Block types: text, key–value
+    pairs, tables, lists, and simple vector figures (plan and side views with a scale
+    bar).
+  - The template computes nothing; every number is formatted in Rust, and tests check the
+    PDF's text against the run.
+  - Trajectory sections: Result, Points used (with residuals), Angles to each surface,
+    Possible muzzle positions (with plan and side figures), Method, Assumptions,
+    Limitations.
+
+The trajectory tool:
+  - Maths: a weighted total-least-squares line in travel order. The direction's
+    covariance is propagated to first order from every picked coordinate. It is inflated
+    by the Birge ratio when the residuals exceed the stated σ (a χ² test), and rod play is
+    added in quadrature. The 95 % cone comes from χ²₂. Bearing and elevation are given
+    with 1σ, plus angles to each surface (impact, horizontal, vertical, with 1σ).
+  - Possible muzzle positions: the centre line and a user-set cone (default ±5°) traced
+    back through a height band above a picked floor, and the band's footprint in plan.
+  - UI (3D view side panel): choose defects or a probe rod, click "Pick the next point"
+    (entry and exit alternate, surfaces are named, σ is set per pick), set the band, cone
+    and floor (the floor can be picked). The preview shows the result, the warnings, each
+    point's residual and the per-surface angles. The path, cone edges and footprint are
+    drawn in 3D. "Save analysis" stores it; the saved list has Report PDF… and
+    Withdraw….
+  - Method note: docs/methods/trajectory.md (formulas, validation, assumptions,
+    limitations, references).
+
+
+2. RESULTS
+
+  Acceptance (0.5°):  the worst of 50 generated scenes was 0.066°.
+  Calibration:        the true direction was inside the stated 95 % cone in 94.5 % of
+                      400 runs.
+  Monte Carlo:        the stated σ of bearing and elevation agrees with the spread of
+                      4,000 repeats within 10 %.
+  In the app:         picking the generated scene's defects on its point cloud gave
+                      0.105°. I clicked 8 mm beside each hole's centre, so the χ² test
+                      (47 on 8 degrees of freedom) widened the uncertainty 2.4×, as it
+                      should.
+  Probe rod:          recovered within its play every time, and the cone always covers
+                      the play.
+
+  Sample reports:
+    E:\Claude\scratch\locus\traj_report.pdf   (from the app, analysis 1)
+    %TEMP%\locus-trajectory.pdf               (from the report test)
+
+
+3. A BUG THIS FOUND (fixed; affects measurements too)
+
+The in-app check picked a wall 1.5 m behind the panel I clicked. Point sprites are capped
+at 8 px, so close up there are gaps between a surface's points. The old pick took
+whichever drawn pixel was nearest the cursor, even when that pixel was a farther surface
+seen through a gap. A pick now prefers the nearest surface in the pick window (within
+1 cm + 2 % of the nearest candidate's depth), then the point nearest the cursor. This
+changes Phase 2 picking behaviour for every tool. It is logged in DECISIONS.md and tested.
+
+
+4. DECISIONS FOR YOU (before bloodstain and height copy the pattern)
+
+  a. Hole centres. A hole's centre has no scan points, so a pick lands on the rim or
+     beside it. Today the examiner states a larger σ for that. The alternative is a
+     "defect centre" helper: click near the hole, the tool fits an ellipse to the rim
+     points in the surface's plane, and it reports the centre with its own uncertainty
+     (it would also give the defect's long axis as a second estimate of direction). Worth
+     adding now, or later?
+
+  b. Conventions for the angles to a surface. Horizontal is + to the right and vertical is
+     + upward, both seen from the shooter's side and measured from the surface's normal.
+     Bearing is clockwise from project +y; elevation is + up. Do these match your lab's
+     reporting, or should the report use another convention (for example, angles from the
+     surface plane rather than from its normal, or compass bearings once a project has
+     true north)?
+
+  c. Two cones. The report shows the fit's 95 % cone and uses a separate examiner-set
+     cone (default ±5°, as the spec says) for muzzle positions, with a warning when the
+     fit's cone is wider. Keep both, or use max(fit, stated)?
+
+  d. Defaults. Height band 0.9–1.8 m above the floor, trace-back range 30 m, pick σ 2 mm
+     (defects) or 1 mm (rod ends), rod play 2°, surface plane radius 5 cm.
+
+  e. Record wording. Assumptions and limitations are stored as text inside each run, so
+     an old record keeps the wording it was made with. Changing that wording, like
+     changing a formula, means a new method version ("trajectory/2").
+
+  f. Report contents. Is anything missing that your reviewers expect? For example: a
+     free-text examiner's note per run, a screenshot of the 3D view, photographs of the
+     defects, or the picks' scan ids and record numbers (they are in the stored record
+     but not printed).
