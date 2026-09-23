@@ -196,7 +196,7 @@ Known limitations (logged at approval, 2026-09-23):
 - **Pitched roofs need rectangular rooms.** Shed, gable and hip roofs are built only on four-cornered rooms square within 0.5°; any other outline gets a flat roof. Hip roofs on arbitrary outlines need a straight skeleton.
 - **Vehicle dimensions must be editable to real values before Phase 7.** Today a vehicle has length, width, height and wheelbase over a generic class profile. Crash reconstruction needs wheelbase, front and rear track, front and rear overhang, overall length and width that match a real vehicle's specification, with the model built from them (wheels placed by track and overhang, not by a class profile). To do at the start of Phase 7.
 
-### Phase 6: Crime analysis tools
+### Phase 6: Crime analysis tools (done 2026-09-23)
 
 Plan (ground truth first, then the tools in order of complexity; the trajectory tool sets the analysis and report pattern the other two follow, and is reviewed before they are built):
 
@@ -221,10 +221,37 @@ Item 5 in detail (2026-09-23):
 Acceptance criteria:
 - [x] Synthetic multi-surface trajectory recovered within 0.5°: worst 0.066° over 50 generated scenes (three panels, 2 mm picking noise), the stated 95 % cone covering the truth in 94.5 % of 400 runs; in the app, picking the generated scene's defects gave 0.105°.
 - [x] Area of origin mean error under 10 cm on clean synthetic data: from the generator's stain photos (alignment, automatic edges, marked tails) 0.6 mm mean over 8 rooms, the truth inside the 95 % region in all 8; in the app, six stains gave 11.5 mm. With hand-measurement noise, 233 mm with the region covering the truth 95 % of the time.
-- [x] Height under 2 cm with a good camera solve: 95 % of errors under 14 mm when the solve states the height to 1 cm (211 of 240 generated cases; mean 6 mm over all), the 95 % interval covering the truth 92 % of the time; in the app, three heights on the CCTV frame within 12 mm.
-- [ ] All crime tools pass the `locus-validate` error bounds (bounds set with the generators, checked in Phase 13).
+- [x] Height under 2 cm with a good camera solve (approved reading: 95 % of errors under 2 cm when the solve states the height to 1 cm, and the stated 95 % interval covering the truth about 95 % of the time over all cases): 95 % of errors under 13 mm (398 of 480 generated cases; mean 6.4 mm over all), coverage 94.6 % with few control points and 94.6 % with many; in the app, three heights on the CCTV frame within 5 mm.
+- [x] All crime tools pass the `locus-validate` bounds (release, heavy tests included, 2026-09-23; Phase 13 re-checks them and regenerates the report on release):
 
-Status (2026-09-23): items 1–4 done and approved. Trajectory review decisions applied (hole-centre fits with the ellipse cross-check, angle conventions, both zones, report additions). Bloodstain review decisions applied: the conventional ray-distance point shown beside the angle fit with the validation comparison and literature, the near-round flag, an optional plan-view convergence of floor stains (separate 2-D result), and four-point perspective correction from the scale's corners. The blank close-ups were a real bug in the eye-dome pass (anything nearer than 1 m drawn as background), now fixed, with a close-up check in the viewer smoke test. Item 5 built: camera matching (staged DLT and Levenberg–Marquardt, four lens models), height by reverse projection with a Monte Carlo and a matched person model, the photo over the 3D scene through the lens, witness perspective with line-of-sight tests, reports; paused for review (docs/phase6-camera-review.txt).
+  | Tool | Result | Bound |
+  |---|---|---|
+  | Trajectory, 3 panels, 2 mm picking noise, 50 scenes | worst 0.066°; 95 % cone covers the truth in 94.5 % of 400 runs; hole-centre fits 0.008° from the truth, 6/6 cross-checks agreeing | 0.5° |
+  | Bloodstain, from the generator's photos, 8 rooms | mean 0.6 mm, worst 1.0 mm; region covers 8/8 (conventional point 4.8 mm, 0/8) | 10 cm mean |
+  | Bloodstain, hand-measurement noise, 40 rooms | mean 233 mm; region covers 95 % (conventional 302 mm, 92 %) | coverage ≈ 95 % |
+  | Bloodstain under gravity (straight-line bias shown) | origin 1.7–2.4 m too high | shown and warned |
+  | Camera and height, 480 cases | above | above |
+
+Status (2026-09-23): items 1–4 done and approved. Trajectory review decisions applied (hole-centre fits with the ellipse cross-check, angle conventions, both zones, report additions). Bloodstain review decisions applied: the conventional ray-distance point shown beside the angle fit with the validation comparison and literature, the near-round flag, an optional plan-view convergence of floor stains (separate 2-D result), and four-point perspective correction from the scale's corners. The blank close-ups were a real bug in the eye-dome pass (anything nearer than 1 m drawn as background), now fixed, with a close-up check in the viewer smoke test. Item 5 built and approved: camera matching (lens model by leave-one-out, pooled parametric bootstrap, planar start), height by reverse projection with several frames reported as a range, the photo over the 3D scene through the lens, witness perspective with line-of-sight tests, reports. Phase 6 done.
+
+### Phase 7: Crash reconstruction tools
+
+Plan (the Phase 6 pattern: pure, tested math in `locus-analysis` with uncertainty, commands that resolve every pick from stored data, an audit-logged analysis record, a PDF report with method, assumptions and limitations, and a method note with references):
+
+1. **Vehicle dimensions (logged at the end of Phase 5).** A vehicle's specification fields: overall length, width and height, wheelbase, front and rear track, front overhang (rear overhang follows: length − wheelbase − front overhang), tyre diameter, and optional mass and centre-of-gravity height for the momentum and energy tools. The model is built from them: wheels placed by track and overhang, not by a class profile. The class presets become starting values. Older scenes load with values derived from their class profile, so nothing stored changes.
+2. **Speed from skid marks.** `v = √(2 μ g d)` with drag factor adjusted for grade (`f = μ ± G` for a grade G, or μ cos θ ± sin θ) and braking efficiency (the fraction of the drag factor the braked wheels provide); several surfaces combined `√(v₁² + v₂² + …)`; mark lengths measured on the cloud (polyline along the mark) or entered. Each input with a range; the result with a Monte Carlo interval and the input ranges' extremes.
+3. **Critical speed from yaw marks.** Radius from chord and middle ordinate `R = C²/(8M) + M/2`, and directly by a least-squares circle fit to points picked along the mark on the cloud (with its uncertainty); `v = √(μ g R)`, optionally with the superelevation (`v = √(g R (μ + e)/(1 − μ e))`).
+4. **Linear momentum (2-D), two vehicles.** Masses, approach and departure angles, departure speeds (from the post-impact skid or roll-out), solved for the two impact speeds; the conditioning (approach angles too close to each other) warned about; a sensitivity table across the input ranges, and a Monte Carlo interval.
+5. **Crush energy (Campbell / CRASH3).** A and B stiffness coefficients user-entered, with source; the crush profile from measured depths (2, 4 or 6 points) or from the point cloud (against the undamaged outline); energy by the CRASH3 integral and the equivalent barrier speed. A bundled coefficient table built from public NHTSA crash-test data is a separate item: it needs the data downloaded (permission first) and its licence and notices (rule 7).
+6. **Volumetric crush comparison (Analyst Plus).** Register a damaged vehicle's scan to an undamaged reference (a second scan or the parametric model), signed deviation map and crush volume, with registration uncertainty.
+7. **EDR.** No proprietary formats. CSV import and a guided entry form mirroring the pre-crash data table (time, speed, throttle, brake, steering, and optional yaw rate and acceleration), stored with its source; a vehicle driven along a scene path from the data, as an animation track for Phase 9.
+8. **Reports and method notes** for each tool (`docs/methods/crash-*.md`), with references.
+
+Acceptance criteria:
+- [ ] Every formula matches hand-worked examples in tests (worked independently here and shown in the tests; published textbook examples are cited, not copied).
+- [ ] Sensitivity tables reproduce known textbook cases.
+
+Status (2026-09-23): planning done; starting item 1.
 
 ## Blocked
 
