@@ -37,6 +37,8 @@ interface Subject {
   head: P2 | null;
   /** The head point was set from a matched person model of this stature. */
   matched: number | null;
+  /** The frame the points are marked on, when not the camera's photo (same fixed camera). */
+  frame: Photo | null;
   /** The person model drawn over the photo: stature (m, as typed), pose and facing. */
   model: string;
   pose: PoseName;
@@ -44,15 +46,16 @@ interface Subject {
 }
 
 const DEFAULT_PARAMS: CameraParameters = {
-  model: "radial2",
+  model: "auto",
   pick_sigma_px: 1,
   point_sigma: 0,
   floor_z: 0,
-  draws: 2000,
+  draws: 1000,
   seed: 1,
 };
 
 const LENSES: [LensModel, string][] = [
+  ["auto", "Automatic (leave-one-out)"],
   ["pinhole", "Focal length only"],
   ["radial1", "Focal length, k1"],
   ["radial2", "Focal length, k1, k2"],
@@ -98,6 +101,7 @@ function request(
         feet_px: s.feet!,
         head_px: s.head!,
         matched_model: s.matched,
+        frame: s.frame?.evidence_id ?? null,
       })),
   };
 }
@@ -120,7 +124,7 @@ function cameraOverlay(run: CameraRun, subjects: Subject[], origin: V3): THREE.G
   g.name = "camera";
   const rel = (p: V3) => new THREE.Vector3(p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]);
   run.heights.forEach((h, k) => {
-    const s = subjects.find((x) => x.label === h.input.label) ?? subjects[k];
+    const s = subjects.filter((x) => x.feet && x.head)[k];
     const height = Number(s?.model) > 0 ? Number(s.model) : h.height.value;
     const tris = personTriangles(height, s?.pose ?? "standing", s?.heading ?? 0, h.feet);
     const pos = tris.flatMap((t) => t.flatMap((p) => rel(p).toArray()));
@@ -223,7 +227,10 @@ export function CameraPanel({
     drawn?.photo?.file ?? photo?.file ?? "",
     drawn?.photo?.sha256 ?? photo?.sha256 ?? "",
   );
-  const editorUrl = useUnderlayUrl(photo?.file ?? "", photo?.sha256 ?? "");
+  // The editor shows the camera's photo, or the active subject's own frame while marking it.
+  const onFrame = mode !== "pairs" ? (subjects[active]?.frame ?? null) : null;
+  const shownPhoto = onFrame ?? photo;
+  const editorUrl = useUnderlayUrl(shownPhoto?.file ?? "", shownPhoto?.sha256 ?? "");
   const image = useImage(editorUrl);
 
   // The 3D overlay, and looking through the camera.
@@ -251,7 +258,8 @@ export function CameraPanel({
   }, []);
 
   const click = (px: P2) => {
-    if (!photo || px[0] < 0 || px[1] < 0 || px[0] > photo.width || px[1] > photo.height) return;
+    const shown = shownPhoto;
+    if (!shown || px[0] < 0 || px[1] < 0 || px[0] > shown.width || px[1] > shown.height) return;
     if (mode === "pairs") {
       const i = pairs.length;
       setPairs((ps) => [...ps, { px, pick: null }]);
@@ -269,7 +277,7 @@ export function CameraPanel({
     if (!cam || !preview) return [];
     const rmax = maxRadius(cam);
     return preview.heights.map((h, k) => {
-      const s = subjects.find((x) => x.label === h.input.label) ?? subjects[k];
+      const s = subjects.filter((x) => x.feet && x.head)[k];
       const height = Number(s?.model) > 0 ? Number(s.model) : h.height.value;
       return personTriangles(height, s?.pose ?? "standing", s?.heading ?? 0, h.feet)
         .map((t) => t.map((p) => project(cam, p, rmax)))
@@ -299,8 +307,9 @@ export function CameraPanel({
           });
           ctx.fill();
         }
-      // Residuals, ten times longer.
+      // Residuals, ten times longer (on the camera's photo only).
       ctx.strokeStyle = "#ff453a";
+      if (onFrame) return;
       ctx.lineWidth = 2;
       const done = pairs.filter((p) => p.pick);
       preview.solve.residuals.forEach((d, i) => {
@@ -326,12 +335,18 @@ export function CameraPanel({
         }
       });
     },
-    [cam, preview, points, models, pairs, subjects],
+    [cam, preview, points, models, pairs, subjects, onFrame],
   );
+
+  /** Subject i's result: the heights come in the order of the subjects with both points. */
+  const heightOf = (i: number) =>
+    subjects[i]?.feet && subjects[i]?.head
+      ? preview?.heights[subjects.slice(0, i).filter((x) => x.feet && x.head).length]
+      : undefined;
 
   const matchModel = (i: number) => {
     const s = subjects[i];
-    const h = preview?.heights.find((x) => x.input.label === s.label);
+    const h = heightOf(i);
     const stature = Number(s.model);
     if (!cam || !h || !(stature > 0)) return;
     const top = project(cam, [h.feet[0], h.feet[1], h.feet[2] + stature]);
@@ -458,7 +473,7 @@ export function CameraPanel({
 
           <h3>Subjects</h3>
           {subjects.map((s, i) => {
-            const h = preview?.heights.find((x) => x.input.label === s.label);
+            const h = heightOf(i);
             return (
               <fieldset key={i} className={i === active ? "active" : ""}>
                 <label>
@@ -467,6 +482,29 @@ export function CameraPanel({
                     value={s.label}
                     onChange={(e) => patchSubject(i, { label: e.target.value })}
                   />
+                </label>
+                <label>
+                  Frame
+                  <select
+                    value={s.frame?.evidence_id ?? ""}
+                    onChange={(e) =>
+                      patchSubject(i, {
+                        frame: photos.find((p) => p.evidence_id === Number(e.target.value)) ?? null,
+                        feet: null,
+                        head: null,
+                        matched: null,
+                      })
+                    }
+                  >
+                    <option value="">The camera&apos;s photo</option>
+                    {photos
+                      .filter((p) => p.evidence_id !== photo?.evidence_id)
+                      .map((p) => (
+                        <option key={p.evidence_id} value={p.evidence_id}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>
                 </label>
                 <div className="buttons">
                   <button
@@ -480,6 +518,17 @@ export function CameraPanel({
                     onClick={() => (setActive(i), setMode("head"), setEditing(true))}
                   >
                     Mark head{s.head ? (s.matched ? " (model)" : " ✓") : ""}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSubjects((ss) => [
+                        ...ss,
+                        { ...s, feet: null, head: null, matched: null, frame: null },
+                      ]);
+                      setActive(subjects.length);
+                    }}
+                  >
+                    Measure in another frame
                   </button>
                   <button onClick={() => setSubjects((ss) => ss.filter((_, j) => j !== i))}>
                     Remove
@@ -539,6 +588,7 @@ export function CameraPanel({
                   feet: null,
                   head: null,
                   matched: null,
+                  frame: null,
                   model: "",
                   pose: "standing",
                   heading: 0,
@@ -568,6 +618,20 @@ export function CameraPanel({
                 {preview.pairs.length} pairs, {preview.solve.rms_px.toFixed(2)} px RMS; χ²{" "}
                 {preview.solve.chi2.toFixed(1)} on {preview.solve.dof}
               </div>
+              {preview.solve.selection && (
+                <div className="muted">Lens: {preview.solve.selection.reason}.</div>
+              )}
+              {preview.across_frames.map((a) => (
+                <div key={a.label}>
+                  {a.label}:{" "}
+                  <strong>
+                    {a.min.toFixed(3)}–{a.max.toFixed(3)} m
+                  </strong>{" "}
+                  <span className="muted">
+                    over {a.frames} frames (mean {a.mean.toFixed(3)} m)
+                  </span>
+                </div>
+              ))}
               {preview.solve.warnings.map((w, i) => (
                 <p key={i} className="error">
                   {w}
@@ -615,7 +679,7 @@ export function CameraPanel({
       {open && editing && photo && (
         <div className="stain-editor">
           <div className="stain-editor-bar">
-            <strong>{photo.name}</strong>
+            <strong>{shownPhoto?.name}</strong>
             {(
               [
                 ["pairs", "Point pairs"],
@@ -650,7 +714,7 @@ export function CameraPanel({
             <PhotoEditor
               image={image}
               marks={{
-                pairs: pairs.map((q) => ({ px: q.px, done: q.pick !== null })),
+                pairs: onFrame ? [] : pairs.map((q) => ({ px: q.px, done: q.pick !== null })),
                 corners: [],
                 edges: [],
                 seed: null,

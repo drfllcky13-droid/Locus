@@ -544,7 +544,7 @@ export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
 export type CameraRecord = Extract<AnalysisRecord, { tool: "camera" }>;
 export type WitnessRecord = Extract<AnalysisRecord, { tool: "witness" }>;
 
-export type LensModel = "pinhole" | "radial1" | "radial2" | "full";
+export type LensModel = "pinhole" | "radial1" | "radial2" | "full" | "auto";
 
 /** A solved camera (locus-analysis camera::Camera): rows of `rotation` are its right, down
  * and forward axes in the project frame. */
@@ -573,6 +573,8 @@ export interface HeightInput {
   feet_px: [number, number];
   head_px: [number, number];
   matched_model: number | null;
+  /** The frame the points were marked on (evidence id), when not the camera's photo. */
+  frame: number | null;
 }
 
 export interface CameraRequest {
@@ -590,6 +592,12 @@ export interface CameraRun {
   parameters: CameraParameters;
   solve: {
     model: LensModel;
+    selection: {
+      reason: string;
+      pooled: LensModel[];
+      scores: { model: LensModel; held_out_rms: number | null; fit_rms: number | null }[];
+    } | null;
+    planar: { rms: number; max_off: number; extent: number; f_assumed: boolean } | null;
     camera: SolvedCamera;
     position_sigma: P3;
     angles_sigma: P3;
@@ -610,6 +618,16 @@ export interface CameraRun {
     feet: P3;
     head: P3;
     miss: number;
+    frame: { evidence_id: number; name: string } | null;
+  }[];
+  across_frames: {
+    label: string;
+    frames: number;
+    min: number;
+    max: number;
+    mean: number;
+    spread: number;
+    interval95: [number, number];
   }[];
   summary: string;
 }
