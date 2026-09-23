@@ -1,0 +1,128 @@
+Phase 6: trajectory decisions applied, bloodstain area of origin built. For review.
+2026-09-23
+
+1. TRAJECTORY DECISIONS (applied)
+
+  - Hole-centre helper: an ellipse is fitted to the scan points round each hole's rim.
+    - The centre is reported with its uncertainty. The ellipse's impact angle is reported
+      as an independent cross-check, and a disagreement is flagged.
+    - A manual centre (the clicked point) needs a reason, which is stored and printed.
+    - In the app, picking the generated scene's six defects now gives 0.008° from the
+      truth; it was 0.105° with the clicked points themselves.
+  - The cross-check tests agreement on the axis ratio b/a against the sine of the path's
+    impact angle, not on the angles themselves. The in-app check found why: with only
+    about 15 rim points on a 9 mm hole, the angle's error is lopsided near 90°. An angle
+    test flagged a hole whose ratio was 1.6σ from expected. The report explains this, and
+    that the ellipse angle is weak evidence for small holes.
+  - Angles are reported two ways, each convention a per-run setting printed in the method
+    section:
+    - surface-relative: vertical up or down from level, and horizontal left or right of
+      perpendicular, viewed facing the surface;
+    - scene-relative: a bearing from project north or a named axis.
+  - Both cones are kept:
+    - "Measurement uncertainty (95 %, computed)", in blue;
+    - "Examiner-defined zone (±X°, analyst judgment)", in orange.
+    They use the same colours in the plan and elevation figures and in the 3D view.
+  - Report additions:
+    - plan and elevation figures;
+    - a points table with centre method, coordinates, and the source scan point (scan,
+      record, revision);
+    - hole fits with the cross-check, and manual centres with their reasons;
+    - defect photos, hash-checked;
+    - the case number (a project setting, on every analysis report);
+    - sign-off lines for the examiner and the technical review.
+
+2. BLOODSTAIN AREA OF ORIGIN (built)
+
+  Workflow, per stain, in an editor beside the 3D view:
+  - Choose the stain's photo from the image evidence.
+  - Point pairs: click a pixel, then the same point on the scan. Two pairs place the photo
+    on the surface; three or more check it with residuals.
+  - Opacity slider: shows the photo on the scan.
+  - Edge: automatic (seed click plus an adjustable threshold) or clicked points.
+  - Tail: click the tail tip.
+  - Exclude, with a reason.
+
+  The backend:
+  - resolves every pick from stored data;
+  - fits each ellipse, with the tail trimmed;
+  - computes impact asin(w/l) and direction, with 1σ;
+  - fits the origin, with a residual for each stain, χ², and a bootstrap 95 % ellipsoid.
+
+  The report contains:
+  - the straight-line caveat;
+  - the origin, its height and the 95 % region;
+  - plan and elevation figures;
+  - every stain's angles, whether it was used, and its residual;
+  - the photos, alignments and edges, with hashes and scan points;
+  - method, assumptions, limitations and sign-off.
+
+  Method note: docs/methods/bloodstain.md.
+
+  Validation (Phase 6 criterion: mean error under 10 cm on clean synthetic data):
+
+    Stain photos (generator), alignment + automatic edge + tail, 8 rooms
+      mean 0.6 mm, worst 1.0 mm; truth inside the 95 % region 8 of 8
+    In the app, six photos aligned by clicking fiducials on the cloud
+      11.5 mm; region 8 x 5 x 3 cm; chi2 0.4 on 9
+    Hand-measurement noise (0.1 mm + 1.5 % per edge; small, near-round stains), 40 rooms
+      mean 233 mm; truth inside the region 95 % of the time
+    Under gravity, with every stain included
+      the straight-line origin is 1.7-2.4 m too high
+
+3. WHERE I DEPARTED FROM THE SPEC (please confirm or redirect)
+
+  a. The origin is fitted on the stains' measured angles, not on the rays' perpendicular
+     distances.
+     - What the spec says: the least-squares point on perpendicular distances.
+     - What it is now: the point whose paths best match each stain's impact angle and
+       direction, weighted by their 1σ. The perpendicular-distance point is only the
+       starting value.
+     - Why: a direction error makes a ray miss the true origin on one side only.
+     - Effect in validation: the distance-based point was 12-32 cm off, with its region
+       covering the truth 0-82 % of the time.
+
+  b. "Upward-moving" is applied with its uncertainty.
+     - A wall stain is used only if its direction is upward by more than 2σ. Floor,
+       downward and uncertain stains are left out unless included with a reason.
+     - With hand-measurement noise, 14 % of the stains that read as upward were really
+       moving down. They pulled the origin about 20 cm low, and no resampling can see
+       that.
+     - The analyst's mark is the tail they click.
+
+  c. The 95 % region uses a Hotelling T² radius, not chi-square, because the covariance
+     comes from the same stains. With 30 stains, chi-square covered the truth 88 % of the
+     time. At least 4 stains are required.
+
+  d. The automatic edge's systematic error (0.2 % per axis, 0.1° on orientation) was
+     measured on the generator's photos, which are clean, synthetic and 20 px/mm.
+     -> It should be re-measured on real casework photos before release.
+
+  e. Photos are placed by a similarity (no perspective), so they must be taken square on,
+     with a scale in the surface's plane.
+     -> If your lab photographs stains at an angle, I can add a four-point perspective
+        (homography) option.
+
+  f. Floor stains are never "upward", so they are excluded by default.
+     -> If you use floor stains for a 2-D area of convergence, say so. That would be a
+        separate, plan-view result.
+
+4. THINGS FOR YOU
+
+  - CI did not run on the last three pushes (d65c252 onward). GitHub refused to start
+    the jobs: "recent account payments have failed or your spending limit needs to be
+    increased". It needs fixing in Settings > Billing & plans. All checks pass locally:
+    - workspace tests and clippy;
+    - frontend lint, types and tests;
+    - the heavy bloodstain validations.
+    The Playwright viewer smoke test only runs on CI.
+  - Please eyeball the photo-on-scan overlay once. The overlay geometry comes from the
+    same alignment that put every fiducial within 1e-10 m, and the rays and origin render
+    in the overview. My scripted screenshot at close range showed a blank 3D view, even
+    at poses where picking worked. It looks like a close-range viewer or screenshot quirk
+    after scripted camera moves, not the overlay. I have not pinned it down.
+
+5. NEXT
+
+  Camera matching, height and witness perspective. First step, as you asked: align the
+  app's person model with the Drillis & Contini proportions and cite them.
