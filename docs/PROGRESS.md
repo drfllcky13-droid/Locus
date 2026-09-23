@@ -187,8 +187,10 @@ Plan (the scene model and extrusion first: the alignment criterion is about them
 8. **Method note** (`docs/methods/scene3d.md`): extrusion, roofs, surface snapping, sun position.
 
 Acceptance criteria:
-- [ ] A 2D diagram and its 3D extrusion align to within 1 mm.
-- [ ] Models can be snapped to point cloud surfaces.
+- [x] A 2D diagram and its 3D extrusion align to within 1 mm: the extrusion is built by the plan's own geometry functions, and tests put every wall vertex on the plan's lines to 1e-9 m (an irregular room with a door and a window, in a frame with coordinates near 431,200 / 5,390,110 m), road and shoulder edges on the plan's road lines to 1e-9 m, markings centred on their lines to 0.1 mm, and the f32 render-origin round trip within 1 µm.
+- [x] Models can be snapped to point cloud surfaces: a plane fitted to the cloud's points around the pick (tests: within 1 mm of the true plane and 0.5° of its normal, on a floor and a tilted plane). In the app, a car snapped onto the synthetic room's floor from a fit to 35 points (RMS 0.9 mm), stored with the model in the scene revision.
+
+Plan status (2026-09-23): items 1–8 are built. Scenes are stored as revisions (schema 5). The asset library (vehicles by class, posable people, furniture, generic weapons, evidence tents) is generated from dimensions and tested against them. Roofs: flat on any outline; shed, gable and hip on rectangles. The model gizmo moves and turns placed models. Materials use presets, and there can be several lights. The NOAA sun is tested against the NREL SPA example and casts shadows. Checked in the app: a diagram's room and road extruded, a roof added, and a car snapped to the cloud. Method note: `docs/methods/scene3d.md`.
 
 ## Blocked
 
