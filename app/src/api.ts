@@ -4,6 +4,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type { PickHit, SceneData } from "./viewer3d/pointcloud";
 import type { MeasurementRecord } from "./viewer3d/measureFormat";
 import type { Diagram } from "./diagram2d/model";
+import type { SceneDoc } from "./scene3d/model";
 
 export type LinearUnit = "meter" | "centimeter" | "millimeter" | "foot" | "us_survey_foot" | "inch";
 
@@ -239,16 +240,20 @@ export interface RegistrationRecord {
   created_by: string;
 }
 
-export interface DiagramRevision {
+/** A stored document's revision (a diagram, or a 3D scene). */
+export interface Revision<D> {
   document_id: number;
   revision_id: number;
   number: number;
   name: string;
-  document: Diagram;
+  document: D;
   sha256: string;
   created_at: string;
   created_by: string;
 }
+
+export type DiagramRevision = Revision<Diagram>;
+export type SceneRevision = Revision<SceneDoc>;
 
 export type HandRequest =
   | {
@@ -338,6 +343,31 @@ export const api = {
       points: number;
     }>("underlay_slice", { zMin, zMax, resolution }),
   underlayCalibrated: (details: unknown) => invoke<void>("underlay_calibrated", { details }),
+  scenes: () => invoke<SceneRevision[]>("scenes"),
+  sceneCreate: (name: string, document: SceneDoc) =>
+    invoke<SceneRevision>("scene_create", { name, document }),
+  sceneSave: (sceneId: number, name: string, document: SceneDoc) =>
+    invoke<SceneRevision>("scene_save", { sceneId, name, document }),
+  diagramRevision: (revisionId: number) =>
+    invoke<DiagramRevision>("diagram_revision", { revisionId }),
+  /** The surface around a picked point (plane fit), its normal facing `toward`. */
+  surfaceAt: (pick: PickHit, radius: number, toward: [number, number, number]) =>
+    invoke<{
+      point: [number, number, number];
+      normal: [number, number, number];
+      rms: number;
+      max_abs: number;
+      points: number;
+    }>("surface_at", { pick, radius, toward }),
+  sunPosition: (lat: number, lon: number, unix: number) =>
+    invoke<{
+      azimuth: number;
+      elevation: number;
+      apparent_elevation: number;
+      declination: number;
+      equation_of_time: number;
+      uncertainty: number;
+    }>("sun_position", { lat, lon, unix }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
     invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),

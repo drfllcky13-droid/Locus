@@ -40,6 +40,8 @@ export function ScenePanel(props: {
   runCleanup: (r: CleanupRequest) => Promise<void>;
   setState: (s: StateView) => void;
   onNotice: (m: string | null) => void;
+  /** More sections at the end of the panel (the 3D scene builder). */
+  children?: React.ReactNode;
 }) {
   const { scene, state, settings, setSettings } = props;
   const [k, setK] = useState(8);
@@ -334,6 +336,7 @@ export function ScenePanel(props: {
       ) : (
         <p className="muted">No measurements yet.</p>
       )}
+      {props.children}
     </aside>
   );
 }

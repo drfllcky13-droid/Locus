@@ -38,6 +38,12 @@ export class Engine {
   private clipBox: THREE.Mesh;
   private grid: THREE.Object3D;
   private gizmo: TransformControls;
+  /** Built 3D scene objects (scene3d/render.ts), and the gizmo that moves a placed model. */
+  private built: THREE.Group | null = null;
+  private modelGizmo: TransformControls;
+  private moving: string | null = null;
+  /** A placed model was moved with the gizmo: its new model-to-project matrix (f64). */
+  onModelMoved: ((id: string, matrix: number[]) => void) | null = null;
   private dirty = true;
   private raf = 0;
   private lastFrame = 0;
@@ -97,6 +103,25 @@ export class Engine {
     });
     this.gizmo.addEventListener("change", () => this.requestRender());
     this.scene.add(this.gizmo.getHelper());
+    this.modelGizmo = new TransformControls(camera, this.renderer.domElement);
+    this.modelGizmo.addEventListener("dragging-changed", (e) => {
+      this.controls.enabled = !e.value;
+      // Report the move once, when the drag ends.
+      const obj = this.modelGizmo.object;
+      if (!e.value && obj && this.moving) {
+        obj.updateMatrix();
+        const m = obj.matrix.toArray();
+        const o = this.origin;
+        m[12] += o[0];
+        m[13] += o[1];
+        m[14] += o[2];
+        this.onModelMoved?.(this.moving, m);
+      }
+    });
+    this.modelGizmo.addEventListener("change", () => this.requestRender());
+    this.scene.add(this.modelGizmo.getHelper());
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.renderer.domElement.addEventListener("pointermove", (e) => {
       const r = this.renderer.domElement.getBoundingClientRect();
@@ -156,6 +181,57 @@ export class Engine {
     this.controls.update();
     this.clipBox.scale.setScalar(r * 0.5);
     this.updateClipUniforms();
+  }
+
+  // ---------- built scene ----------
+
+  /** Replace the built 3D objects (already relative to `origin`). */
+  setBuilt(group: THREE.Group | null) {
+    const moving = this.moving;
+    this.attachModel(null, "translate");
+    if (this.built) {
+      this.scene.remove(this.built);
+      this.built.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          for (const m of [o.material].flat()) {
+            (m as THREE.MeshStandardMaterial).map?.dispose();
+            m.dispose();
+          }
+        }
+      });
+    }
+    this.built = group;
+    if (group) this.scene.add(group);
+    if (moving) this.attachModel(moving, this.modelGizmo.mode as "translate" | "rotate");
+    this.requestRender();
+  }
+
+  /** Put the move gizmo on a placed model (null to remove it). */
+  attachModel(id: string | null, mode: "translate" | "rotate") {
+    this.moving = null;
+    this.modelGizmo.detach();
+    const g = id ? this.built?.children.find((c) => c.userData.sceneObject === id) : undefined;
+    if (g) {
+      // The gizmo edits position and rotation; take them from the stored matrix.
+      g.matrix.decompose(g.position, g.quaternion, g.scale);
+      g.matrixAutoUpdate = true;
+      this.modelGizmo.attach(g);
+      this.modelGizmo.setMode(mode);
+      this.moving = id;
+    }
+    this.requestRender();
+  }
+
+  /** The camera's position and the orbit target in the project frame (f64). */
+  cameraProject(): { eye: [number, number, number]; target: [number, number, number] } {
+    const o = this.origin;
+    const p = this.camera.position;
+    const t = this.controls.target;
+    return {
+      eye: [p.x + o[0], p.y + o[1], p.z + o[2]],
+      target: [t.x + o[0], t.y + o[1], t.z + o[2]],
+    };
   }
 
   get origin(): [number, number, number] {
@@ -444,6 +520,8 @@ export class Engine {
     cancelAnimationFrame(this.raf);
     this.layer?.dispose();
     this.gizmo.dispose();
+    this.modelGizmo.dispose();
+    this.setBuilt(null);
     this.controls.dispose();
     this.edl.dispose();
     this.renderer.dispose();

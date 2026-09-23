@@ -6,6 +6,7 @@ import { Engine, type ClipMode, type Stats } from "./engine";
 import { TOOL_POINTS, type MeasurementRecord } from "./measureFormat";
 import type { ColorMode, PickHit, SceneData } from "./pointcloud";
 import { ScenePanel, type BuildStatus } from "./ScenePanel";
+import { SceneBuilder } from "../scene3d/SceneBuilder";
 
 export type Tool = "orbit" | MeasurementRecord["kind"] | "lasso";
 
@@ -48,6 +49,11 @@ export function Viewport({
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState<string | null>(null);
   const [lasso, setLasso] = useState<[number, number][]>([]);
+  /** The scene builder waiting for a click on the cloud (snapping, picking a base). */
+  const [pickRequest, setPickRequest] = useState<{
+    hint: string;
+    then: (hit: PickHit) => void;
+  } | null>(null);
   const [lassoConfirm, setLassoConfirm] = useState<{
     polygon: [number, number][];
     visible: number;
@@ -150,6 +156,8 @@ export function Viewport({
 
   useEffect(() => engineRef.current?.setMarkers(picks.map((p) => p.at.project)), [picks]);
 
+  const getEngine = useCallback(() => engineRef.current, []);
+
   const resetTool = useCallback(() => {
     setPicks([]);
     setPlaneDone(false);
@@ -177,6 +185,16 @@ export function Viewport({
   const onClick = useCallback(
     async (x: number, y: number) => {
       const e = engineRef.current;
+      if (e && pickRequest) {
+        const hit = e.pick(x, y);
+        if (!hit || "refused" in hit) {
+          onNotice(hit ? hit.refused : "No point under the cursor. Zoom in, or move closer.");
+          return;
+        }
+        setPickRequest(null);
+        pickRequest.then(hit);
+        return;
+      }
       if (!e || tool === "orbit" || tool === "lasso") return;
       const hit = e.pick(x, y);
       if (!hit) {
@@ -200,14 +218,17 @@ export function Viewport({
       if (need.exact && next.length === need.exact) void finish(tool, next);
       if (tool === "height" && planeDone) void finish(tool, next);
     },
-    [tool, picks, planeDone, finish, onNotice],
+    [tool, picks, planeDone, finish, onNotice, pickRequest],
   );
 
   // Keyboard: Enter completes open-ended tools, Escape cancels, Ctrl+Z / Ctrl+Y undo cleanup.
   useEffect(() => {
     const onKey = async (ev: KeyboardEvent) => {
       if (ev.target instanceof HTMLInputElement) return;
-      if (ev.key === "Escape") resetTool();
+      if (ev.key === "Escape") {
+        resetTool();
+        setPickRequest(null);
+      }
       if (ev.key === "Enter" && tool === "area" && picks.length >= 3) void finish("area", picks);
       if (ev.key === "Enter" && tool === "height" && picks.length >= 3 && !planeDone)
         setPlaneDone(true);
@@ -289,8 +310,9 @@ export function Viewport({
     }
   };
 
-  const hint =
-    tool === "orbit"
+  const hint = pickRequest
+    ? `${pickRequest.hint} Esc cancels.`
+    : tool === "orbit"
       ? null
       : tool === "lasso"
         ? "Drag around the points to delete. Undo with Ctrl+Z."
@@ -379,7 +401,18 @@ export function Viewport({
           runCleanup={runCleanup}
           setState={setState}
           onNotice={onNotice}
-        />
+        >
+          <SceneBuilder
+            key={project.root}
+            engine={getEngine}
+            origin={shownScene?.origin.join() ?? ""}
+            requestPick={(hint, then) => {
+              setTool("orbit");
+              setPickRequest({ hint, then });
+            }}
+            onNotice={onNotice}
+          />
+        </ScenePanel>
       )}
     </div>
   );
