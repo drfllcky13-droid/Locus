@@ -3,6 +3,8 @@ import {
   FURNITURE,
   POSES,
   STATURE,
+  vehicleProblem,
+  vehicleSpec,
   VEHICLES,
   WEAPONS,
   bounds,
@@ -34,6 +36,44 @@ describe("asset library", () => {
       expect(s.lo[0] + s.hi[0]).toBeCloseTo(0, 2);
     },
   );
+
+  it("places a vehicle's wheels by its specification", () => {
+    const a = {
+      type: "vehicle" as const,
+      cls: "car" as const,
+      length: 4.9,
+      width: 1.85,
+      height: 1.45,
+      wheelbase: 2.85,
+      frontOverhang: 0.95,
+      trackFront: 1.58,
+      trackRear: 1.56,
+      tyreDiameter: 0.66,
+    };
+    const tyre = build(a).tyre!;
+    const xs = tyre.positions.filter((_, i) => i % 3 === 0);
+    const ys = tyre.positions.filter((_, i) => i % 3 === 1);
+    const zs = tyre.positions.filter((_, i) => i % 3 === 2);
+    const front = 4.9 / 2 - 0.95;
+    // Along the car: the front axle plus a tyre radius, the rear axle minus one.
+    expect(Math.max(...xs)).toBeCloseTo(front + 0.33, 6);
+    expect(Math.min(...xs)).toBeCloseTo(front - 2.85 - 0.33, 6);
+    // Across: the wider (front) track plus half a tyre's width.
+    expect(Math.max(...ys)).toBeCloseTo(1.58 / 2 + 0.13, 6);
+    expect(Math.max(...zs)).toBeCloseTo(0.66, 6);
+    expect(vehicleSpec(a).rearOverhang).toBeCloseTo(4.9 - 2.85 - 0.95, 12);
+    expect(vehicleProblem(a)).toBeNull();
+    expect(vehicleProblem({ ...a, frontOverhang: 2.2 })).toMatch(/length/);
+    expect(vehicleProblem({ ...a, trackFront: 1.8 })).toMatch(/width/);
+  });
+
+  it("derives a missing specification from the class, as older scenes were built", () => {
+    const a = { type: "vehicle" as const, cls: "suv" as const, ...VEHICLES.suv };
+    const v = vehicleSpec(a);
+    expect(v.frontOverhang).toBeCloseTo((4.8 - 2.85) / 2, 12);
+    expect(v.rearOverhang).toBeCloseTo(v.frontOverhang, 12);
+    expect(v.trackFront).toBeCloseTo(1.95 - 0.3, 12);
+  });
 
   it("stands a person exactly as tall as asked, and lays them down", () => {
     const standing = size(build({ type: "person", height: 1.78, pose: POSES.standing }));

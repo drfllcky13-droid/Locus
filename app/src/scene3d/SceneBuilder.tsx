@@ -12,6 +12,8 @@ import {
   FURNITURE,
   POSES,
   VEHICLES,
+  vehicleProblem,
+  vehicleSpec,
   WEAPONS,
   type Asset,
   type FurnitureItem,
@@ -748,7 +750,13 @@ function ModelEditor({
               value={a.cls}
               onChange={(e) => {
                 const cls = e.target.value as VehicleClass;
-                setAsset({ ...a, cls, ...VEHICLES[cls] });
+                // A new class starts from its preset; the specification fields go back to
+                // the class's derived values.
+                setAsset({
+                  type: "vehicle",
+                  cls,
+                  ...VEHICLES[cls],
+                });
               }}
             >
               {Object.keys(VEHICLES).map((c) => (
@@ -765,6 +773,9 @@ function ModelEditor({
             "Wheelbase (m)",
             a.wheelbase,
             (wheelbase) => wheelbase > 0 && wheelbase < a.length && setAsset({ ...a, wheelbase }),
+          )}
+          {a.cls !== "motorcycle" && a.cls !== "bicycle" && (
+            <VehicleSpecFields a={a} setAsset={setAsset} />
           )}
         </>
       )}
@@ -985,6 +996,60 @@ function LightEditor({
         )}
       {l.type === "point" &&
         num("Range (m, 0 = unlimited)", l.range, (range) => range >= 0 && set({ range }), 1)}
+    </>
+  );
+}
+
+/** A four-wheeled vehicle's specification: entered values replace the class's derived ones
+ * (shown until then), and the model is rebuilt from them. */
+function VehicleSpecFields({
+  a,
+  setAsset,
+}: {
+  a: Extract<Asset, { type: "vehicle" }>;
+  setAsset: (a: Asset) => void;
+}) {
+  const v = vehicleSpec(a);
+  const problem = vehicleProblem(a);
+  const field = (
+    label: string,
+    key: "frontOverhang" | "trackFront" | "trackRear" | "tyreDiameter" | "mass" | "cgHeight",
+    shown: number | null,
+    step = 0.01,
+  ) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        step={step}
+        placeholder={shown === null ? "not entered" : undefined}
+        value={a[key] ?? (shown === null ? "" : Number(shown.toFixed(4)))}
+        className={a[key] === undefined ? "derived" : ""}
+        onChange={(e) =>
+          setAsset({
+            ...a,
+            [key]: Number.isFinite(e.target.valueAsNumber) ? e.target.valueAsNumber : undefined,
+          })
+        }
+      />
+    </label>
+  );
+  return (
+    <>
+      {field("Front overhang (m)", "frontOverhang", v.frontOverhang)}
+      <p className="muted">
+        Rear overhang {v.rearOverhang.toFixed(3)} m (length − wheelbase − front overhang)
+      </p>
+      {field("Front track (m)", "trackFront", v.trackFront)}
+      {field("Rear track (m)", "trackRear", v.trackRear)}
+      {field("Tyre diameter (m)", "tyreDiameter", v.tyreDiameter)}
+      {field("Mass (kg)", "mass", v.mass, 10)}
+      {field("Centre of gravity height (m)", "cgHeight", v.cgHeight)}
+      {problem && <p className="error">{problem}</p>}
+      <p className="muted">
+        Enter the vehicle&apos;s specification for crash reconstruction. Values in grey are derived
+        from the class until entered.
+      </p>
     </>
   );
 }

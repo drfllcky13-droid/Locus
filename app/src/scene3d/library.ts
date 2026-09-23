@@ -36,6 +36,14 @@ export type Asset =
       width: number;
       height: number;
       wheelbase: number;
+      /** A real vehicle's specification (m, kg). Missing (older scenes, or not yet entered):
+       * derived from the class as the model always was; see `vehicleSpec`. */
+      frontOverhang?: number;
+      trackFront?: number;
+      trackRear?: number;
+      tyreDiameter?: number;
+      mass?: number;
+      cgHeight?: number;
     }
   | { type: "person"; height: number; pose: Pose }
   | { type: "furniture"; item: FurnitureItem; length: number; width: number; height: number }
@@ -227,6 +235,45 @@ const mesh = (): Mesh => ({ positions: [], indices: [] });
 
 // ---------- vehicles ----------
 
+/** Tyre width (m) of a four-wheeled model. */
+const TYRE_WIDTH = 0.26;
+
+/**
+ * A vehicle's specification with every dimension filled in: the entered values, else the ones
+ * derived from its class as the model always was (axles centred, tracks 0.3 m inside the
+ * width, tyres 0.44 × height up to 0.9 m). The rear overhang follows from the others.
+ */
+export function vehicleSpec(a: Extract<Asset, { type: "vehicle" }>) {
+  const frontOverhang = a.frontOverhang ?? (a.length - a.wheelbase) / 2;
+  const track = Math.max(0.3, a.width - 0.3);
+  return {
+    frontOverhang,
+    rearOverhang: a.length - a.wheelbase - frontOverhang,
+    trackFront: a.trackFront ?? track,
+    trackRear: a.trackRear ?? track,
+    tyreDiameter: a.tyreDiameter ?? 2 * Math.min(0.45, a.height * 0.22),
+    mass: a.mass ?? null,
+    cgHeight: a.cgHeight ?? null,
+  };
+}
+
+/** Why a vehicle's specification can't be built, or null. */
+export function vehicleProblem(a: Extract<Asset, { type: "vehicle" }>): string | null {
+  const v = vehicleSpec(a);
+  if (a.cls === "motorcycle" || a.cls === "bicycle") return null;
+  if (v.frontOverhang < 0) return "The front overhang can't be negative.";
+  if (v.rearOverhang < -1e-9)
+    return "The length must be at least the front overhang plus the wheelbase.";
+  if (Math.max(v.trackFront, v.trackRear) + TYRE_WIDTH > a.width + 1e-9)
+    return "A track plus the tyre width can't exceed the overall width.";
+  if (v.tyreDiameter <= 0 || v.tyreDiameter >= a.height)
+    return "The tyres must be smaller than the vehicle.";
+  if (v.mass !== null && !(v.mass > 0)) return "The mass must be positive.";
+  if (v.cgHeight !== null && !(v.cgHeight > 0 && v.cgHeight < a.height))
+    return "The centre of gravity must be above the ground and below the roof.";
+  return null;
+}
+
 /**
  * Side profile of a vehicle class as fractions of length (x from the front, 0..1) and height
  * (z, 0..1), above the wheel clearance.
@@ -313,10 +360,24 @@ function vehicle(a: Extract<Asset, { type: "vehicle" }>): Model {
   ]);
   profile(body, pts, W);
   // Glass: a band just proud of the body on each side of the cabin.
-  const r = Math.min(0.45, H * 0.22);
-  for (const x of [B / 2, -B / 2])
+  // Wheels where the specification puts them: axles by the front overhang and wheelbase
+  // (the model's origin is the middle of its overall length, front toward +x), wheels
+  // centred on each axle's track.
+  const v = vehicleSpec(a);
+  const r = v.tyreDiameter / 2;
+  const front = L / 2 - v.frontOverhang;
+  for (const [x, track] of [
+    [front, v.trackFront],
+    [front - B, v.trackRear],
+  ])
     for (const s of [1, -1])
-      cylinder(tyre, [x, s * (W / 2 - 0.28), r], [x, s * (W / 2 - 0.02), r], r, 20);
+      cylinder(
+        tyre,
+        [x, s * (track / 2 - TYRE_WIDTH / 2), r],
+        [x, s * (track / 2 + TYRE_WIDTH / 2), r],
+        r,
+        20,
+      );
   const cab = PROFILES[a.cls].filter(([, z]) => z === 1).map(([x]) => L / 2 - x * L);
   if (cab.length >= 2) {
     const [x1, x0] = [Math.max(...cab), Math.min(...cab)];
