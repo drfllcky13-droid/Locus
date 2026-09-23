@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
 import { dist, endpoints, foot, segments, snap, type Snap } from "./geometry";
 import { MeasureDialog } from "./MeasureDialog";
+import { road, room } from "./builders";
+import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL } from "./BuiltPanel";
 import {
   legendItems,
   nextMarker,
@@ -29,6 +31,8 @@ type Tool =
   | "select"
   | "line"
   | "polyline"
+  | "room"
+  | "road"
   | "arc"
   | "dimension"
   | "text"
@@ -44,6 +48,8 @@ const TOOLS: [Tool, string][] = [
   ["select", "Select"],
   ["line", "Line"],
   ["polyline", "Polyline"],
+  ["room", "Room"],
+  ["road", "Road"],
   ["arc", "Arc"],
   ["dimension", "Dimension"],
   ["text", "Text"],
@@ -61,6 +67,14 @@ const STEPS: Record<Tool, string[]> = {
   select: ["Click an item to select it; Delete removes it. Drag to pan, wheel to zoom."],
   line: ["Click the start.", "Click the end (Esc to stop)."],
   polyline: ["Click the first point.", "Click the next point; Enter or double-click to finish."],
+  room: [
+    "Click the first inside corner of the room.",
+    "Click the next corner; Enter or double-click to close the room.",
+  ],
+  road: [
+    "Click the start of the road's centre line.",
+    "Click the next point; Enter or double-click to finish.",
+  ],
   arc: [
     "Click the centre.",
     "Click the start (sets the radius).",
@@ -193,6 +207,12 @@ export function DiagramEditor({
   );
   const grid = gridStep(view.scale);
   const legend = useMemo(() => legendItems(doc), [doc]);
+  const selectedBuilt = doc.entities.find(
+    (e): e is Extract<Entity, { kind: "room" | "road" }> =>
+      e.id === selected &&
+      (e.kind === "room" || e.kind === "road") &&
+      !layerOf.get(e.layer)?.locked,
+  );
 
   const snapAt = (s: Pt): Snap =>
     snap(toWorld(view, s), visible, {
@@ -215,8 +235,26 @@ export function DiagramEditor({
     });
   };
 
+  /** Tools that collect clicks until Enter or a double-click. */
+  const multi = tool === "polyline" || tool === "room" || tool === "road";
   const finishPolyline = () => {
-    if (clicks.length >= 2) add({ kind: "polyline", points: clicks, closed: false });
+    if (tool === "room" && clicks.length >= 3)
+      add({
+        kind: "room",
+        outline: clicks,
+        thickness: DEFAULT_WALL,
+        openings: [],
+        geometry: room(clicks, DEFAULT_WALL, []),
+      });
+    else if (tool === "road" && clicks.length >= 2)
+      add({
+        kind: "road",
+        centreline: clicks,
+        road: DEFAULT_ROAD,
+        geometry: road(clicks, DEFAULT_ROAD),
+      });
+    else if (tool === "polyline" && clicks.length >= 2)
+      add({ kind: "polyline", points: clicks, closed: false });
     setClicks([]);
   };
 
@@ -238,6 +276,8 @@ export function DiagramEditor({
         } else setClicks(pts);
         return;
       case "polyline":
+      case "room":
+      case "road":
         setClicks(pts);
         return;
       case "arc":
@@ -294,7 +334,7 @@ export function DiagramEditor({
       if (ev.key === "Escape") {
         setClicks([]);
         setPending(null);
-      } else if (ev.key === "Enter" && tool === "polyline") finishPolyline();
+      } else if (ev.key === "Enter" && multi) finishPolyline();
       else if ((ev.key === "Delete" || ev.key === "Backspace") && selected) {
         const e = doc.entities.find((x) => x.id === selected);
         if (e && !layerOf.get(e.layer)?.locked) {
@@ -496,6 +536,16 @@ export function DiagramEditor({
           </g>
         );
       }
+      case "room":
+      case "road":
+        return (
+          <g key={e.id}>
+            {e.geometry.segments.map((s, i) => line(s.a, s.b, { ...stroke, key: i }))}
+            {e.geometry.arcs.map((a, i) =>
+              drawEntity({ ...e, ...a, kind: "arc", id: `${e.id}/${i}` }),
+            )}
+          </g>
+        );
       default:
         return null;
     }
@@ -592,7 +642,7 @@ export function DiagramEditor({
             if (d?.moved || ev.button !== 0) return;
             click(tool === "select" ? toWorld(view, screen(ev)) : snapAt(screen(ev)).point);
           }}
-          onDoubleClick={() => tool === "polyline" && finishPolyline()}
+          onDoubleClick={() => multi && finishPolyline()}
           onPointerLeave={() => setCursor(null)}
         >
           <svg width={view.width} height={view.height} role="img" aria-label="Diagram canvas">
@@ -610,7 +660,7 @@ export function DiagramEditor({
             {gridLines}
             {visible.map(drawEntity)}
             {preview}
-            {tool === "polyline" && clicks.length > 1 && (
+            {multi && clicks.length > 1 && (
               <polyline
                 points={clicks.map((p) => S(p).join(",")).join(" ")}
                 className="dg-preview"
@@ -819,6 +869,17 @@ export function DiagramEditor({
                 ))}
               </div>
             </>
+          )}
+          {selectedBuilt && (
+            <BuiltPanel
+              entity={selectedBuilt}
+              onChange={(next) =>
+                change({
+                  ...doc,
+                  entities: doc.entities.map((x) => (x.id === next.id ? next : x)),
+                })
+              }
+            />
           )}
           {doc.entities.some((e) => e.kind === "marker") && (
             <button onClick={() => change(renumberMarkers(doc))}>

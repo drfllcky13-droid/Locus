@@ -2,6 +2,8 @@
 // (crates/locus-core/src/diagram.rs). Coordinates are project metres (plan view, x east,
 // y north); angles are radians, anticlockwise from +x. Units are converted only for display.
 
+import type { Geometry, Opening, RoadParams } from "./builders";
+
 export type Pt = [number, number];
 
 export interface Layer {
@@ -61,7 +63,20 @@ export type Entity =
   | (Base & { kind: "north"; at: Pt; rotation: number })
   /** A scale bar `length` metres long. */
   | (Base & { kind: "scalebar"; at: Pt; length: number })
-  | (Base & { kind: "legend"; at: Pt });
+  | (Base & { kind: "legend"; at: Pt })
+  /**
+   * Built items keep their parameters and the geometry built from them (builders.ts), so the
+   * saved revision holds exactly the lines that are drawn and printed.
+   */
+  | (Base & {
+      kind: "room";
+      /** Inner face of the walls. */
+      outline: Pt[];
+      thickness: number;
+      openings: Opening[];
+      geometry: Geometry;
+    })
+  | (Base & { kind: "road"; centreline: Pt[]; road: RoadParams; geometry: Geometry });
 
 export type EntityKind = Entity["kind"];
 

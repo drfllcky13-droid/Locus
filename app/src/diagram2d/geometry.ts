@@ -34,6 +34,9 @@ export function segments(e: Entity): [Pt, Pt][] {
       if (e.closed && e.points.length > 2) s.push([e.points[e.points.length - 1], e.points[0]]);
       return s;
     }
+    case "room":
+    case "road":
+      return e.geometry.segments.map((s) => [s.a, s.b]);
     default:
       return [];
   }
@@ -47,6 +50,9 @@ export function endpoints(e: Entity): Pt[] {
       return [e.a, e.b];
     case "polyline":
       return e.points;
+    case "room":
+    case "road":
+      return e.geometry.segments.flatMap((s) => [s.a, s.b]);
     case "arc":
       return [onArc(e.center, e.radius, e.start), onArc(e.center, e.radius, e.end), e.center];
     case "point":

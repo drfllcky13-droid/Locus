@@ -90,6 +90,35 @@ pub enum Entity {
         layer: String,
         at: Pt,
     },
+    /// Built items (app/src/diagram2d/builders.ts): printed from the geometry stored with them.
+    Room {
+        layer: String,
+        geometry: Built,
+    },
+    Road {
+        layer: String,
+        geometry: Built,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Built {
+    pub segments: Vec<BuiltSegment>,
+    pub arcs: Vec<BuiltArc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BuiltSegment {
+    pub a: Pt,
+    pub b: Pt,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BuiltArc {
+    pub center: Pt,
+    pub radius: f64,
+    pub start: f64,
+    pub end: f64,
 }
 
 impl Entity {
@@ -105,7 +134,9 @@ impl Entity {
             | Entity::Point { layer, .. }
             | Entity::North { layer, .. }
             | Entity::Scalebar { layer, .. }
-            | Entity::Legend { layer, .. } => layer,
+            | Entity::Legend { layer, .. }
+            | Entity::Room { layer, .. }
+            | Entity::Road { layer, .. } => layer,
         }
     }
 }
@@ -282,6 +313,14 @@ pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<She
                 pts.extend([[at[0] - half, at[1] - half], [at[0] + half, at[1] + half]]);
             }
             Entity::Scalebar { at, length, .. } => pts.extend([*at, [at[0] + length, at[1]]]),
+            Entity::Room { geometry, .. } | Entity::Road { geometry, .. } => {
+                for g in &geometry.segments {
+                    pts.extend([g.a, g.b]);
+                }
+                for a in &geometry.arcs {
+                    pts.extend(arc_points(a.center, a.radius, a.start, a.end, mm_per_m));
+                }
+            }
         }
     }
     if pts.is_empty() {
@@ -343,6 +382,16 @@ pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<She
             Entity::Line { a, b, .. } => {
                 let (a, b) = (p(*a), p(*b));
                 s.lines.push([a[0], a[1], b[0], b[1], 0.35]);
+            }
+            Entity::Room { geometry, .. } | Entity::Road { geometry, .. } => {
+                for g in &geometry.segments {
+                    let (a, b) = (p(g.a), p(g.b));
+                    s.lines.push([a[0], a[1], b[0], b[1], 0.35]);
+                }
+                for a in &geometry.arcs {
+                    let v = arc_points(a.center, a.radius, a.start, a.end, mm_per_m);
+                    s.paths.push(v.into_iter().map(p).collect());
+                }
             }
             Entity::Polyline { points, closed, .. } => {
                 let mut v: Vec<[f64; 2]> = points.iter().map(|q| p(*q)).collect();
@@ -616,6 +665,34 @@ mod tests {
         let s = sheet(&diagram(PLAN), &symbols(), &a3).unwrap();
         let l = s.lines[0];
         assert!(((l[2] - l[0]) - 200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn built_items_print_their_stored_geometry() {
+        // A 4 m wall face with a door swing (quarter circle, radius 0.9 m), as the editor
+        // stores it; the parameters are the editor's business and are ignored here.
+        let d = diagram(
+            r##"{"version":1,"layers":[{"id":"base","name":"Base","visible":true,"locked":false,"color":"#fff"}],
+          "entities":[
+            {"id":"r","layer":"base","kind":"room","outline":[[0,0],[4,0],[4,3]],"thickness":0.2,"openings":[],
+             "geometry":{"segments":[{"a":[0,0],"b":[4,0],"dashed":false}],
+                         "arcs":[{"center":[1,0],"radius":0.9,"start":0,"end":1.5707963267948966}]}},
+            {"id":"d","layer":"base","kind":"road","centreline":[[0,-5],[10,-5]],"road":{},
+             "geometry":{"segments":[{"a":[0,-5],"b":[3,-5],"dashed":true}],"arcs":[]}}
+          ]}"##,
+        );
+        let s = sheet(&d, &symbols(), &opts(50.0)).unwrap();
+        let len = |l: [f64; 5]| ((l[2] - l[0]).powi(2) + (l[3] - l[1]).powi(2)).sqrt();
+        assert!((len(s.lines[0]) - 80.0).abs() < 1e-9); // 4 m at 1:50
+        assert!((len(s.lines[1]) - 60.0).abs() < 1e-9); // one 3 m dash
+                                                        // The swing ends 0.9 m from the hinge: 18 mm.
+        let (first, last) = (s.paths[0][0], *s.paths[0].last().unwrap());
+        assert!(((first[0] - last[0]).powi(2) + (first[1] - last[1]).powi(2)).sqrt() > 25.0);
+        let hinge = [s.lines[0][0] + 20.0, s.lines[0][1]];
+        for q in &s.paths[0] {
+            let r = ((q[0] - hinge[0]).powi(2) + (q[1] - hinge[1]).powi(2)).sqrt();
+            assert!((r - 18.0).abs() < 1e-9);
+        }
     }
 
     /// Every line's end points in the laid-out page (pt), from the frame tree.
