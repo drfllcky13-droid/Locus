@@ -42,10 +42,12 @@ pub enum Error {
     BadHash(String),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("{0}")]
+    Invalid(String),
 }
 
 const DB_FILE: &str = "project.sqlite";
-const SCHEMA_VERSION: &str = "5";
+const SCHEMA_VERSION: &str = "6";
 
 const SCHEMA: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -174,6 +176,7 @@ impl Project {
         tx.execute_batch(crate::registration::SCHEMA_V3)?;
         tx.execute_batch(crate::document::SCHEMA_V4)?;
         tx.execute_batch(crate::document::SCHEMA_V5)?;
+        tx.execute_batch(crate::analysis::SCHEMA_V6)?;
         let created_at = now();
         for (k, v) in [
             ("schema_version", SCHEMA_VERSION),
@@ -226,6 +229,7 @@ impl Project {
             ("2", "3", crate::registration::SCHEMA_V3),
             ("3", "4", crate::document::SCHEMA_V4),
             ("4", "5", crate::document::SCHEMA_V5),
+            ("5", "6", crate::analysis::SCHEMA_V6),
         ];
         if version != SCHEMA_VERSION && !migrations.iter().any(|m| m.0 == version) {
             return Err(Error::SchemaVersion(version));

@@ -3,6 +3,7 @@
 //! Every mutation of a project goes through [`Project`], which writes the change and
 //! its audit entry in one SQLite transaction.
 
+mod analysis;
 pub mod audit;
 mod contents;
 mod document;
@@ -12,6 +13,7 @@ mod registration;
 mod state;
 mod units;
 
+pub use analysis::{AnalysisRecord, Withdrawal};
 pub use audit::AuditEntry;
 pub use contents::{
     Bounds, Contents, ExifField, ImageInfo, ImageKind, MeshInfo, ScanInfo, IDENTITY,

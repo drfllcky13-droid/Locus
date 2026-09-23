@@ -174,7 +174,10 @@ pub fn fit_line(points: &[PathPoint], extra_deg: f64) -> Result<Line, Trajectory
     if points.len() < 2 {
         return Err(TrajectoryError::NeedPoints);
     }
-    if points.iter().any(|p| !p.sigma.is_finite() || p.sigma <= 0.0) {
+    if points
+        .iter()
+        .any(|p| !p.sigma.is_finite() || p.sigma <= 0.0)
+    {
         return Err(TrajectoryError::BadSigma);
     }
     let pts: Vec<P3> = points.iter().map(|p| p.point).collect();

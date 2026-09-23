@@ -18,7 +18,7 @@ fn schema_1_projects_are_migrated_step_by_step_and_each_step_is_logged() {
         "DROP TABLE settings; DROP TABLE octrees; DROP TABLE measurements; DROP TABLE cleanup_ops;
          DROP TABLE registration_poses; DROP TABLE registrations;
          DROP TABLE diagram_revisions; DROP TABLE diagrams;
-         DROP TABLE scene_revisions; DROP TABLE scenes;
+         DROP TABLE scene_revisions; DROP TABLE scenes; DROP TABLE analyses;
          UPDATE meta SET value = '1' WHERE key = 'schema_version';",
     )
     .unwrap();
@@ -35,6 +35,7 @@ fn schema_1_projects_are_migrated_step_by_step_and_each_step_is_logged() {
         actions,
         [
             "project.created",
+            "project.migrated",
             "project.migrated",
             "project.migrated",
             "project.migrated",
