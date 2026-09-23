@@ -86,11 +86,21 @@ jobs:
       - if: runner.os == 'Windows' && env.FULL == 'true'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # The heavy group, split across runners so no one runner takes much over ten minutes: each
+  # registration acceptance test takes about that long on four cores.
   heavy:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        part:
+          - name: hybrid
+            filter: "test(/heavy_hybrid/)"
+          - name: bad-link
+            filter: "test(/heavy_an_injected/)"
+          - name: rest
+            filter: "not (test(/heavy_hybrid/) | test(/heavy_an_injected/))"
+    name: heavy (${{ matrix.os }}, ${{ matrix.part.name }})
     runs-on: ${{ matrix.os }}
     steps:
       - name: Skip Windows except on full runs
@@ -106,14 +116,20 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - uses: dtolnay/rust-toolchain@stable
         if: steps.go.outputs.run == 'true'
+      # One release build cache for all parts; the first part saves it.
       - uses: Swatinem/rust-cache@v2
         if: steps.go.outputs.run == 'true'
+        with:
+          shared-key: heavy
+          save-if: ${{ matrix.part.name == 'hybrid' }}
       - uses: taiki-e/install-action@nextest
         if: steps.go.outputs.run == 'true'
       # Registration accuracy (Phase 3) and the 100M-point E57 import under 4 GB (Phase 1).
       - if: steps.go.outputs.run == 'true'
         # The app crate (Tauri) has no heavy tests and would need the GUI libraries.
-        run: cargo nextest run --workspace --exclude locus --release --run-ignored only --profile ci
+        run: >-
+          cargo nextest run --workspace --exclude locus --release --run-ignored only
+          --profile ci -E "${{ matrix.part.filter }}"
 
   app:
     strategy:
