@@ -4,7 +4,14 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as THREE from "three";
 import { selectNodes, type LodScan, type View } from "./lod";
-import { MAX_SLOTS, PICK_GLSL, REFUSED_REASON, UNPICKABLE_SLOT, nearest, slotFor } from "./pick";
+import {
+  MAX_SLOTS,
+  PICK_GLSL,
+  REFUSED_REASON,
+  UNPICKABLE_SLOT,
+  nearestSurface,
+  slotFor,
+} from "./pick";
 
 export interface NodeData {
   name: string;
@@ -452,7 +459,19 @@ export class PointCloudLayer {
         px.subarray((size - 1 - row) * size * 4, (size - row) * size * 4),
         row * size * 4,
       );
-    const hit = nearest(flipped, size);
+    // Distance of a candidate from the camera, from the node's own (f32) positions: enough
+    // to tell surfaces apart; the picked point's coordinates are resolved in Rust.
+    const eye = camera.position;
+    const v = new THREE.Vector3();
+    const depthOf = (slot: number, index: number) => {
+      const key = this.slots[slot];
+      const entry = key ? this.loaded.get(key) : undefined;
+      const pos = entry?.points.geometry.getAttribute("position");
+      if (!entry || !pos || index >= pos.count) return null;
+      v.fromBufferAttribute(pos, index).applyMatrix4(entry.points.matrix);
+      return v.distanceTo(eye);
+    };
+    const hit = nearestSurface(flipped, size, depthOf);
     if (!hit) return null;
     if (hit.kind === "refused") return { refused: hit.reason };
     const key = this.slots[hit.slot];

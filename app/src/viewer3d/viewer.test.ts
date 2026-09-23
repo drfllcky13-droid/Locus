@@ -8,6 +8,7 @@ import {
   decode,
   encode,
   nearest,
+  nearestSurface,
   slotFor,
 } from "./pick";
 
@@ -33,6 +34,45 @@ describe("pick encoding", () => {
     put(4, 4, 3, 30);
     expect(nearest(px, size)).toEqual({ kind: "hit", slot: 2, index: 20 });
     expect(nearest(new Uint8Array(size * size * 4), size)).toBeNull();
+  });
+});
+
+describe("picking the nearest surface", () => {
+  const size = 7;
+  const put = (px: Uint8Array, x: number, y: number, slot: number, index: number) =>
+    px.set(encode(slot, index), (y * size + x) * 4);
+
+  test("a farther surface seen between a near surface's points loses", () => {
+    // Close up: the near surface's points (slot 1, 0.4 m away) sit on a sparse grid; through
+    // the gap at the centre a far wall point (slot 2, 1.9 m) is drawn.
+    const px = new Uint8Array(size * size * 4);
+    put(px, 3, 3, 2, 99); // far, at the centre
+    put(px, 1, 1, 1, 10);
+    put(px, 5, 1, 1, 11);
+    put(px, 1, 5, 1, 12);
+    put(px, 5, 4, 1, 13); // near, nearest the centre among the near ones
+    const depth = (slot: number) => (slot === 1 ? 0.4 : 1.9);
+    expect(nearest(px, size)).toEqual({ kind: "hit", slot: 2, index: 99 });
+    expect(nearestSurface(px, size, (s) => depth(s))).toEqual({ kind: "hit", slot: 1, index: 13 });
+  });
+
+  test("points on the same surface are chosen by distance from the cursor", () => {
+    const px = new Uint8Array(size * size * 4);
+    put(px, 3, 4, 1, 1); // 1 px from the centre, 1.000 m away
+    put(px, 0, 0, 1, 2); // corner, 0.995 m away: nearer, but the same surface
+    const depths: Record<number, number> = { 1: 1.0, 2: 0.995 };
+    expect(nearestSurface(px, size, (_, i) => depths[i])).toEqual({
+      kind: "hit",
+      slot: 1,
+      index: 1,
+    });
+  });
+
+  test("the unpickable rule still applies", () => {
+    const px = new Uint8Array(size * size * 4);
+    put(px, 3, 3, UNPICKABLE_SLOT, 0);
+    put(px, 0, 0, 1, 5);
+    expect(nearestSurface(px, size, () => 1)?.kind).toBe("refused");
   });
 });
 

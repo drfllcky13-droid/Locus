@@ -43,6 +43,50 @@ export const REFUSED_REASON =
   "to tell points apart here. Zoom in closer, or lower the point budget, and pick again.";
 
 /**
+ * The point to pick in a square window (row-major RGBA pixels) when depths are known: the
+ * nearest surface first, then the point on it nearest the centre. Points are drawn as
+ * sprites of at most a few pixels, so close up there are gaps between a surface's points
+ * and a farther surface shows through them; taking simply the pixel nearest the centre
+ * could land on that farther surface. Candidates within `tolerance(nearest depth)` of the
+ * nearest candidate's depth count as the same surface. `depthOf` gives a candidate's
+ * distance from the camera, or null if it can't be looked up (then it is not a candidate).
+ * If the pixel nearest the centre is unpickable the pick is refused.
+ */
+export function nearestSurface(
+  pixels: Uint8Array,
+  size: number,
+  depthOf: (slot: number, index: number) => number | null,
+  tolerance: (depth: number) => number = (d) => 0.01 + 0.02 * d,
+): PickResult {
+  const c = (size - 1) / 2;
+  const best = new Map<string, { slot: number; index: number; d2: number }>();
+  let closest: { slot: number; d2: number } | null = null;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const hit = decode(pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]);
+      if (!hit) continue;
+      const d2 = (x - c) ** 2 + (y - c) ** 2;
+      if (!closest || d2 < closest.d2) closest = { slot: hit.slot, d2 };
+      const key = `${hit.slot}/${hit.index}`;
+      const prev = best.get(key);
+      if (!prev || d2 < prev.d2) best.set(key, { ...hit, d2 });
+    }
+  }
+  if (!closest) return null;
+  if (closest.slot === UNPICKABLE_SLOT) return { kind: "refused", reason: REFUSED_REASON };
+  const cands = [...best.values()]
+    .filter((h) => h.slot !== UNPICKABLE_SLOT)
+    .map((h) => ({ ...h, depth: depthOf(h.slot, h.index) }))
+    .filter((h): h is typeof h & { depth: number } => h.depth !== null);
+  if (!cands.length) return nearest(pixels, size);
+  const front = Math.min(...cands.map((h) => h.depth));
+  const limit = front + tolerance(front);
+  const pick = cands.filter((h) => h.depth <= limit).reduce((a, b) => (b.d2 < a.d2 ? b : a));
+  return { kind: "hit", slot: pick.slot, index: pick.index };
+}
+
+/**
  * The encoded point nearest the centre of a square pick window (row-major RGBA pixels).
  * If the nearest drawn point is unpickable the pick is refused, never passed to a neighbour.
  */
