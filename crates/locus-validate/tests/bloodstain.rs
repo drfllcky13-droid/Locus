@@ -220,7 +220,7 @@ fn from_photos(seed: u64) -> (f64, bool) {
                 world: f.world,
             })
             .collect();
-        let al = align_photo(&pairs, s.centre, s.normal).unwrap();
+        let al = align_photo(&pairs, s.centre, s.normal, 0.0).unwrap();
         let edges = stain_edges(&luma, w, h, [w as f64 / 2.0, h as f64 / 2.0], 126).unwrap();
         // The examiner marks the tail's tip: a little beyond the stain's leading end.
         let tip = [0, 1, 2].map(|k| s.centre[k] + s.travel[k] * s.length * 0.62);

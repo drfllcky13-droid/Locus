@@ -59,7 +59,11 @@ pub struct BloodstainRequest {
     pub parameters: Parameters,
 }
 
-fn align(scene: &Scene, req: &AlignRequest) -> CmdResult<(Alignment, Vec<PointSource>)> {
+fn align(
+    scene: &Scene,
+    req: &AlignRequest,
+    point_sigma: f64,
+) -> CmdResult<(Alignment, Vec<PointSource>)> {
     if req.pairs.len() < 2 {
         return Err("Give at least two point pairs (three to check the fit).".into());
     }
@@ -83,7 +87,8 @@ fn align(scene: &Scene, req: &AlignRequest) -> CmdResult<(Alignment, Vec<PointSo
     let plane = surface::surface_at(centre, &near, req.eye).map_err(|e| {
         format!("No surface under the scan points ({e}). Pick them on the stain's surface.")
     })?;
-    let a = align_photo(&pairs, plane.point, plane.normal).map_err(|e| capital(&e.to_string()))?;
+    let a = align_photo(&pairs, plane.point, plane.normal, point_sigma)
+        .map_err(|e| capital(&e.to_string()))?;
     Ok((a, sources))
 }
 
@@ -94,11 +99,13 @@ fn capital(e: &str) -> String {
 fn stain_input(
     scene: &Scene,
     evidence: &[EvidenceRecord],
+    point_sigma: f64,
     s: &StainRequest,
 ) -> CmdResult<StainInput> {
     let label = format!("Stain {}", s.label);
     let photo = photo_ref(evidence, s.photo, &label)?;
-    let (alignment, sources) = align(scene, &s.align).map_err(|e| format!("{label}: {e}"))?;
+    let (alignment, sources) =
+        align(scene, &s.align, point_sigma).map_err(|e| format!("{label}: {e}"))?;
     let mut input = stain_from_photo(&s.label, &s.surface, alignment, s.edges.clone(), s.tail_px)
         .map_err(|e| format!("{label}: {}", capital(&e.to_string())))?;
     input.photo = Some(photo);
@@ -117,10 +124,11 @@ fn stain_input(
 
 fn bloodstain_run(scene: &Scene, project: &Project, req: &BloodstainRequest) -> CmdResult<Run> {
     let evidence = project.evidence().map_err(err)?;
+    let sigma = project.point_sigma().map_err(err)?;
     let inputs = req
         .stains
         .iter()
-        .map(|s| stain_input(scene, &evidence, s))
+        .map(|s| stain_input(scene, &evidence, sigma, s))
         .collect::<CmdResult<Vec<_>>>()?;
     let mut p = req.parameters.clone();
     if let Some(r) = &p.include_not_upward {
@@ -139,7 +147,10 @@ fn bloodstain_run(scene: &Scene, project: &Project, req: &BloodstainRequest) -> 
 #[tauri::command]
 pub async fn bloodstain_align(app: AppHandle, request: AlignRequest) -> CmdResult<Alignment> {
     blocking(app, move |s| {
-        Ok(align(&s.scene.read().unwrap(), &request)?.0)
+        let guard = s.project.lock().unwrap();
+        let p = guard.as_ref().ok_or("Open or create a project first.")?;
+        let sigma = p.point_sigma().map_err(err)?;
+        Ok(align(&s.scene.read().unwrap(), &request, sigma)?.0)
     })
     .await
 }
@@ -176,6 +187,7 @@ pub async fn bloodstain_stain(
         let input = stain_input(
             &s.scene.read().unwrap(),
             &p.evidence().map_err(err)?,
+            p.point_sigma().map_err(err)?,
             &request,
         )?;
         let result = stain(&input, &parameters).map_err(|e| capital(&e.to_string()))?;

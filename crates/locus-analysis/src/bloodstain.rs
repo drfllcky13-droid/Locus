@@ -184,6 +184,9 @@ pub struct Alignment {
     pub residuals: Vec<f64>,
     /// RMS of the residuals; none with two pairs (they fix the alignment exactly).
     pub rms: Option<f64>,
+    /// 1σ of the photo's rotation on the surface (degrees), from the scan points' 1σ (or
+    /// the pairs' own scatter, if larger) and how far apart the pairs are.
+    pub rotation_sigma_deg: f64,
 }
 
 impl Alignment {
@@ -203,11 +206,13 @@ impl Alignment {
 }
 
 /// Align a photo to its surface from two or more pixel–scan point pairs, as a similarity
-/// in the surface's plane (no mirror image, no perspective).
+/// in the surface's plane (no mirror image, no perspective). `point_sigma` is the 1σ of each
+/// scan point (m), for the rotation's uncertainty.
 pub fn align_photo(
     pairs: &[AlignPair],
     plane_point: P3,
     plane_normal: P3,
+    point_sigma: f64,
 ) -> Result<Alignment, BloodstainError> {
     if pairs.len() < 2 {
         return Err(BloodstainError::Alignment(
@@ -233,13 +238,14 @@ pub fn align_photo(
         ]
     };
     let (pm, qm) = (mean(&p), mean(&q));
-    let (mut sqq, mut sa, mut sb) = (0.0, 0.0, 0.0);
+    let (mut sqq, mut spp, mut sa, mut sb) = (0.0, 0.0, 0.0, 0.0);
     for (pi, qi) in p.iter().zip(&q) {
         let (dp, dq) = (
             [pi[0] - pm[0], pi[1] - pm[1]],
             [qi[0] - qm[0], qi[1] - qm[1]],
         );
         sqq += dq[0] * dq[0] + dq[1] * dq[1];
+        spp += dp[0] * dp[0] + dp[1] * dp[1];
         sa += dq[0] * dp[0] + dq[1] * dp[1];
         sb += dq[0] * dp[1] - dq[1] * dp[0];
     }
@@ -275,6 +281,12 @@ pub fn align_photo(
         })
         .collect();
     let rms = (pairs.len() > 2).then(|| (residuals.iter().map(|r| r * r).sum::<f64>() / k).sqrt());
+    // A similarity fitted to n pairs leaves 2n − 4 degrees of freedom; the rotation's
+    // variance is σ² / Σ|p − p̄|² for a point σ in each coordinate.
+    let scatter = rms.map_or(0.0, |r| {
+        r * (2.0 * k / (2.0 * k - 4.0)).sqrt() / 2f64.sqrt()
+    });
+    let rotation_sigma_deg = (point_sigma.max(scatter) / spp.sqrt()).to_degrees();
     Ok(Alignment {
         pairs: pairs.to_vec(),
         plane_point,
@@ -285,6 +297,7 @@ pub fn align_photo(
         pixels_per_metre: 1.0 / s,
         residuals,
         rms,
+        rotation_sigma_deg,
     })
 }
 
@@ -515,7 +528,8 @@ pub fn stain_from_photo(
         width: fit.width,
         length: fit.length,
         travel,
-        travel_sigma_deg: fit.axis_sigma_deg,
+        // The ellipse's own axis error and the photo's rotation on the surface.
+        travel_sigma_deg: fit.axis_sigma_deg.hypot(alignment.rotation_sigma_deg),
         fit: Some(fit),
         alignment: Some(alignment),
         edges,
@@ -1218,16 +1232,18 @@ mod tests {
                 world: world(*p),
             })
             .collect();
-        let a = align_photo(&pairs, [0.0, 1.0, 1.5], [1.0, 0.0, 0.0]).unwrap();
+        let a = align_photo(&pairs, [0.0, 1.0, 1.5], [1.0, 0.0, 0.0], 0.0).unwrap();
         assert!((a.pixels_per_metre - 5000.0).abs() < 1e-6);
         assert!(a.rms.unwrap() < 1e-12);
         let w = a.to_world([512.0, 384.0]);
         assert!(norm(sub(w, world([512.0, 384.0]))) < 1e-12);
         // Two pairs fix it exactly: no residual to report.
-        assert!(align_photo(&pairs[..2], [0.0, 1.0, 1.5], [1.0, 0.0, 0.0])
-            .unwrap()
-            .rms
-            .is_none());
+        assert!(
+            align_photo(&pairs[..2], [0.0, 1.0, 1.5], [1.0, 0.0, 0.0], 0.0)
+                .unwrap()
+                .rms
+                .is_none()
+        );
         // A mirrored photo can't be aligned without error.
         let mirrored: Vec<AlignPair> = pairs
             .iter()
@@ -1236,8 +1252,57 @@ mod tests {
                 world: p.world,
             })
             .collect();
-        let a = align_photo(&mirrored, [0.0, 1.0, 1.5], [1.0, 0.0, 0.0]).unwrap();
+        let a = align_photo(&mirrored, [0.0, 1.0, 1.5], [1.0, 0.0, 0.0], 0.0).unwrap();
         assert!(a.rms.unwrap() > 0.01);
+    }
+
+    #[test]
+    fn the_rotation_uncertainty_matches_a_monte_carlo() {
+        // Three pairs about 2 cm from the stain, scan points off by 2 mm in the plane.
+        let px = [[100.0, 100.0], [500.0, 120.0], [120.0, 480.0]];
+        let world = |p: &[f64; 2]| [0.0, p[0] / 20_000.0, 1.5 - p[1] / 20_000.0];
+        let exact: Vec<AlignPair> = px
+            .iter()
+            .map(|p| AlignPair {
+                px: *p,
+                world: world(p),
+            })
+            .collect();
+        let stated = align_photo(&exact, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], 0.002)
+            .unwrap()
+            .rotation_sigma_deg;
+        let mut rng = 11u64;
+        let mut normal = || {
+            let mut u = || {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                (rng >> 11) as f64 / (1u64 << 53) as f64
+            };
+            let (a, b) = (u().max(1e-300), u());
+            (-2.0 * a.ln()).sqrt() * (std::f64::consts::TAU * b).cos()
+        };
+        let n = 4000;
+        let mut sum2 = 0.0;
+        for _ in 0..n {
+            let noisy: Vec<AlignPair> = exact
+                .iter()
+                .map(|p| AlignPair {
+                    px: p.px,
+                    world: [
+                        0.0,
+                        p.world[1] + 0.002 * normal(),
+                        p.world[2] + 0.002 * normal(),
+                    ],
+                })
+                .collect();
+            let a = align_photo(&noisy, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], 0.002).unwrap();
+            // Image x runs along +y on this wall.
+            let rot = a.x_step[2].atan2(a.x_step[1]).to_degrees();
+            sum2 += rot * rot;
+        }
+        let actual = (sum2 / n as f64).sqrt();
+        assert!((actual / stated - 1.0).abs() < 0.1, "{actual} vs {stated}");
     }
 
     /// A stain drawn like the generator's: an ellipse with a tail, antialiased.
@@ -1277,7 +1342,7 @@ mod tests {
             px: p,
             world: [p[0] * 1e-4, -p[1] * 1e-4, 0.0],
         });
-        let al = align_photo(&pairs, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]).unwrap();
+        let al = align_photo(&pairs, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0).unwrap();
         let f = fit_stain(&edges, &al).unwrap();
         assert!(f.trimmed > 0, "the tail should be left out");
         assert!(
