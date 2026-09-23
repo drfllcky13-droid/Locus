@@ -9,6 +9,7 @@
 pub mod analysis;
 pub mod bloodstain;
 pub mod camera;
+pub mod crash;
 pub mod diagram;
 pub mod registration;
 pub mod trajectory;

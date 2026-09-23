@@ -491,6 +491,10 @@ pub fn fit_circle(points: &[P3], point_sigma: f64) -> Result<CircleFit, CrashErr
     })
 }
 
+/// Points picked over less arc than this (degrees) leave the radius poorly determined; the
+/// report warns.
+pub const MIN_ARC_DEG: f64 = 20.0;
+
 /// How the yaw mark's radius was found.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1075,6 +1079,19 @@ mod tests {
             0.0
         )
         .is_err());
+    }
+
+    #[test]
+    fn a_short_mark_on_a_small_circle_fits_exactly() {
+        let pts: Vec<P3> = (0..6)
+            .map(|k| {
+                let t = (-60.0 + 20.0 * k as f64).to_radians();
+                [4.0 + 3.0 * t.cos(), 3.0 + 3.0 * t.sin(), 0.0]
+            })
+            .collect();
+        let c = fit_circle(&pts, 0.001).unwrap();
+        assert!((c.radius - 3.0).abs() < 1e-9 && c.rms < 1e-9, "{c:?}");
+        assert!((c.arc_deg - 100.0).abs() < 1e-6, "{c:?}");
     }
 
     fn vehicle(label: &str, m: f64, approach: f64, departure: f64, u: f64) -> MomentumVehicle {

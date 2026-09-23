@@ -7,6 +7,7 @@ mod analysis_cmds;
 mod bloodstain_cmds;
 mod camera_cmds;
 mod commands;
+mod crash_cmds;
 mod diagram_cmds;
 mod register_cmds;
 mod scene3d_cmds;
@@ -84,6 +85,9 @@ fn main() {
             camera_cmds::camera_save,
             camera_cmds::witness_preview,
             camera_cmds::witness_save,
+            crash_cmds::crash_mark_length,
+            crash_cmds::crash_preview,
+            crash_cmds::crash_save,
             analysis_cmds::analyses,
             analysis_cmds::analysis_withdraw,
             analysis_cmds::analysis_report,

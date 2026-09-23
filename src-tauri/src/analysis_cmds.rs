@@ -318,6 +318,29 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                     vec![],
                 )
             }
+            "skid" | "yaw" | "momentum" | "crush" => {
+                let m = meta(p, &a)?;
+                let r = &a.record;
+                let doc = match a.tool.as_str() {
+                    "skid" => locus_report::crash::skid(
+                        &m,
+                        &serde_json::from_value(r.clone()).map_err(err)?,
+                    ),
+                    "yaw" => locus_report::crash::yaw(
+                        &m,
+                        &serde_json::from_value(r.clone()).map_err(err)?,
+                    ),
+                    "momentum" => locus_report::crash::momentum(
+                        &m,
+                        &serde_json::from_value(r.clone()).map_err(err)?,
+                    ),
+                    _ => locus_report::crash::crush(
+                        &m,
+                        &serde_json::from_value(r.clone()).map_err(err)?,
+                    ),
+                };
+                (doc, vec![])
+            }
             t => return Err(format!("No report for {t} analyses yet.")),
         };
         let (report, images) = report;
