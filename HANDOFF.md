@@ -1,31 +1,29 @@
 PROJECT: Locus
 BATON → CHAT
-Carry: Chat reviews the Phase 9 timeline UI (561a60f) and gives any decisions on camera rigs and driver/witness views; then Code builds item 3.
-Status: Phase 9 (animation): items 1–2 done (motion model with provenance, time zero and plausibility checks; timeline UI, checked in the app).
+Carry: Chat answers the three decisions below (render order, driver-view obstruction, report scope); then Code builds the time–distance–speed report and the MP4 render.
+Status: Phase 9 (animation): items 1–2 done; item 3 has driver, witness, orbit and follow views. Fly-through, mirror and 360° are not started.
 Blocked on: nothing for Phase 9. Standing: the examiner's textbook cases (skid, yaw, momentum), the 1:100 ruler check, the mid-range GPU run, the bundle identifier, video on macOS and Linux.
 
 ## Report for Chat
 
-**What changed** (561a60f, on top of 42e95ed):
-- Timeline UI in `app/src/animation/`, saved in the scene document, so every edit is an audit-logged scene revision.
-  - Time zero (event and basis; flagged until both are given), range and lighting.
-  - Movers linked to scene models, on paths picked on the cloud (a vehicle's path is its rear axle's).
-  - Each segment, path and friction value carries a source: an EDR record, another analysis, evidence, or an assumption with its reason.
-  - An EDR record adds its time–distance table, its speeds and its own path in one step.
-  - The timeline: ruler, playhead, play, pause and scrub. Measured segments are solid and assumed ones hatched; flags are marked. It has a live speed and distance readout, "Needs attention", and the list of assumed segments.
-  - In the 3D view, models follow their movers and anything unlinked shows as a marker. Paths are drawn blue (measured), orange (assumed) or red (flagged).
-- A Tauri command, `animation_evaluate`, evaluates the animation with `locus-analysis::animation`, the same code the report and renders will use.
-- Two fixes found in the app:
-  - **False friction flags from EDR timing.** Interpolating from distances alone gave 0.72 m/s² where the record's deceleration is 0.40. Table segments now take optional speeds as slopes (cubic Hermite), which gives exactly the record's per-interval deceleration.
-  - **False heading-jump flags.** A tight but smooth curve was flagged at every step. Now a step is flagged only when it turns well beyond the steps either side, which means a real corner.
-  - Both are documented in `docs/methods/animation.md`.
+**Your latest prompt was already done.** The six requirements (sources, plausibility checks, time zero, render overlays and log, driver and witness views, low light) are in `locus-analysis::animation` and `docs/methods/animation.md` (42e95ed). The timeline UI followed in 561a60f; see the previous report in git history (0a0819f). I continued with the plan as your prompt said.
+
+**What changed since** (9eb88b4):
+- **Views.**
+  - **Driver:** the eye is stated in the vehicle's frame. Until it's measured it defaults to a typical seat (45 % of the wheelbase forward of the rear axle, 0.35 m left, 1.2 m up), recorded as an assumption so the report lists it.
+  - **Witness:** stands at a picked point with an eye height (1.6 m default, assumed until stated), and looks at a picked point or tracks a mover.
+  - **Orbit and follow:** presentation cameras, labelled in the UI and docs as nobody's point of view. No human field-of-view warning applies to them.
+- Every view's camera is computed alongside the motion (`animation::camera`, tested), so playback and renders use the same cameras. "Look through" plays any view in the 3D pane.
+- Driver and witness views default to 60°, with the value shown. A wider value is warned in the view editor and in "Needs attention".
+- From the driver's seat, the driver's own vehicle isn't drawn, since its interior isn't modelled. That is added to the report's limitations: no obstruction by pillars, mirrors, dashboard or tint is shown.
+- Refused: a driver view of anything that isn't a vehicle, a view whose mover is missing, a field of view outside 1–179°, and an orbit with no radius or period.
 
 **Tests:**
-- Rust: fmt and clippy clean; locus-analysis 88 passed, including the new tests for Hermite slopes, corner-only heading jumps and smooth curves.
-- Frontend: 102 passed, including `animation/model.test.ts`.
-- In the app (`scratch/locus/anim_ui.mjs`): an EDR-driven car at −1.00 s is at 6.20 m and 1.20 m/s. Its model is 1.35 m ahead of the axle, as its wheelbase puts it. The friction flag reads 0.40 m/s², an assumed mover without a reason is warned, playback and scrub work, the scene saved, and there were no page errors.
+- Rust: clippy clean; locus-analysis 89 passed. The new `cameras_follow_their_movers` test hand-checks the driver, witness, orbit and follow cameras.
+- Frontend: 103 passed.
+- In the app (`scratch/locus/anim_ui.mjs`): looking through the default driver view at −1.00 s puts the eye at 7.912, 1.360, 1.200. That is the axle at 6.697 plus 1.215 forward (45 % of 2.7 m), 0.35 m left and 1.2 m up, with a 60.00° horizontal field of view. The assumed list shows the default eye. No page errors.
 
-**Decisions needed for item 3 (camera rigs and views):**
-1. Driver eye point default. (a) Fixed defaults: 1.2 m high, 0.35 m left of centre, at the B-pillar line. (b) Required entry, with nothing shown until it's entered. Recommend (a), printed as "default" in the report until edited.
-2. Which rigs first. (a) All six in item 3 (orbit, fly-through, follow, driver, mirror, 360°). (b) Driver, witness, orbit and follow now, with fly-through, mirror and 360° after render works. Recommend (b).
-3. Witness target. (a) A picked point. (b) A mover, tracked over time. Recommend both, as a choice.
+**Decisions needed:**
+1. **Order of the remaining rigs.** (a) Build fly-through, mirror and 360° now. (b) Build the time–distance–speed report and the MP4 render first, then those three rigs. Recommend (b): the report and render are the acceptance items, and the three rigs are presentation only.
+2. **Obstruction in the driver's view.** (a) Leave it as it is, with the limitation stated. (b) Add simple A-pillar and mirror silhouettes from entered dimensions, stated as approximate. Recommend (a) for now: a wrong pillar is worse than a stated absence.
+3. **Scope of the time–distance–speed report.** (a) One table per mover at a chosen interval, plus distances between chosen pairs of movers over time. (b) Also a closing-speed column for each pair. Recommend (a), with (b) as an option, since closing speed follows directly from the pair distances.
