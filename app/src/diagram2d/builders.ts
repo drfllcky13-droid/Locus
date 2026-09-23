@@ -180,6 +180,8 @@ export interface RoadParams {
   centre: "dashed" | "solid" | "double" | "none";
   /** Radius of the centreline's curves at its corners (m); 0 keeps sharp corners. */
   radius?: number;
+  /** Broken-line pattern [painted, gap] (m); standards vary by jurisdiction. Default DASH. */
+  dash?: [number, number];
 }
 
 /**
@@ -215,12 +217,13 @@ export function fillet(pts: Pt[], r: number): Pt[] {
   return out;
 }
 
-/** Broken-line markings: 3 m painted, 9 m gap (a common lane-line pattern). */
+/** Default broken-line pattern: 3 m painted, 9 m gap (a common lane-line pattern). */
 export const DASH: [number, number] = [3, 9];
 
 /** The painted pieces of a dashed line along a polyline; the pattern runs on round corners. */
 export function dashes(pts: Pt[], [on, off]: [number, number] = DASH): Segment[] {
   const out: Segment[] = [];
+  if (!(on > 0) || !(off >= 0)) throw new Error("A broken line needs a positive painted length.");
   let phase = 0; // distance into the current on+off cycle
   for (let i = 1; i < pts.length; i++) {
     const [a, b] = [pts[i - 1], pts[i]];
@@ -246,7 +249,7 @@ export function road(drawn: Pt[], p: RoadParams): Geometry {
   const centreline = fillet(drawn, p.radius ?? 0);
   const segments: Segment[] = [];
   const line = (pts: Pt[], dashed: boolean) => {
-    if (dashed) segments.push(...dashes(pts));
+    if (dashed) segments.push(...dashes(pts, p.dash ?? DASH));
     else for (let i = 1; i < pts.length; i++) segments.push({ a: pts[i - 1], b: pts[i], dashed });
   };
   if (p.centre === "double") {

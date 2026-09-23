@@ -1,5 +1,5 @@
 // Parameters of a selected room or road; every edit rebuilds its geometry (builders.ts).
-import { road, room, type Opening, type RoadParams } from "./builders";
+import { DASH, road, room, type Opening, type RoadParams } from "./builders";
 import type { Entity } from "./model";
 
 type Room = Extract<Entity, { kind: "room" }>;
@@ -149,6 +149,18 @@ export function BuiltPanel({
       )}
       {num("Shoulder (m)", entity.road.shoulder, (shoulder) => set({ shoulder }))}
       {num("Curve radius at corners (m)", entity.road.radius ?? 0, (radius) => set({ radius }), 1)}
+      {num(
+        "Broken line: painted (m)",
+        (entity.road.dash ?? DASH)[0],
+        (on) => on > 0 && set({ dash: [on, (entity.road.dash ?? DASH)[1]] }),
+        0.5,
+      )}
+      {num(
+        "Broken line: gap (m)",
+        (entity.road.dash ?? DASH)[1],
+        (off) => off >= 0 && set({ dash: [(entity.road.dash ?? DASH)[0], off] }),
+        0.5,
+      )}
       <label>
         Centre line
         <select
@@ -162,8 +174,8 @@ export function BuiltPanel({
         </select>
       </label>
       <p className="muted">
-        Broken lines are drawn 3 m painted, 9 m gap. A corner too short for the radius gets the
-        largest curve that fits.
+        Broken lines default to 3 m painted, 9 m gap; set the local standard or the measured
+        pattern. A corner too short for the radius gets the largest curve that fits.
       </p>
     </div>
   );

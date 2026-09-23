@@ -143,6 +143,24 @@ describe("road", () => {
     for (const s of inner) expect(dist(s.a, [10, 10])).toBeCloseTo(7, 3);
   });
 
+  it("uses a configured dash pattern", () => {
+    const g = road(
+      [
+        [0, 0],
+        [20, 0],
+      ],
+      { lanes: [0, 0], laneWidth: 3.5, shoulder: 0, centre: "dashed", dash: [1, 4] },
+    );
+    // Painted 0–1, 5–6, 10–11, 15–16, then the edge lines of zero-lane sides (y = 0, twice).
+    const dashesOnly = g.segments.filter((s) => s.dashed);
+    expect(dashesOnly.map((s) => [s.a[0], s.b[0]])).toEqual([
+      [0, 1],
+      [5, 6],
+      [10, 11],
+      [15, 16],
+    ]);
+  });
+
   it("offsets a bend with mitred corners", () => {
     const g = road(
       [
