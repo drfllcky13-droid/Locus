@@ -2,6 +2,7 @@
 //!
 //! Every function returns its result with an uncertainty or residual, never a bare number.
 
+pub mod animation;
 pub mod bloodstain;
 pub mod camera;
 pub mod crash;

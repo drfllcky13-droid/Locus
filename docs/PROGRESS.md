@@ -318,7 +318,7 @@ Acceptance criteria (SPEC):
 - [ ] An object moving at a set speed shows the correct position at every frame (tested).
 - [ ] Rendered video frame count and duration match the timeline.
 
-Status (2026-09-23): item 1 started. Paths, profiles and tracks are built and tested (`crates/locus-analysis/src/motion.rs`): a constant-speed object on a curved path is at v·t along it at every frame at 30 fps (to 1e-9 m, arc length checked against a brute-force polyline to 0.1 mm), braking phases stop and stay stopped, and EDR-like tables are followed monotonically.
+Status (2026-09-23): item 1 done. `motion` has the paths, profiles and tracks. `animation` has the movers with sourced segments, the time zero, lighting, driver and witness views (60° default, wider warned), the plausibility checks (friction bands, speed and heading jumps), the assumed-segment list and the render log type; all tested. The requirements from the Phase 9 review are written up in `docs/methods/animation.md`. Next: the timeline UI.
 
 ## Blocked
 
