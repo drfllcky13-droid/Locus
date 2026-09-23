@@ -6,8 +6,8 @@ use crate::analysis_cmds::photo_ref;
 use crate::commands::{blocking, err, CmdResult};
 use crate::scene_cmds::{resolve, Pick};
 use locus_analysis::bloodstain::{
-    self, align_photo, stain, stain_edges, stain_from_photo, AlignPair, Alignment, AutoEdge,
-    Parameters, Run, StainInput, StainResult,
+    self, align_photo_rectified, rectify, stain, stain_edges, stain_from_photo, AlignPair,
+    Alignment, AutoEdge, Parameters, Run, StainInput, StainResult, CORNER_SIGMA_PX,
 };
 use locus_analysis::surface;
 use locus_analysis::trajectory::PointSource;
@@ -32,6 +32,21 @@ pub struct AlignRequest {
     /// Radius of the plane fitted to the scan around the pairs (m).
     #[serde(default = "plane_radius")]
     pub plane_radius: f64,
+    /// A scale's four corners, for a photo not taken square on.
+    #[serde(default)]
+    pub scale: Option<ScaleCorners>,
+}
+
+/// Four corners of a rectangle on a scale lying on the surface, clicked in order around it
+/// (the first two span its width), and its size.
+#[derive(Deserialize)]
+pub struct ScaleCorners {
+    pub corners_px: [[f64; 2]; 4],
+    /// Width and height (m).
+    pub size: [f64; 2],
+    /// 1σ of a corner click (px); `CORNER_SIGMA_PX` when not given.
+    #[serde(default)]
+    pub corner_sigma_px: Option<f64>,
 }
 
 fn plane_radius() -> f64 {
@@ -87,8 +102,21 @@ fn align(
     let plane = surface::surface_at(centre, &near, req.eye).map_err(|e| {
         format!("No surface under the scan points ({e}). Pick them on the stain's surface.")
     })?;
-    let a = align_photo(&pairs, plane.point, plane.normal, point_sigma)
+    let rect = req
+        .scale
+        .as_ref()
+        .map(|c| {
+            rectify(
+                c.corners_px,
+                c.size,
+                c.corner_sigma_px.unwrap_or(CORNER_SIGMA_PX),
+            )
+        })
+        .transpose()
         .map_err(|e| capital(&e.to_string()))?;
+    let mut a = align_photo_rectified(&pairs, plane.point, plane.normal, point_sigma, rect)
+        .map_err(|e| capital(&e.to_string()))?;
+    a.plane_rms = plane.rms;
     Ok((a, sources))
 }
 

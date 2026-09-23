@@ -2,13 +2,55 @@
 //! reprinted from the record at any time and says exactly what was computed).
 
 use crate::analysis::{details, Area, Block, Figure, Frame, Label, Meta, Report, Section};
-use locus_analysis::bloodstain::Run;
+use locus_analysis::bloodstain::{Run, LARGE_PERSPECTIVE, NEAR_ROUND_DEG, NEAR_ROUND_DOMINANT};
 use locus_analysis::measure::Measured;
 
 /// Figure colours: stains used and their paths, those left out, the origin's 95 % region.
 const USED: &str = "#8e1b1f";
 const UNUSED: &str = "#9a9a9a";
 const REGION: &str = "#f0c9c4";
+/// The plan-view convergence of floor stains: its lines and 95 % ellipse.
+const FLOOR: &str = "#2f6fbf";
+const FLOOR_REGION: &str = "#c9dcf2";
+
+/// The scale's stated size and the scan disagree by more than this, and by more than 2.5 × the
+/// pairs' own scale uncertainty (the same, relative, as their rotation's in radians): warned
+/// about. Scan points snap to within the point spacing, so on a small scale the pairs alone
+/// can be several per cent off.
+const SCALE_MISMATCH: f64 = 0.02;
+
+/// Why the angle fit is primary, and what the conventional point is.
+const WHY_ANGLES: &str = "The origin is fitted in the stains' measured angles: the point whose straight paths best match every stain's impact angle and direction, each in units of its own 1σ. That is the maximum-likelihood point when the angles' errors are independent and normal, and it weights each stain by how well it was measured, as Camana (2013) does for the directions in plan. The conventional point, the least-squares point nearest all the paths (perpendicular distances, every stain alike), is shown beside it for comparison. It is not used as the result because a stain's direction error does not scatter its path evenly about the true origin: a path turned by θ about the surface's normal misses the origin, at distance d, on one side, by d sin α cos α (1 − cos θ) for impact angle α. Errors of that kind pull the conventional point consistently in one direction, and resampling cannot show it. Illes and Boué (2013) describe the same weakness of plain averaging over stains and use robust estimators instead.";
+
+const REFERENCES: &[&str] = &[
+    "V. Balthazard, R. Piédelièvre, H. Desoille and L. Derobert, \"Étude des gouttes de sang projeté\", Annales de médecine légale, 19, 1939.",
+    "T. Bevel and R. M. Gardner, Bloodstain Pattern Analysis with an Introduction to Crime Scene Reconstruction, 3rd ed., CRC Press, 2008.",
+    "F. Camana, \"Determining the area of convergence in bloodstain pattern analysis: a probabilistic approach\", Forensic Science International, 231, 2013, 131–136.",
+    "M. Illes and M. Boué, \"Robust estimation for area of origin in bloodstain pattern analysis via directional analysis\", Forensic Science International, 226, 2013, 223–229.",
+    "A. L. Carter, \"The directional analysis of bloodstain patterns: theory and experimental validation\", Canadian Society of Forensic Science Journal, 34(4), 2001.",
+    "R. Hartley and A. Zisserman, Multiple View Geometry in Computer Vision, 2nd ed., Cambridge University Press, 2004: the four-point homography and its normalisation.",
+    "B. Efron and R. J. Tibshirani, An Introduction to the Bootstrap, Chapman & Hall, 1993.",
+    "R. A. Johnson and D. W. Wichern, Applied Multivariate Statistical Analysis, 6th ed., Pearson, 2007: Hotelling's T² regions.",
+];
+
+/// The method's validation (docs/methods/bloodstain.md; crates/locus-validate/tests/
+/// bloodstain.rs): both fits on the same stains.
+const VALIDATION: [[&str; 5]; 2] = [
+    [
+        "Generator's photos: fiducial alignment, automatic edges (8 rooms)",
+        "0.6 mm",
+        "8 of 8",
+        "4.8 mm",
+        "0 of 8",
+    ],
+    [
+        "Hand-measurement noise, mostly small near-round stains (40 rooms)",
+        "233 mm",
+        "95 %",
+        "302 mm",
+        "92 %",
+    ],
+];
 
 fn deg(m: &Measured) -> String {
     format!("{:.1}° ± {:.1}°", m.value, m.sigma)
@@ -61,6 +103,65 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
             o.stains_used
         ));
     }
+    if o.near_round_share > NEAR_ROUND_DOMINANT {
+        let round: Vec<String> = r
+            .stains
+            .iter()
+            .zip(&r.inputs)
+            .filter(|(s, _)| s.used && s.impact.value >= NEAR_ROUND_DEG)
+            .map(|(_, i)| i.label.clone())
+            .collect();
+        warnings.push(format!(
+            "Near-round stains (impact {NEAR_ROUND_DEG:.0}° or more: {}) carry {:.0} % of the fit's information. Their width over length, and so their impact angle and direction, are poorly determined: a small error in either axis moves them a lot. Check those stains' edges and tails, and compare the origin without them.",
+            round.join(", "),
+            o.near_round_share * 100.0
+        ));
+    }
+    for i in &r.inputs {
+        let Some(a) = &i.alignment else { continue };
+        if let Some(rect) = &a.rectification {
+            let stretch = i
+                .fit
+                .as_ref()
+                .and_then(|f| f.perspective)
+                .map_or(rect.stretch, |p| p.stretch);
+            if stretch > LARGE_PERSPECTIVE {
+                warnings.push(format!(
+                    "Stain {}: its photo was corrected for perspective by {:.0} % (about {:.0}° off square-on). The correction rests on four corner clicks on the scale; a photo taken square on is better evidence.",
+                    i.label,
+                    stretch * 100.0,
+                    (1.0 / (1.0 + stretch)).acos().to_degrees()
+                ));
+            }
+        }
+        if let Some(q) = a.scale_ratio {
+            let expected = a.rotation_sigma_deg.to_radians();
+            if (q - 1.0).abs() > SCALE_MISMATCH.max(2.5 * expected) {
+                warnings.push(format!(
+                    "Stain {}: the scale's stated size and the scan disagree by {:.1} %, more than the point pairs' uncertainty allows (1σ {:.1} %). Check the scale's size, its corners and the point pairs.",
+                    i.label,
+                    (q - 1.0) * 100.0,
+                    expected * 100.0
+                ));
+            }
+        }
+    }
+    if p.floor_convergence {
+        if let Some(n) = &r.convergence_note {
+            warnings.push(format!("No plan-view convergence of floor stains: {n}."));
+        }
+        if let Some(c) = &r.convergence {
+            if c.dof > 0 && c.chi2 / c.dof as f64 > 2.0 {
+                warnings.push(format!(
+                    "The floor stains' directions scatter more than their uncertainties allow (χ² = {:.0} on {} degrees of freedom): some may not come from this source.",
+                    c.chi2, c.dof
+                ));
+            }
+            if c.behind.iter().any(|b| *b) {
+                warnings.push("The plan-view convergence is behind some floor stains along their paths: check their tails.".into());
+            }
+        }
+    }
     if o.bootstrap_failed > 0 {
         warnings.push(format!(
             "{} of {} resamples had nearly parallel paths and were left out of the 95 % region.",
@@ -112,6 +213,29 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
         ],
     ];
 
+    let half = |e: &locus_analysis::bloodstain::Ellipsoid| {
+        format!(
+            "{:.3} × {:.3} × {:.3}",
+            e.semi_axes[0], e.semi_axes[1], e.semi_axes[2]
+        )
+    };
+    let mut compare = vec![vec![
+        "Angles (primary)".to_string(),
+        xyz(o.point),
+        format!("{:.3} ± {:.3}", o.height.value, o.height.sigma),
+        half(&o.ellipsoid),
+        "—".into(),
+    ]];
+    if let Some(c) = &r.conventional {
+        compare.push(vec![
+            "Perpendicular distances (conventional, for comparison)".into(),
+            xyz(c.point),
+            format!("{:.3} ± {:.3}", c.height.value, c.height.sigma),
+            half(&c.ellipsoid),
+            mm(c.shift),
+        ]);
+    }
+
     let stains = r
         .stains
         .iter()
@@ -137,7 +261,7 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
                     }
                 ),
                 match &s.not_used {
-                    None => "used".into(),
+                    None => format!("used ({:.0} % of the fit)", s.influence * 100.0),
                     Some(why) => format!("no: {why}"),
                 },
                 mm(s.residual),
@@ -159,11 +283,25 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
                     .map(|p| format!("{} (evidence {})", p.name, p.evidence_id))
                     .unwrap_or_else(|| "—".into()),
                 a.map(|a| {
-                    format!(
+                    let mut t = format!(
                         "{} pairs, {}",
                         a.pairs.len(),
                         a.rms.map(mm).unwrap_or_else(|| "exact (2 pairs)".into())
-                    )
+                    );
+                    if let Some(rect) = &a.rectification {
+                        let p = f.and_then(|f| f.perspective);
+                        t += &format!(
+                            "; perspective corrected from a {:.0} × {:.0} mm scale (stretch {:.0} %, corner 1σ {:.1} px{}); scale over scan {:.3}",
+                            rect.size[0] * 1000.0,
+                            rect.size[1] * 1000.0,
+                            p.map_or(rect.stretch, |p| p.stretch) * 100.0,
+                            rect.corner_sigma_px,
+                            p.map(|p| format!(", adding {:.3} mm to the width", p.width_sigma * 1000.0))
+                                .unwrap_or_default(),
+                            a.scale_ratio.unwrap_or(1.0)
+                        );
+                    }
+                    t
                 })
                 .unwrap_or_default(),
                 a.map(|a| format!("{:.1}", a.pixels_per_metre / 1000.0))
@@ -206,6 +344,24 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
                     text: STRAIGHT_LINE.into(),
                 },
                 Block::Pairs { rows: result },
+                Block::Text {
+                    text: "The origin fitted in the stains' angles is the result. The conventional point, nearest all the paths by perpendicular distance, is shown for comparison, with its own 95 % region from the same resamples and its distance from the result (see Method for why it is not used).".into(),
+                },
+                Block::Table {
+                    widths: ["1fr", "auto", "auto", "auto", "auto"]
+                        .map(String::from)
+                        .to_vec(),
+                    head: [
+                        "Fit",
+                        "Point (m)",
+                        "Height (m)",
+                        "95 % half-axes (m)",
+                        "From the result",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                    rows: compare,
+                },
                 Block::Figure(plan(r)),
                 Block::Figure(elevation(r)),
             ],
@@ -265,11 +421,90 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
     if !hashes.is_empty() {
         sections[2].blocks.push(Block::List { items: hashes });
     }
+    if let Some(c) = &r.convergence {
+        let labels: Vec<String> = c
+            .stains
+            .iter()
+            .map(|&k| r.inputs[k].label.clone())
+            .collect();
+        let rows = c
+            .stains
+            .iter()
+            .zip(&c.residuals)
+            .zip(&c.behind)
+            .map(|((&k, res), behind)| {
+                vec![
+                    r.inputs[k].label.clone(),
+                    deg(&r.stains[k].directionality),
+                    mm(*res),
+                    if *behind { "yes".into() } else { "no".into() },
+                ]
+            })
+            .collect();
+        sections.insert(
+            1,
+            Section {
+                heading: "Floor stains: convergence in plan".into(),
+                blocks: vec![
+                    Block::Text {
+                        text: "A separate 2-D result: where the floor stains' directions of travel, traced back, converge in plan. It uses no impact angles and gives no height, and it is never mixed into the 3-D origin above. It is fitted the same way, in the directions' angles weighted by their 1σ, with the conventional point (least squares on perpendicular distances) for comparison and a 95 % ellipse from bootstrap resampling of the floor stains (Hotelling's T², 2 dimensions).".into(),
+                    },
+                    Block::Pairs {
+                        rows: vec![
+                            [
+                                "Convergence (plan)".into(),
+                                format!("x {:.3} m, y {:.3} m", c.point[0], c.point[1]),
+                            ],
+                            [
+                                "1σ".into(),
+                                format!("{:.3}, {:.3} m", c.sigma[0], c.sigma[1]),
+                            ],
+                            [
+                                "95 % ellipse (half-axes)".into(),
+                                format!(
+                                    "{:.3} m along ({:.2}, {:.2}); {:.3} m across",
+                                    c.semi_axes[0], c.axis[0], c.axis[1], c.semi_axes[1]
+                                ),
+                            ],
+                            [
+                                "Conventional point, for comparison".into(),
+                                format!(
+                                    "x {:.3} m, y {:.3} m ({} from the result)",
+                                    c.conventional[0],
+                                    c.conventional[1],
+                                    mm((c.conventional[0] - c.point[0])
+                                        .hypot(c.conventional[1] - c.point[1]))
+                                ),
+                            ],
+                            [
+                                "Fit".into(),
+                                format!(
+                                    "χ² = {:.1} on {} degrees of freedom; {} floor stains ({})",
+                                    c.chi2,
+                                    c.dof,
+                                    c.stains.len(),
+                                    labels.join(", ")
+                                ),
+                            ],
+                        ],
+                    },
+                    Block::Table {
+                        widths: ["auto", "1fr", "auto", "auto"].map(String::from).to_vec(),
+                        head: ["#", "Direction", "Distance from its line", "Behind it"]
+                            .map(String::from)
+                            .to_vec(),
+                        rows,
+                    },
+                    Block::Figure(floor_plan(r, c)),
+                ],
+            },
+        );
+    }
     sections.push(Section {
         heading: "Method".into(),
         blocks: vec![
             Block::Text {
-                text: "Each photo is placed on its surface by a similarity (scale, rotation, shift) fitted to pixel–scan point pairs, on the plane fitted to the scan around them. An ellipse is fitted to the stain's edge points by least squares, leaving out points well off it (the tail). The impact angle is asin(width / length) and the direction of travel is along the long axis toward the marked tail. The origin is the point whose straight paths to the stains best match every stain's impact angle and direction, each in units of its 1σ (Levenberg–Marquardt, started from the point nearest all the paths). The 95 % region is an ellipsoid from bootstrap resampling of the stains used, with a radius from Hotelling's T² for the number of stains. See docs/methods/bloodstain.md.".into(),
+                text: "Each photo is placed on its surface by a similarity (scale, rotation, shift) fitted to pixel–scan point pairs, on the plane fitted to the scan around them. A photo not taken square on is first corrected for perspective by the homography taking four corners of a rectangle on its scale onto that rectangle's stated size (Hartley and Zisserman 2004); the corners' click error is carried to each stain by Monte Carlo (64 redraws). An ellipse is fitted to the stain's edge points by least squares, leaving out points well off it (the tail). The impact angle is asin(width / length) and the direction of travel is along the long axis toward the marked tail. The origin is the point whose straight paths to the stains best match every stain's impact angle and direction, each in units of its 1σ (Levenberg–Marquardt, started from the point nearest all the paths). The 95 % region is an ellipsoid from bootstrap resampling of the stains used, with a radius from Hotelling's T² for the number of stains. See docs/methods/bloodstain.md.".into(),
             },
             Block::Pairs {
                 rows: vec![
@@ -289,6 +524,14 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
                         ),
                     ],
                     [
+                        "Near-round stains".into(),
+                        format!(
+                            "impact {NEAR_ROUND_DEG:.0}° or more; flagged when they carry more than {:.0} % of the fit's information (the summed squared derivatives of their misfits at the origin); here {:.0} %",
+                            NEAR_ROUND_DOMINANT * 100.0,
+                            o.near_round_share * 100.0
+                        ),
+                    ],
+                    [
                         "Floor directions".into(),
                         format!(
                             "clockwise from {} ({:.1}° clockwise from project +y)",
@@ -299,6 +542,36 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
             },
         ],
     });
+    let method = sections.len() - 1;
+    sections[method].blocks.extend([
+        Block::Text {
+            text: WHY_ANGLES.into(),
+        },
+        Block::Text {
+            text: "Validation on synthetic scenes with known origins, both fits on the same stains used:".into(),
+        },
+        Block::Table {
+            widths: ["1fr", "auto", "auto", "auto", "auto"]
+                .map(String::from)
+                .to_vec(),
+            head: [
+                "Case",
+                "Angles: mean error",
+                "Region covers truth",
+                "Conventional: mean error",
+                "Region covers truth",
+            ]
+            .map(String::from)
+            .to_vec(),
+            rows: VALIDATION
+                .iter()
+                .map(|r| r.iter().map(|c| c.to_string()).collect())
+                .collect(),
+        },
+        Block::List {
+            items: REFERENCES.iter().map(|r| r.to_string()).collect(),
+        },
+    ]);
     sections.push(Section {
         heading: "Assumptions".into(),
         blocks: vec![Block::List {
@@ -416,6 +689,65 @@ fn view(r: &Run, i: usize, j: usize, caption: String) -> Figure {
         x: c[0] + 1.5,
         y: c[1] - 1.5,
         text: "origin".into(),
+    });
+    fig.scale_bar(&f);
+    fig
+}
+
+/// The floor stains in plan, their lines back to the convergence, and its 95 % ellipse.
+fn floor_plan(r: &Run, c: &locus_analysis::bloodstain::Convergence) -> Figure {
+    let ellipse: Vec<[f64; 2]> = (0..48)
+        .map(|k| {
+            let t = k as f64 / 48.0 * std::f64::consts::TAU;
+            let (u, v) = (c.semi_axes[0] * t.cos(), c.semi_axes[1] * t.sin());
+            [
+                c.point[0] + u * c.axis[0] - v * c.axis[1],
+                c.point[1] + u * c.axis[1] + v * c.axis[0],
+            ]
+        })
+        .collect();
+    let mut pts: Vec<[f64; 2]> = c
+        .stains
+        .iter()
+        .map(|&k| [r.inputs[k].centre[0], r.inputs[k].centre[1]])
+        .collect();
+    pts.extend(ellipse.iter().copied());
+    pts.push(c.point);
+    let lo = [0, 1].map(|k| pts.iter().map(|p| p[k]).fold(f64::INFINITY, f64::min));
+    let hi = [0, 1].map(|k| pts.iter().map(|p| p[k]).fold(f64::NEG_INFINITY, f64::max));
+    let f = Frame::new(lo, hi, W, H, 8.0);
+    let mut fig = Figure {
+        width: W,
+        height: H,
+        caption: "Floor stains in plan (x east, y north): each stain's direction traced back toward the convergence (blue), and its 95 % ellipse. A 2-D result, separate from the 3-D origin.".into(),
+        ..Figure::default()
+    };
+    fig.areas.push(Area {
+        points: ellipse.iter().map(|p| f.at(*p)).collect(),
+        fill: FLOOR_REGION.into(),
+    });
+    for &k in &c.stains {
+        let i = &r.inputs[k];
+        let (a, t) = ([i.centre[0], i.centre[1]], i.travel);
+        let n = t[0].hypot(t[1]).max(1e-12);
+        let d = [c.point[0] - a[0], c.point[1] - a[1]];
+        let along = (-(d[0] * t[0] + d[1] * t[1]) / n).max(0.0);
+        let end = [a[0] - t[0] / n * along, a[1] - t[1] / n * along];
+        let (pa, pb) = (f.at(a), f.at(end));
+        fig.coloured(pa, pb, 0.2, false, FLOOR);
+        fig.dots.push([pa[0], pa[1], 0.45]);
+        fig.labels.push(Label {
+            x: pa[0] + 1.0,
+            y: pa[1] + 2.5,
+            text: i.label.clone(),
+        });
+    }
+    let q = f.at(c.point);
+    fig.dots.push([q[0], q[1], 0.9]);
+    fig.labels.push(Label {
+        x: q[0] + 1.5,
+        y: q[1] - 1.5,
+        text: "convergence".into(),
     });
     fig.scale_bar(&f);
     fig
@@ -554,6 +886,67 @@ mod tests {
         {
             std::fs::write(tmp.join(format!("locus-bloodstain-{}.png", i + 1)), png).unwrap();
         }
+    }
+
+    #[test]
+    fn the_conventional_point_floor_convergence_and_flags_are_reported() {
+        let (meta, mut r) = sample();
+        let c = r.conventional.clone().unwrap();
+        let text = pdf(&report(&meta, &r), vec![]).unwrap().text;
+        assert!(
+            text.contains("Perpendicular distances (conventional"),
+            "{text}"
+        );
+        assert!(text.contains(&xyz(c.point)));
+        assert!(text.contains("Illes and M. Boué") && text.contains("Camana"));
+        assert!(text.contains("302 mm"));
+        // Floor convergence, as its own section, never in the origin.
+        let origin = r.origin.clone();
+        let mut inputs = r.inputs.clone();
+        for (k, (x, y)) in [(0.8, 0.6), (2.4, 0.9), (2.2, 2.3), (0.9, 2.2)]
+            .iter()
+            .enumerate()
+        {
+            let d: [f64; 3] = [x - 1.6, y - 1.4, -1.0];
+            let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            let sin_a = -d[2] / n;
+            let h = d[0].hypot(d[1]);
+            inputs.push(StainInput {
+                label: format!("F{}", k + 1),
+                surface: "floor".into(),
+                centre: [*x, *y, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                width: Measured {
+                    value: 0.004,
+                    sigma: 0.0001,
+                },
+                length: Measured {
+                    value: 0.004 / sin_a,
+                    sigma: 0.0001,
+                },
+                travel: [d[0] / h, d[1] / h, 0.0],
+                travel_sigma_deg: 2.0,
+                ..Default::default()
+            });
+        }
+        r = run(
+            inputs,
+            Parameters {
+                bootstrap: 300,
+                floor_convergence: true,
+                ..Parameters::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.origin.stains_used, origin.stains_used);
+        let doc = report(&meta, &r);
+        let text = pdf(&doc, vec![]).unwrap().text;
+        assert!(text.contains("Floor stains: convergence in plan"), "{text}");
+        assert!(text.contains("x 1.600 m, y 1.400 m"), "{text}");
+        // Flags: near-round stains dominating, a large perspective correction.
+        r.origin.near_round_share = 0.8;
+        let doc = report(&meta, &r);
+        assert!(doc.warnings.iter().any(|w| w.contains("Near-round stains")));
     }
 
     #[test]
