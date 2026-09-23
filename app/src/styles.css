@@ -750,3 +750,22 @@ td.num {
   padding: 6px;
   font-family: ui-monospace, Consolas, monospace;
 }
+
+.dg-palette {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.dg-palette button {
+  padding: 2px;
+  display: grid;
+  place-items: center;
+}
+
+.dg-marker {
+  font-size: 10px;
+  font-weight: bold;
+  fill: #1e1f22;
+  user-select: none;
+}

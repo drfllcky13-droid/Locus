@@ -1,0 +1,77 @@
+[
+  {
+    "id": "car",
+    "name": "Car",
+    "size": 4.5
+  },
+  {
+    "id": "truck",
+    "name": "Truck",
+    "size": 8.0
+  },
+  {
+    "id": "motorcycle",
+    "name": "Motorcycle",
+    "size": 2.2
+  },
+  {
+    "id": "person",
+    "name": "Person",
+    "size": 0.6
+  },
+  {
+    "id": "body",
+    "name": "Body outline",
+    "size": 1.8
+  },
+  {
+    "id": "blood",
+    "name": "Blood",
+    "size": 0.3
+  },
+  {
+    "id": "cartridge_case",
+    "name": "Cartridge case",
+    "size": 0.1
+  },
+  {
+    "id": "firearm",
+    "name": "Firearm",
+    "size": 0.3
+  },
+  {
+    "id": "knife",
+    "name": "Knife",
+    "size": 0.3
+  },
+  {
+    "id": "shoe_mark",
+    "name": "Footwear impression",
+    "size": 0.3
+  },
+  {
+    "id": "tire_mark",
+    "name": "Tire mark",
+    "size": 3.0
+  },
+  {
+    "id": "impact",
+    "name": "Point of impact",
+    "size": 1.0
+  },
+  {
+    "id": "camera",
+    "name": "Camera position",
+    "size": 0.5
+  },
+  {
+    "id": "tree",
+    "name": "Tree",
+    "size": 4.0
+  },
+  {
+    "id": "pole",
+    "name": "Pole or post",
+    "size": 0.3
+  }
+]

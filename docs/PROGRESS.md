@@ -169,7 +169,7 @@ Plan (the hand-measurement solver first: one acceptance criterion depends on it,
 Acceptance criteria:
 - [x] Triangulation input reproduces known positions exactly: to 1e-12 m in `locus-analysis` tests (two and three references, both sides, baseline extension), and to 4e-16 m through the app's Measured point tool, with the tape readings stored with the point.
 - [ ] A diagram printed at 1:100 measures correctly on paper.
-- [ ] The legend updates live.
+- [x] The legend updates live: it is derived from the document on every render (`legendItems`, tested), and in the app it follows added symbols and markers and drops a deleted symbol at once.
 
 ## Blocked
 

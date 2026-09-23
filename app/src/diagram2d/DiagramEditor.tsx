@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
 import { dist, endpoints, foot, segments, snap, type Snap } from "./geometry";
 import { MeasureDialog } from "./MeasureDialog";
+import {
+  legendItems,
+  nextMarker,
+  renumberMarkers,
+  SYMBOLS,
+  symbolById,
+  type LegendItem,
+} from "./symbols";
 import type { Diagram, Entity, EntityInput, Layer, Pt } from "./model";
 import {
   commit,
@@ -25,8 +33,11 @@ type Tool =
   | "text"
   | "point"
   | "measure"
+  | "symbol"
+  | "marker"
   | "north"
-  | "scalebar";
+  | "scalebar"
+  | "legend";
 
 const TOOLS: [Tool, string][] = [
   ["select", "Select"],
@@ -38,7 +49,10 @@ const TOOLS: [Tool, string][] = [
   ["point", "Point"],
   ["measure", "Measured point"],
   ["north", "North arrow"],
+  ["symbol", "Symbol"],
+  ["marker", "Evidence marker"],
   ["scalebar", "Scale bar"],
+  ["legend", "Legend"],
 ];
 
 /** Instructions for each click of each tool. */
@@ -61,6 +75,9 @@ const STEPS: Record<Tool, string[]> = {
   measure: ["Enter the tape measurements in the panel."],
   north: ["Click where the north arrow goes."],
   scalebar: ["Click where the scale bar starts."],
+  symbol: ["Pick a symbol on the right, then click to place it."],
+  marker: ["Click to place the next evidence marker."],
+  legend: ["Click where the legend goes; it lists what the diagram uses."],
 };
 
 const newId = () => crypto.randomUUID();
@@ -105,6 +122,7 @@ export function DiagramEditor({
   const [clicks, setClicks] = useState<Pt[]>([]);
   const [cursor, setCursor] = useState<Snap | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [symbol, setSymbol] = useState(SYMBOLS[0]?.id ?? "car");
   const [activeLayer, setActiveLayer] = useState(doc.layers[0]?.id ?? "base");
   const [snaps, setSnaps] = useState({
     endpoint: true,
@@ -168,6 +186,7 @@ export function DiagramEditor({
     [doc.entities, layerOf],
   );
   const grid = gridStep(view.scale);
+  const legend = useMemo(() => legendItems(doc), [doc]);
 
   const snapAt = (s: Pt): Snap =>
     snap(toWorld(view, s), visible, {
@@ -241,6 +260,15 @@ export function DiagramEditor({
         return;
       case "north":
         add({ kind: "north", at: p, rotation: 0 });
+        return;
+      case "symbol":
+        add({ kind: "symbol", symbol, at: p, rotation: 0, scale: 1 });
+        return;
+      case "marker":
+        add({ kind: "marker", number: nextMarker(doc), at: p, note: "" });
+        return;
+      case "legend":
+        add({ kind: "legend", at: p });
         return;
       case "measure":
         return;
@@ -400,6 +428,40 @@ export function DiagramEditor({
             )}
           </g>
         );
+      }
+      case "symbol": {
+        const def = symbolById.get(e.symbol);
+        if (!def) return null;
+        const [x, y] = S(e.at);
+        // The symbol's 100-unit box spans def.size × scale metres on the ground.
+        const k = (def.size * e.scale * view.scale) / 100;
+        return (
+          <g
+            key={e.id}
+            transform={`translate(${x} ${y}) rotate(${(-e.rotation * 180) / Math.PI}) scale(${k})`}
+            color={stroke.stroke}
+            dangerouslySetInnerHTML={{ __html: def.body }}
+          />
+        );
+      }
+      case "marker": {
+        const [x, y] = S(e.at);
+        return (
+          <g key={e.id}>
+            <path
+              d={`M ${x - 11} ${y + 9} L ${x} ${y - 13} L ${x + 11} ${y + 9} Z`}
+              fill="#f2c94c"
+              stroke={sel ? "#f2a53a" : "#1e1f22"}
+            />
+            <text x={x} y={y + 6} className="dg-marker" textAnchor="middle">
+              {e.number}
+            </text>
+          </g>
+        );
+      }
+      case "legend": {
+        const [x, y] = S(e.at);
+        return <LegendBox key={e.id} x={x} y={y} items={legend} color={stroke.stroke} />;
       }
       case "north": {
         const [x, y] = S(e.at);
@@ -648,6 +710,34 @@ export function DiagramEditor({
           )}
         </div>
         <aside className="dg-side">
+          {tool === "symbol" && (
+            <>
+              <h3>Symbols</h3>
+              <div className="dg-palette">
+                {SYMBOLS.map((d) => (
+                  <button
+                    key={d.id}
+                    className={d.id === symbol ? "primary" : ""}
+                    title={`${d.name} (${d.size} m)`}
+                    onClick={() => setSymbol(d.id)}
+                  >
+                    <svg
+                      viewBox="-50 -50 100 100"
+                      width={28}
+                      height={28}
+                      color="currentColor"
+                      dangerouslySetInnerHTML={{ __html: d.body }}
+                    />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {doc.entities.some((e) => e.kind === "marker") && (
+            <button onClick={() => change(renumberMarkers(doc))}>
+              Renumber markers (reading order)
+            </button>
+          )}
           <h3>Layers</h3>
           {doc.layers.map((l) => (
             <div key={l.id} className={`dg-layer${l.id === activeLayer ? " active" : ""}`}>
@@ -715,5 +805,69 @@ export function DiagramEditor({
         </aside>
       </div>
     </div>
+  );
+}
+
+/** The legend, drawn in screen space from `legendItems` (so it follows every change). */
+function LegendBox({
+  x,
+  y,
+  items,
+  color,
+}: {
+  x: number;
+  y: number;
+  items: LegendItem[];
+  color: string;
+}) {
+  const row = 22;
+  const width = 220;
+  const height = 28 + Math.max(items.length, 1) * row;
+  return (
+    <g transform={`translate(${x} ${y})`} className="dg-legend">
+      <rect width={width} height={height} fill="#1e1f22" stroke={color} />
+      <text x={10} y={18} className="dg-text" fill={color} fontWeight="bold">
+        Legend
+      </text>
+      {items.length === 0 && (
+        <text x={10} y={42} className="dg-text" fill={color}>
+          (nothing to list yet)
+        </text>
+      )}
+      {items.map((it, i) => {
+        const cy = 28 + i * row + row / 2;
+        let glyph;
+        if (typeof it.glyph === "object") {
+          const def = symbolById.get(it.glyph.symbol);
+          glyph = def ? (
+            <g
+              transform={`translate(18 ${cy}) scale(0.16)`}
+              color={color}
+              dangerouslySetInnerHTML={{ __html: def.body }}
+            />
+          ) : null;
+        } else if (it.glyph === "marker") {
+          glyph = <path d={`M 10 ${cy + 7} L 18 ${cy - 9} L 26 ${cy + 7} Z`} fill="#f2c94c" />;
+        } else {
+          glyph = (
+            <g>
+              <circle cx={18} cy={cy} r={4} stroke={color} fill="none" />
+              {it.glyph === "measured" && (
+                <circle cx={18} cy={cy} r={8} stroke={color} fill="none" strokeDasharray="2 2" />
+              )}
+            </g>
+          );
+        }
+        return (
+          <g key={it.key}>
+            {glyph}
+            <text x={36} y={cy + 4} className="dg-text" fill={color}>
+              {it.label}
+              {typeof it.glyph === "object" && it.count > 1 ? ` (${it.count})` : ""}
+            </text>
+          </g>
+        );
+      })}
+    </g>
   );
 }
