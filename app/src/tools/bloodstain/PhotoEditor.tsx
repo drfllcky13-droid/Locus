@@ -19,10 +19,13 @@ export function PhotoEditor({
   image,
   marks,
   onClick,
+  draw,
 }: {
   image: HTMLImageElement;
   marks: PhotoMarks;
   onClick: (px: P2) => void;
+  /** Extra drawing over the photo: `at` maps a photo pixel to the canvas, `s` is the zoom. */
+  draw?: (ctx: CanvasRenderingContext2D, at: (p: P2) => P2, s: number) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [view, setView] = useState<{ s: number; ox: number; oy: number } | null>(null);
@@ -117,7 +120,8 @@ export function PhotoEditor({
     };
     if (marks.seed) cross(marks.seed, "#ffd60a", "seed");
     if (marks.tail) cross(marks.tail, "#30d158", "tail");
-  }, [image, marks, view]);
+    draw?.(ctx, at, view.s);
+  }, [image, marks, view, draw]);
 
   const toImage = (e: React.PointerEvent | React.WheelEvent): P2 | null => {
     const c = canvas.current;

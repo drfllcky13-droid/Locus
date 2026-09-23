@@ -4,13 +4,14 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import type { CleanupRequest, LassoDepth, Region, StateView } from "../api";
+import type { CleanupRequest, LassoDepth, Region, SolvedCamera, StateView } from "../api";
 import { initialBudget, updateBudget, type BudgetState } from "./budget";
 import { EdlPass } from "./edl";
 import type { View } from "./lod";
 import { formatMeasurement } from "./measureFormat";
 import { PointCloudLayer, type ColorMode, type PickOutcome, type SceneData } from "./pointcloud";
 import { createScene } from "./scene";
+import { maxRadius } from "../tools/camera/model";
 
 export interface Stats {
   fps: number;
@@ -24,6 +25,36 @@ export type ClipMode = "off" | "inside" | "outside";
 
 /** Pixels around the cursor searched when picking, and the focus cone's width. */
 export const SNAP_PX = 12;
+
+/** Looking through a solved camera: its pose and lens, and its photo drawn over the scene. */
+export interface CameraMatch {
+  camera: SolvedCamera;
+  photoUrl: string | null;
+  opacity: number;
+}
+
+// The photo over the scene, through the solved lens: each screen pixel is an undistorted
+// image position (the camera's projection, fitted into the view); the photo is sampled where
+// the lens model puts that position.
+const MATCH_VERTEX = `void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const MATCH_FRAGMENT = `uniform sampler2D tPhoto;
+uniform vec2 uDevice; uniform float uDpr; uniform vec3 uFit; uniform vec3 uK;
+uniform vec4 uD; uniform float uP2; uniform vec2 uImage; uniform float uRmax; uniform float uOpacity;
+void main() {
+  vec2 css = vec2(gl_FragCoord.x, uDevice.y - gl_FragCoord.y) / uDpr;
+  vec2 img = (css - uFit.xy) / uFit.z;
+  float a = (img.x - uK.y) / uK.x;
+  float b = (img.y - uK.z) / uK.x;
+  float r2 = a * a + b * b;
+  if (sqrt(r2) >= uRmax) discard;
+  float radial = 1.0 + uD.x * r2 + uD.y * r2 * r2 + uD.z * r2 * r2 * r2;
+  float ad = a * radial + 2.0 * uD.w * a * b + uP2 * (r2 + 2.0 * a * a);
+  float bd = b * radial + uD.w * (r2 + 2.0 * b * b) + 2.0 * uP2 * a * b;
+  vec2 px = vec2(uK.x * ad + uK.y, uK.x * bd + uK.z);
+  if (px.x < 0.0 || px.y < 0.0 || px.x > uImage.x || px.y > uImage.y) discard;
+  gl_FragColor = vec4(texture2D(tPhoto, vec2(px.x / uImage.x, 1.0 - px.y / uImage.y)).rgb, uOpacity);
+  #include <colorspace_fragment>
+}`;
 
 export class Engine {
   readonly renderer: THREE.WebGLRenderer;
@@ -45,6 +76,13 @@ export class Engine {
   private analysis = new Map<string, THREE.Group>();
   private modelGizmo: TransformControls;
   private moving: string | null = null;
+  /** Looking through a solved camera, and the photo drawn over the scene. */
+  private match: CameraMatch | null = null;
+  private matchScene = new THREE.Scene();
+  private matchCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private matchMaterial: THREE.ShaderMaterial | null = null;
+  private matchUrl: string | null = null;
+  private normalFov = 50;
   /** A placed model was moved with the gizmo: its new model-to-project matrix (f64). */
   onModelMoved: ((id: string, matrix: number[]) => void) | null = null;
   private dirty = true;
@@ -149,8 +187,169 @@ export class Engine {
     this.renderer.setSize(w, h);
     this.labels.setSize(w, h);
     this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    if (this.match) this.matchProjection();
+    else this.camera.updateProjectionMatrix();
     this.requestRender();
+  }
+
+  // ---------- looking through a solved camera ----------
+
+  /** The photo's fit in the view (CSS px): offset and scale of image pixels. */
+  private matchFit(c: SolvedCamera): [number, number, number] {
+    const w = this.host.clientWidth;
+    const h = Math.max(this.host.clientHeight, 1);
+    const s = Math.min(w / c.size[0], h / c.size[1]);
+    return [(w - c.size[0] * s) / 2, (h - c.size[1] * s) / 2, s];
+  }
+
+  /** The solved camera's projection (focal length, principal point), the photo fitted into
+   * the view. */
+  private matchProjection() {
+    const c = this.match!.camera;
+    const w = this.host.clientWidth;
+    const h = Math.max(this.host.clientHeight, 1);
+    const [ox, oy, s] = this.matchFit(c);
+    const { near, far } = this.camera;
+    const A = (2 * (ox + c.cx * s)) / w - 1;
+    const B = 1 - (2 * (oy + c.cy * s)) / h;
+    const m = new THREE.Matrix4().set(
+      (2 * s * c.f) / w,
+      0,
+      -A,
+      0,
+      0,
+      (2 * s * c.f) / h,
+      -B,
+      0,
+      0,
+      0,
+      -(far + near) / (far - near),
+      (-2 * far * near) / (far - near),
+      0,
+      0,
+      -1,
+      0,
+    );
+    this.camera.projectionMatrix.copy(m);
+    this.camera.projectionMatrixInverse.copy(m.clone().invert());
+    // Point sizes and level of detail use the vertical field of view's pixel scale.
+    this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(h / (2 * s * c.f)));
+    const u = this.matchMaterial?.uniforms;
+    if (u) {
+      u.uFit.value.set(ox, oy, s);
+      const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+      u.uDevice.value.copy(size);
+      u.uDpr.value = size.x / Math.max(w, 1);
+    }
+  }
+
+  /** Look through a solved camera with its photo over the scene (null to go back to the
+   * normal view). Orbiting is off while it is on. */
+  setCameraMatch(m: CameraMatch | null) {
+    const was = this.match;
+    this.match = m;
+    if (!m) {
+      if (was) {
+        this.controls.enabled = true;
+        this.camera.fov = this.normalFov;
+        this.camera.updateProjectionMatrix();
+        const fwd = new THREE.Vector3(...was.camera.rotation[2]);
+        this.controls.target.copy(this.camera.position).addScaledVector(fwd, 3);
+        this.controls.update();
+      }
+      this.requestRender();
+      return;
+    }
+    if (!was) this.normalFov = this.camera.fov;
+    const c = m.camera;
+    const o = this.origin;
+    this.controls.enabled = false;
+    this.camera.position.set(c.position[0] - o[0], c.position[1] - o[1], c.position[2] - o[2]);
+    const [right, down, fwd] = c.rotation.map((r) => new THREE.Vector3(...r));
+    const basis = new THREE.Matrix4().makeBasis(right, down.negate(), fwd.negate());
+    this.camera.quaternion.setFromRotationMatrix(basis);
+    this.camera.updateMatrixWorld();
+    if (!this.matchMaterial) {
+      this.matchMaterial = new THREE.ShaderMaterial({
+        vertexShader: MATCH_VERTEX,
+        fragmentShader: MATCH_FRAGMENT,
+        uniforms: {
+          tPhoto: { value: null },
+          uDevice: { value: new THREE.Vector2() },
+          uDpr: { value: 1 },
+          uFit: { value: new THREE.Vector3() },
+          uK: { value: new THREE.Vector3() },
+          uD: { value: new THREE.Vector4() },
+          uP2: { value: 0 },
+          uImage: { value: new THREE.Vector2() },
+          uRmax: { value: 1e9 },
+          uOpacity: { value: 0.5 },
+        },
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      });
+      this.matchScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.matchMaterial));
+    }
+    const u = this.matchMaterial.uniforms;
+    u.uK.value.set(c.f, c.cx, c.cy);
+    const [k1, k2, k3, p1, p2] = c.distortion;
+    u.uD.value.set(k1, k2, k3, p1);
+    u.uP2.value = p2;
+    u.uImage.value.set(c.size[0], c.size[1]);
+    u.uRmax.value = Math.min(1e9, maxRadius(c));
+    u.uOpacity.value = m.opacity;
+    if (m.photoUrl !== this.matchUrl) {
+      (u.tPhoto.value as THREE.Texture | null)?.dispose();
+      u.tPhoto.value = null;
+      this.matchUrl = m.photoUrl;
+      if (m.photoUrl) {
+        const tex = new THREE.TextureLoader().load(m.photoUrl, () => this.requestRender());
+        tex.colorSpace = THREE.SRGBColorSpace;
+        u.tPhoto.value = tex;
+      }
+    }
+    this.matchProjection();
+    this.requestRender();
+  }
+
+  /** Put the view at `eye` looking at `target` (project frame) with a horizontal field of
+   * view (degrees); null for the field of view restores the normal one. */
+  setView(eye: [number, number, number], target: [number, number, number], hfovDeg: number | null) {
+    this.setCameraMatch(null);
+    const o = this.origin;
+    this.camera.position.set(eye[0] - o[0], eye[1] - o[1], eye[2] - o[2]);
+    this.controls.target.set(target[0] - o[0], target[1] - o[1], target[2] - o[2]);
+    this.camera.fov =
+      hfovDeg === null
+        ? this.normalFov
+        : THREE.MathUtils.radToDeg(
+            2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hfovDeg) / 2) / this.camera.aspect),
+          );
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    this.requestRender();
+  }
+
+  /** Up to `max` of the drawn scan points (project frame), evenly from each loaded node. */
+  samplePoints(max: number): [number, number, number][] {
+    const nodes = (this.layer?.group.children ?? []).filter(
+      (c): c is THREE.Points => c instanceof THREE.Points && c.visible,
+    );
+    const total = nodes.reduce((n, c) => n + c.geometry.attributes.position.count, 0);
+    const step = Math.max(1, Math.ceil(total / max));
+    const o = this.origin;
+    const v = new THREE.Vector3();
+    const out: [number, number, number][] = [];
+    for (const c of nodes) {
+      c.updateMatrixWorld();
+      const p = c.geometry.attributes.position;
+      for (let i = 0; i < p.count; i += step) {
+        v.fromBufferAttribute(p, i).applyMatrix4(c.matrixWorld);
+        out.push([v.x + o[0], v.y + o[1], v.z + o[2]]);
+      }
+    }
+    return out;
   }
 
   // ---------- point clouds ----------
@@ -523,6 +722,11 @@ export class Engine {
       busy = this.layer.update(view);
     }
     this.edl.render(this.renderer, this.scene, this.camera);
+    if (this.match && this.matchMaterial?.uniforms.tPhoto.value) {
+      this.renderer.autoClear = false;
+      this.renderer.render(this.matchScene, this.matchCamera);
+      this.renderer.autoClear = true;
+    }
     this.labels.render(this.scene, this.camera);
     // Only intervals between back-to-back frames say anything about GPU speed.
     if (this.lastFrame > 0) {

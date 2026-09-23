@@ -391,6 +391,12 @@ export const api = {
     invoke<BloodstainRun>("bloodstain_preview", { request }),
   bloodstainSave: (name: string, request: BloodstainRequest, revises: number | null) =>
     invoke<AnalysisRecord>("bloodstain_save", { name, request, revises }),
+  cameraPreview: (request: CameraRequest) => invoke<CameraRun>("camera_preview", { request }),
+  cameraSave: (name: string, request: CameraRequest, revises: number | null) =>
+    invoke<AnalysisRecord>("camera_save", { name, request, revises }),
+  witnessPreview: (request: WitnessRequest) => invoke<WitnessRun>("witness_preview", { request }),
+  witnessSave: (name: string, request: WitnessRequest, revises: number | null) =>
+    invoke<AnalysisRecord>("witness_save", { name, request, revises }),
   analyses: () => invoke<AnalysisRecord[]>("analyses"),
   analysisWithdraw: (id: number, reason: string) =>
     invoke<AnalysisRecord[]>("analysis_withdraw", { id, reason }),
@@ -527,9 +533,116 @@ interface AnalysisBase {
 
 /** A stored analysis run; `record` is the tool's run type. */
 export type AnalysisRecord = AnalysisBase &
-  ({ tool: "trajectory"; record: TrajectoryRun } | { tool: "bloodstain"; record: BloodstainRun });
+  (
+    | { tool: "trajectory"; record: TrajectoryRun }
+    | { tool: "bloodstain"; record: BloodstainRun }
+    | { tool: "camera"; record: CameraRun }
+    | { tool: "witness"; record: WitnessRun }
+  );
 export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
 export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
+export type CameraRecord = Extract<AnalysisRecord, { tool: "camera" }>;
+export type WitnessRecord = Extract<AnalysisRecord, { tool: "witness" }>;
+
+export type LensModel = "pinhole" | "radial1" | "radial2" | "full";
+
+/** A solved camera (locus-analysis camera::Camera): rows of `rotation` are its right, down
+ * and forward axes in the project frame. */
+export interface SolvedCamera {
+  position: P3;
+  rotation: [P3, P3, P3];
+  size: [number, number];
+  f: number;
+  cx: number;
+  cy: number;
+  /** k1, k2, k3, p1, p2. */
+  distortion: [number, number, number, number, number];
+}
+
+export interface CameraParameters {
+  model: LensModel;
+  pick_sigma_px: number;
+  point_sigma: number;
+  floor_z: number;
+  draws: number;
+  seed: number;
+}
+
+export interface HeightInput {
+  label: string;
+  feet_px: [number, number];
+  head_px: [number, number];
+  matched_model: number | null;
+}
+
+export interface CameraRequest {
+  photo: number;
+  size: [number, number];
+  pairs: { px: [number, number]; pick: PickHit }[];
+  parameters: CameraParameters;
+  subjects: HeightInput[];
+}
+
+export interface CameraRun {
+  method: string;
+  photo: { evidence_id: number; name: string; file: string; sha256: string } | null;
+  pairs: { px: [number, number]; world: P3 }[];
+  parameters: CameraParameters;
+  solve: {
+    model: LensModel;
+    camera: SolvedCamera;
+    position_sigma: P3;
+    angles_sigma: P3;
+    f_sigma: number;
+    principal_sigma: [number, number];
+    residuals: [number, number][];
+    residual_sigmas: number[];
+    rms_px: number;
+    chi2: number;
+    dof: number;
+    birge: number;
+    warnings: string[];
+  };
+  heights: {
+    input: HeightInput;
+    height: Measured;
+    interval95: [number, number];
+    feet: P3;
+    head: P3;
+    miss: number;
+  }[];
+  summary: string;
+}
+
+export interface WitnessRequest {
+  floor: PickHit;
+  eye_height: number;
+  look_at: P3;
+  fov_deg: number;
+  targets: { label: string; pick: PickHit }[];
+  radius?: number;
+  end_clearance?: number;
+}
+
+export interface WitnessRun {
+  method: string;
+  floor_point: P3;
+  eye_height: number;
+  eye: P3;
+  look_at: P3;
+  fov_deg: number;
+  sights: {
+    label: string;
+    from: P3;
+    to: P3;
+    length: number;
+    clear: boolean;
+    blocking: number;
+    first: P3 | null;
+    first_distance: number | null;
+  }[];
+  summary: string;
+}
 
 type P2 = [number, number];
 
