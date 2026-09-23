@@ -14,5 +14,8 @@ png = "0.18.1"
 serde = "1.0.229"
 serde_json = "1.0.151"
 
+[dev-dependencies]
+locus-analysis = { version = "0.1.0", path = "../locus-analysis" }
+
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"] }

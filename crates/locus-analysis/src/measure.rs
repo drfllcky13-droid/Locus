@@ -61,20 +61,20 @@ impl std::fmt::Display for MeasureError {
 
 impl std::error::Error for MeasureError {}
 
-fn sub(a: P3, b: P3) -> P3 {
+pub(crate) fn sub(a: P3, b: P3) -> P3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
-fn dot(a: P3, b: P3) -> f64 {
+pub(crate) fn dot(a: P3, b: P3) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-fn cross(a: P3, b: P3) -> P3 {
+pub(crate) fn cross(a: P3, b: P3) -> P3 {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
     ]
 }
-fn norm(a: P3) -> f64 {
+pub(crate) fn norm(a: P3) -> f64 {
     dot(a, a).sqrt()
 }
 
@@ -132,7 +132,7 @@ pub fn angle(a: P3, vertex: P3, c: P3, sigma_point: f64) -> Result<Measured, Mea
 
 /// Eigen-decomposition of a symmetric 3×3 matrix by Jacobi rotation. Returns eigenvalues
 /// and eigenvectors (columns of the returned matrix, as rows here: `vecs[k]`).
-fn eigen_sym(mut a: [[f64; 3]; 3]) -> ([f64; 3], [P3; 3]) {
+pub(crate) fn eigen_sym(mut a: [[f64; 3]; 3]) -> ([f64; 3], [P3; 3]) {
     let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     for _ in 0..50 {
         let off = a[0][1].powi(2) + a[0][2].powi(2) + a[1][2].powi(2);
