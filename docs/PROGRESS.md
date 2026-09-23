@@ -124,7 +124,7 @@ Full results, timings and limits: `docs/phase2-report.md`. The 500M-point import
 
 What was built: point streaming with source record numbers in locus-io; locus-octree (out-of-core builder, node server, region queries, scene layer with poses and removed sets, cleanup operations); measurement math in locus-analysis; schema 2 (settings, octrees, measurements, cleanup_ops); background build queue, the `locus://` node protocol and pick/measure/cleanup commands; the viewer (LOD, adaptive budget, upload budget, EDL, colour modes, clip box and plane, GPU picking, measurement and cleanup tools, About dialog); `locus-validate gen-scene` and `import`. Tests: 71 Rust, 19 frontend.
 
-### Phase 3: Registration
+### Phase 3: Registration (done 2026-09-23; CI green on 22e9744)
 
 Plan (step 1 comes first: every accuracy criterion is measured against it):
 
@@ -149,7 +149,7 @@ Acceptance criteria:
 - [x] Bad links injected by the test are flagged: a 2 cm / 0.1° wrong cloud link fails the χ² test (252 per dof against 1.89) and is set aside, with accuracy kept. Without rough poses or shared targets, scans placed by shape alone are reported unverified (a flipped scan in the symmetric synthetic room is caught this way, not by χ²). *Red in the graph view once the UI exists.*
 - [x] Report numbers match the internal computation: the report is rebuilt from the stored links and poses, and tests check the laid-out PDF text against the adjustment's figures for every link, the target residuals and the scan poses.
 
-### Phase 4: 2D diagramming
+### Phase 4: 2D diagramming (approved 2026-09-23; the physical print check is under Blocked)
 
 Plan (the hand-measurement solver first: one acceptance criterion depends on it, and diagrams are built from its output):
 
@@ -172,6 +172,23 @@ Acceptance criteria:
 - [x] The legend updates live: it is derived from the document on every render (`legendItems`, tested), and in the app it follows added symbols and markers and drops a deleted symbol at once.
 
 Plan status (2026-09-22): items 1–8 are built. The room and road builders store their parameters with the geometry built from them (`builders.ts`, tested: wall faces, openings, door swing, lane offsets, 3 m / 9 m broken lines, tangent-arc curves), and the printer draws that stored geometry. Underlays: an evidence image calibrated from two or more known points by a closed-form least-squares similarity, with residuals shown and the calibration audit-logged (two points are flagged as giving no check); a point-cloud slice binned on the project grid, written as a hashed PNG and audit-logged. Both are hash-checked whenever shown or printed. Checked in the app: a room with a door, a road, a calibrated aerial image (50.00 mm/px from two points) and a slice, printed to PDF. Method note: `docs/methods/diagrams.md`.
+
+### Phase 5: 3D scene builder and asset library
+
+Plan (the scene model and extrusion first: the alignment criterion is about them):
+
+1. **Scene document and storage.** A 3D scene is a document like a diagram: objects (extrusion of a diagram, roof, library model, light), each with a stable id, a 4×4 transform to the project frame in f64, its parameters and a material; plus the sun settings (place, date, time, time zone). Schema 5 stores immutable revisions with their SHA-256 and an audit entry each, the same way as diagrams. An extrusion names the diagram revision (id and hash) it was built from, so the 3D can always be traced to the 2D it came from.
+2. **Extrusion (pure, tested).** Diagram rooms become walls of a given height built from the same outline, thickness and openings the 2D uses (doors to their head height, windows between sill and head), with an optional floor slab. Roads become lane and shoulder surfaces with the markings as thin strips just above them. Other lines can become low strips. Plan x, y are the diagram's own coordinates, exactly; z is a base elevation the examiner types or picks on the point cloud. Test: every extruded vertex lies on the diagram geometry to 1e-9 m (acceptance: within 1 mm), including after the move to the render origin.
+3. **Roof builder (pure, tested).** A flat roof on any room outline; shed, gable and hip roofs on rectangular outlines, with pitch and overhang. Hip roofs on arbitrary polygons need a straight skeleton; that is deferred and logged unless a case needs it.
+4. **Asset library (original, parametric).** Every model is generated in code from its dimensions, nothing imported or copied: vehicles by class (car, SUV, pickup, van, box truck, bus, motorcycle, bicycle) with editable length, width, height and wheelbase; people with height and a pose (a simple jointed skeleton with standing, sitting, kneeling and lying presets and editable joint angles); furniture (table, chair, sofa, bed, cabinet, shelving, desk); generic, unbranded weapons (handgun, long gun, knife, blunt object); numbered evidence markers matching the diagram's numbering. Tests: each model's bounding box matches its parameters.
+5. **Placement and snapping.** Place models with the transform gizmo or typed values. Snap to a point cloud surface: a pick is resolved in Rust to a point, and the local surface there is fitted from its neighbours (plane fit, normal, RMS residual, point count). The model's base sits on that surface, optionally aligned to its normal, and the fit residual is shown. Tests: on a synthetic floor and a tilted plane, the snapped base lies on the plane within 1 mm and the normal within 0.5°.
+6. **Materials and lighting.** Physically based material presets (colour, roughness, metalness, opacity) per object. Ambient, point, spot and directional lights, several at once, with shadows. A time-of-day sun: solar position from place and time with the NOAA algorithm, in `locus-analysis` as a pure function tested against published values, with its stated accuracy. Meshes and point clouds share one depth buffer, so they hide each other correctly with eye-dome lighting on.
+7. **One frame.** Diagrams, models and point clouds use the project frame; transforms stay f64 and become origin-relative f32 only at the GPU.
+8. **Method note** (`docs/methods/scene3d.md`): extrusion, roofs, surface snapping, sun position.
+
+Acceptance criteria:
+- [ ] A 2D diagram and its 3D extrusion align to within 1 mm.
+- [ ] Models can be snapped to point cloud surfaces.
 
 ## Blocked
 
