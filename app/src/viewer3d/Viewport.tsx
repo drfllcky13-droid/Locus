@@ -420,6 +420,7 @@ export function Viewport({
           <TrajectoryPanel
             key={`t${project.root}`}
             engine={getEngine}
+            photos={project.evidence.filter((e) => e.contents.images.length > 0)}
             origin={shownScene?.origin.join() ?? ""}
             requestPick={(hint, then) => {
               setTool("orbit");

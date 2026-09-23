@@ -375,6 +375,8 @@ export const api = {
   analyses: () => invoke<AnalysisRecord[]>("analyses"),
   analysisWithdraw: (id: number, reason: string) =>
     invoke<AnalysisRecord[]>("analysis_withdraw", { id, reason }),
+  caseNumber: () => invoke<string | null>("case_number"),
+  caseNumberSet: (value: string) => invoke<void>("case_number_set", { value }),
   /** Writes the PDF (from the stored record) and returns its SHA-256 (also logged). */
   analysisReport: (id: number, path: string) => invoke<string>("analysis_report", { id, path }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
@@ -404,12 +406,35 @@ export interface TrajectoryParameters {
   band: [number, number];
   floor_z: number;
   max_range: number;
+  conventions: {
+    /** "level_perpendicular" or "normal". */
+    surface: string;
+    reference: string;
+    /** The reference axis, degrees clockwise from project +y. */
+    reference_deg: number;
+  };
 }
 
 export interface TrajectoryRequest {
-  points: { pick: PickHit; kind: "entry" | "exit" | "rod"; surface: string; sigma: number }[];
+  points: {
+    pick: PickHit;
+    kind: "entry" | "exit" | "rod";
+    surface: string;
+    /** 1σ for a rod point or a manual centre (a fitted centre carries its own). */
+    sigma: number;
+    centre: "fitted" | "manual";
+    override_reason: string | null;
+    /** Evidence id of a photo of the defect. */
+    photo: number | null;
+  }[];
   parameters: TrajectoryParameters;
   plane_radius: number;
+  hole_radius: number;
+}
+
+export interface Band {
+  centre: [[number, number], [P3, P3]] | null;
+  footprint: [number, number][];
 }
 
 type P3 = [number, number, number];
@@ -423,6 +448,16 @@ export interface TrajectoryRun {
     point: P3;
     sigma: number;
     plane: { point: P3; normal: P3; rms: number; points: number } | null;
+    centre?: string;
+    override_reason?: string | null;
+    defect?: {
+      centre: P3;
+      centre_sigma: number;
+      semi_axes: [Measured, Measured];
+      impact: Measured;
+      rim_points: number;
+      spacing: number;
+    } | null;
   }[];
   parameters: TrajectoryParameters;
   line: {
@@ -440,8 +475,20 @@ export interface TrajectoryRun {
     surface: string;
     angles: { impact: Measured; horizontal: Measured; vertical: Measured };
     plane_rms: number;
+    level?: { vertical: Measured; horizontal: Measured | null } | null;
   }[];
-  band: { centre: [[number, number], [P3, P3]] | null; footprint: [number, number][] };
+  band: Band;
+  band_measurement?: Band | null;
+  scene_bearing?: Measured | null;
+  cross_checks?: {
+    input: number;
+    surface: string;
+    kind: string;
+    ellipse: Measured;
+    trajectory: Measured;
+    difference: number;
+    agrees: boolean;
+  }[];
   cone_narrower_than_fit: boolean;
   summary: string;
   assumptions: string[];

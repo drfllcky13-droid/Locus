@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import {
   api,
   type AnalysisRecord,
+  type EvidenceRecord,
+  type Measured,
   type TrajectoryParameters,
   type TrajectoryRequest,
   type TrajectoryRun,
@@ -22,6 +24,9 @@ interface Row {
   kind: Kind;
   surface: string;
   sigmaMm: number;
+  centre: "fitted" | "manual";
+  reason: string;
+  photo: number | null;
 }
 
 const DEFAULT_PARAMS: TrajectoryParameters = {
@@ -30,7 +35,19 @@ const DEFAULT_PARAMS: TrajectoryParameters = {
   band: [0.9, 1.8],
   floor_z: 0,
   max_range: 30,
+  conventions: {
+    surface: "level_perpendicular",
+    reference: "project north (+y)",
+    reference_deg: 0,
+  },
 };
+
+const vertical = (m: Measured) =>
+  `${Math.abs(m.value).toFixed(2)}° ± ${m.sigma.toFixed(2)}° ${m.value >= 0 ? "up" : "down"}`;
+const horizontal = (m: Measured | null) =>
+  m
+    ? `${Math.abs(m.value).toFixed(1)}° ± ${m.sigma.toFixed(1)}° ${m.value >= 0 ? "right" : "left"} of perpendicular`
+    : "horizontal surface";
 
 const fmt = (m: { value: number; sigma: number }, digits = 2) =>
   `${m.value.toFixed(digits)}° ± ${m.sigma.toFixed(digits)}°`;
@@ -52,9 +69,12 @@ export function TrajectoryPanel({
   origin,
   requestPick,
   onNotice,
+  photos,
 }: {
   engine: () => Engine | null;
   origin: string;
+  /** Image evidence a defect photo can be chosen from. */
+  photos: EvidenceRecord[];
   requestPick: (hint: string, then: (hit: PickHit) => void) => void;
   onNotice: (m: string | null) => void;
 }) {
@@ -68,36 +88,38 @@ export function TrajectoryPanel({
   const [result, setResult] = useState<TrajectoryRun | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [shown, setShown] = useState<number | null>(null);
+  const [caseNumber, setCaseNumber] = useState("");
+  const [holeRadius, setHoleRadius] = useState(0.03);
 
   useEffect(() => {
     api.analyses().then(setRecords, (e) => onNotice(String(e)));
+    api.caseNumber().then(
+      (c) => setCaseNumber(c ?? ""),
+      (e) => onNotice(String(e)),
+    );
   }, [onNotice]);
 
-  const request = (): TrajectoryRequest => ({
-    points: rows.map((r) => ({
+  const toRequest = (rs: Row[]): TrajectoryRequest => ({
+    points: rs.map((r) => ({
       pick: r.pick,
       kind: r.kind,
       surface: r.surface,
       sigma: r.sigmaMm / 1000,
+      centre: r.centre,
+      override_reason: r.centre === "manual" ? r.reason : null,
+      photo: r.photo,
     })),
     parameters: params,
     plane_radius: planeRadius,
+    hole_radius: holeRadius,
   });
+  const request = () => toRequest(rows);
 
   // Live preview while building.
   useEffect(() => {
     if (!open || rows.length < 2) return;
     let live = true;
-    const req: TrajectoryRequest = {
-      points: rows.map((r) => ({
-        pick: r.pick,
-        kind: r.kind,
-        surface: r.surface,
-        sigma: r.sigmaMm / 1000,
-      })),
-      parameters: params,
-      plane_radius: planeRadius,
-    };
+    const req = toRequest(rows);
     api.trajectoryPreview(req).then(
       (r) => {
         if (!live) return;
@@ -109,7 +131,8 @@ export function TrajectoryPanel({
     return () => {
       live = false;
     };
-  }, [open, rows, params, planeRadius]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- toRequest reads exactly these
+  }, [open, rows, params, planeRadius, holeRadius]);
 
   // The preview applies only while building with at least two points.
   const building = open && rows.length >= 2;
@@ -150,6 +173,9 @@ export function TrajectoryPanel({
               kind,
               surface: nextSurface(),
               sigmaMm: mode === "rod" ? 1 : 2,
+              centre: "fitted",
+              reason: "",
+              photo: null,
             },
           ]);
         } catch (e) {
@@ -191,6 +217,14 @@ export function TrajectoryPanel({
           New trajectory…
         </button>
       )}
+      <label>
+        Case number
+        <input
+          value={caseNumber}
+          onChange={(e) => setCaseNumber(e.target.value)}
+          onBlur={() => api.caseNumberSet(caseNumber).catch((e) => onNotice(String(e)))}
+        />
+      </label>
       {open && (
         <div className="dg-built">
           <label>
@@ -213,7 +247,7 @@ export function TrajectoryPanel({
           </label>
           <p className="muted">
             {mode === "defects"
-              ? "Pick the defects in the order the bullet travelled: entry then exit on each surface. Name each surface; give each pick's uncertainty."
+              ? "Pick the defects in the order the bullet travelled: entry then exit on each surface, clicking inside each hole. Each centre is fitted from the hole's rim; use the picked point instead only with a reason."
               : "Pick two points well apart along the rod. Enter the rod's play in its hole."}
           </p>
           {rows.map((r, i) => (
@@ -230,7 +264,59 @@ export function TrajectoryPanel({
                   />
                 </label>
               )}
-              {num("1σ (mm)", r.sigmaMm, (sigmaMm) => sigmaMm > 0 && setRow(i, { sigmaMm }), 0.5)}
+              {r.kind !== "rod" && (
+                <label>
+                  Centre
+                  <select
+                    value={r.centre}
+                    onChange={(e) => setRow(i, { centre: e.target.value as Row["centre"] })}
+                  >
+                    <option value="fitted">Fitted from the rim</option>
+                    <option value="manual">The picked point (override)</option>
+                  </select>
+                </label>
+              )}
+              {r.centre === "manual" && r.kind !== "rod" && (
+                <label>
+                  Reason (in the report)
+                  <input value={r.reason} onChange={(e) => setRow(i, { reason: e.target.value })} />
+                </label>
+              )}
+              {(r.kind === "rod" || r.centre === "manual") &&
+                num("1σ (mm)", r.sigmaMm, (sigmaMm) => sigmaMm > 0 && setRow(i, { sigmaMm }), 0.5)}
+              {preview?.inputs[i]?.defect && (
+                <div className="muted">
+                  Centre ± {(preview.inputs[i].defect!.centre_sigma * 1000).toFixed(1)} mm from{" "}
+                  {preview.inputs[i].defect!.rim_points} rim points; ellipse impact{" "}
+                  {fmt(preview.inputs[i].defect!.impact, 1)}
+                </div>
+              )}
+              {preview?.cross_checks
+                ?.filter((c) => c.input === i && !c.agrees)
+                .map((c) => (
+                  <p key={c.input} className="error">
+                    The hole's ellipse ({fmt(c.ellipse, 1)}) disagrees with the path (
+                    {fmt(c.trajectory, 1)}) beyond their uncertainty.
+                  </p>
+                ))}
+              {r.kind !== "rod" && (
+                <label>
+                  Photo
+                  <select
+                    value={r.photo ?? ""}
+                    onChange={(e) =>
+                      setRow(i, { photo: e.target.value ? Number(e.target.value) : null })
+                    }
+                  >
+                    <option value="">None</option>
+                    {photos.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.contents.images[0]?.name ?? p.original_path}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {preview?.line.residuals[i] !== undefined && (
                 <div className="muted">
                   Residual {(preview.line.residuals[i] * 1000).toFixed(1)} mm
@@ -295,27 +381,77 @@ export function TrajectoryPanel({
               (r) => r > 0 && r <= 0.5 && setPlaneRadius(r),
               0.01,
             )}
+          {mode === "defects" &&
+            num(
+              "Hole search radius (m)",
+              holeRadius,
+              (r) => r > 0 && r <= 0.2 && setHoleRadius(r),
+              0.005,
+            )}
+
+          <h3>Angle conventions</h3>
+          <label>
+            Surface angles
+            <select
+              value={params.conventions.surface}
+              onChange={(e) =>
+                setParams({
+                  ...params,
+                  conventions: { ...params.conventions, surface: e.target.value },
+                })
+              }
+            >
+              <option value="level_perpendicular">
+                Vertical from level; horizontal from perpendicular
+              </option>
+              <option value="normal">Both from the surface normal</option>
+            </select>
+          </label>
+          <label>
+            Bearing from
+            <input
+              value={params.conventions.reference}
+              onChange={(e) =>
+                setParams({
+                  ...params,
+                  conventions: { ...params.conventions, reference: e.target.value },
+                })
+              }
+            />
+          </label>
+          {num(
+            "That axis, ° clockwise from project +y",
+            params.conventions.reference_deg,
+            (reference_deg) =>
+              setParams({ ...params, conventions: { ...params.conventions, reference_deg } }),
+            0.1,
+          )}
 
           {error && <p className="error">{error}</p>}
           {preview && (
             <div className="trajectory-result">
               <div>
-                Bearing <strong>{fmt(preview.line.bearing)}</strong>
+                Bearing <strong>{fmt(preview.scene_bearing ?? preview.line.bearing)}</strong> from{" "}
+                {params.conventions.reference}
               </div>
               <div>
-                Elevation <strong>{fmt(preview.line.elevation)}</strong>
+                Elevation <strong>{vertical(preview.line.elevation)}</strong>
               </div>
               <div className="muted">
-                95 % cone {preview.line.cone.major_deg.toFixed(2)}° ×{" "}
-                {preview.line.cone.minor_deg.toFixed(2)}°
+                <span className="swatch measurement" /> Measurement uncertainty (95 %, computed){" "}
+                {preview.line.cone.major_deg.toFixed(2)}° × {preview.line.cone.minor_deg.toFixed(2)}
+                °
+                <br />
+                <span className="swatch examiner" /> Examiner-defined zone (±
+                {params.cone_deg.toFixed(1)}°, analyst judgment)
                 {preview.line.dof > 0
                   ? `; χ² ${preview.line.chi2.toFixed(2)} on ${preview.line.dof}`
                   : "; no redundancy"}
               </div>
               {preview.cone_narrower_than_fit && (
                 <p className="error">
-                  The fit's 95 % cone ({preview.line.cone.major_deg.toFixed(1)}°) is wider than the
-                  cone drawn.
+                  The computed 95 % cone ({preview.line.cone.major_deg.toFixed(1)}°) is wider than
+                  the examiner-defined zone.
                 </p>
               )}
               {preview.line.inflation > 1 && (
@@ -327,8 +463,10 @@ export function TrajectoryPanel({
               )}
               {preview.surfaces.map((s) => (
                 <div key={s.surface} className="muted">
-                  {s.surface}: impact {fmt(s.angles.impact, 1)}, horizontal{" "}
-                  {fmt(s.angles.horizontal, 1)}, vertical {fmt(s.angles.vertical, 1)}
+                  {s.surface}: impact {fmt(s.angles.impact, 1)},{" "}
+                  {params.conventions.surface === "level_perpendicular" && s.level
+                    ? `${vertical(s.level.vertical)}, ${horizontal(s.level.horizontal)}`
+                    : `horizontal ${fmt(s.angles.horizontal, 1)}, vertical ${fmt(s.angles.vertical, 1)}`}
                 </div>
               ))}
               {preview.band.centre && (

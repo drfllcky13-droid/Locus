@@ -806,3 +806,18 @@ td.num {
 .dg-calib text {
   fill: #f2a53a;
 }
+
+/* Trajectory zones, in the report's colours. */
+.swatch {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.3em;
+  vertical-align: -0.1em;
+}
+.swatch.measurement {
+  background: #2f6fbf;
+}
+.swatch.examiner {
+  background: #c9731a;
+}
