@@ -29,7 +29,7 @@ describe("animation model", () => {
   });
 
   it("turns EDR stations into distance travelled from the first sample", () => {
-    const spread = (value: number) => ({ value });
+    const spread = (value: number) => ({ value, low: value - 0.5, high: value + 1 });
     const r = {
       id: 7,
       name: "EDR 1",
@@ -38,6 +38,8 @@ describe("animation model", () => {
           [0, 0, 0],
           [30, 0, 0],
         ],
+        scale_tolerance: 0.01,
+        offset_tolerance: 0.25,
         samples: [
           { t: -2, speed: 13 },
           { t: -1, speed: 11 },
@@ -59,6 +61,17 @@ describe("animation model", () => {
       times: [0, 1, 2],
       distances: [0, 13, 23],
       speeds: [13, 11, 9],
+      // Distance range: d0 - high .. d0 - low; speed: v(1 ± 1 %) ± 0.25 m/s.
+      ranges: [
+        [-1, 0.5],
+        [12, 13.5],
+        [22, 23.5],
+      ],
+      speed_ranges: [
+        [12.62, 13.38],
+        [10.64, 11.36],
+        [8.66, 9.34],
+      ],
     });
     expect(got.segment.source).toEqual({ kind: "edr", analysis_id: 7, name: "EDR 1" });
   });

@@ -5,7 +5,7 @@ import type { PickHit, SceneData } from "./viewer3d/pointcloud";
 import type { MeasurementRecord } from "./viewer3d/measureFormat";
 import type { Diagram } from "./diagram2d/model";
 import type { SceneDoc } from "./scene3d/model";
-import type { Animation, Evaluation } from "./animation/model";
+import type { Animation, Evaluation, TdsRequest } from "./animation/model";
 
 export type LinearUnit = "meter" | "centimeter" | "millimeter" | "foot" | "us_survey_foot" | "inch";
 
@@ -347,6 +347,8 @@ export const api = {
   scenes: () => invoke<SceneRevision[]>("scenes"),
   animationEvaluate: (animation: Animation, step: number) =>
     invoke<Evaluation>("animation_evaluate", { animation, step }),
+  animationSave: (sceneId: number, name: string, request: TdsRequest) =>
+    invoke<AnalysisRecord>("animation_save", { sceneId, name, request }),
   sceneCreate: (name: string, document: SceneDoc) =>
     invoke<SceneRevision>("scene_create", { name, document }),
   sceneSave: (sceneId: number, name: string, document: SceneDoc) =>
@@ -569,6 +571,11 @@ export type AnalysisRecord = AnalysisBase &
     | { tool: "witness"; record: WitnessRun }
     | { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume" | "edr"; record: CrashRun }
     | { tool: "photogrammetry"; record: PhotoRun }
+    | { tool: "animation"; record: { summary: string; scene_id: number } }
+    | {
+        tool: "render";
+        record: { summary?: string; scene_id: number; file: string; sha256: string };
+      }
   );
 export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
 export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
@@ -856,6 +863,9 @@ export interface CrashRun {
   /** EDR: the path, and each sample's distance to the end time and place on the path. */
   path?: P3[];
   samples?: { t: number; speed: number }[];
+  /** EDR: the speed's tolerance, systematic (a fraction and m/s). */
+  scale_tolerance?: number;
+  offset_tolerance?: number;
   stations?: {
     t: number;
     distance: Spread;

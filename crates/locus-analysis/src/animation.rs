@@ -66,14 +66,21 @@ impl Source {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SegmentMotion {
-    /// Constant speed (m/s).
-    Speed { speed: f64 },
+    /// Constant speed (m/s), with its range (low, high) when its source gives one.
+    Speed {
+        speed: f64,
+        #[serde(default)]
+        range: Option<[f64; 2]>,
+    },
     /// Constant acceleration (m/s², negative to brake) from `start_speed`, or from the previous
     /// segment's end speed when not given. Stops at zero.
     Accelerate {
         acceleration: f64,
         #[serde(default)]
         start_speed: Option<f64>,
+        /// The start speed's range (low, high), when its source gives one.
+        #[serde(default)]
+        range: Option<[f64; 2]>,
     },
     /// Distances along the path (m, from the segment's start) at times (s, from its start):
     /// an EDR record's, or keyframes; with the speeds at those times when known (an EDR
@@ -83,6 +90,12 @@ pub enum SegmentMotion {
         distances: Vec<f64>,
         #[serde(default)]
         speeds: Option<Vec<f64>>,
+        /// Per row, the range (low, high) of the distance and of the speed, when the source
+        /// gives them (an EDR record's range method and speed tolerance).
+        #[serde(default)]
+        ranges: Option<Vec<[f64; 2]>>,
+        #[serde(default)]
+        speed_ranges: Option<Vec<[f64; 2]>>,
     },
 }
 
@@ -287,14 +300,45 @@ pub struct Prepared<'a> {
     path: Path,
     /// Per segment: timeline start, duration (None: to the end), profile, distance at start.
     parts: Vec<(f64, Option<f64>, Profile, f64)>,
+    /// Per segment: how its range is found, and the distance range at its start.
+    spreads: Vec<(Spread, f64, f64)>,
+    /// The distance range where the last timed segment ends.
+    end: (f64, f64),
+}
+
+/// A segment's own range, from its source.
+#[derive(Debug, Clone)]
+enum Spread {
+    /// None stated: the nominal motion.
+    Exact,
+    /// The motion at the low and at the high end of its speed range.
+    Profiles(Profile, Profile),
+    /// A table's per-row distance and speed ranges, interpolated linearly between rows.
+    Rows {
+        times: Vec<f64>,
+        distances: Option<Vec<[f64; 2]>>,
+        speeds: Option<Vec<[f64; 2]>>,
+    },
+}
+
+/// Linear interpolation in a table of (low, high) rows at local time `u`.
+fn lerp_rows(times: &[f64], rows: &[[f64; 2]], u: f64) -> [f64; 2] {
+    let t0 = times[0];
+    let k = times
+        .windows(2)
+        .position(|w| u + t0 < w[1])
+        .unwrap_or(times.len() - 2);
+    let f = ((u + t0 - times[k]) / (times[k + 1] - times[k])).clamp(0.0, 1.0);
+    [0, 1].map(|j| rows[k][j] + (rows[k + 1][j] - rows[k][j]) * f)
 }
 
 fn profile(m: &SegmentMotion, entry_speed: f64) -> Profile {
     match m {
-        SegmentMotion::Speed { speed } => Profile::Constant { speed: *speed },
+        SegmentMotion::Speed { speed, .. } => Profile::Constant { speed: *speed },
         SegmentMotion::Accelerate {
             acceleration,
             start_speed,
+            ..
         } => Profile::Phases {
             speed: start_speed.unwrap_or(entry_speed),
             phases: vec![Phase {
@@ -306,11 +350,37 @@ fn profile(m: &SegmentMotion, entry_speed: f64) -> Profile {
             times,
             distances,
             speeds,
+            ..
         } => Profile::Table {
             times: times.iter().map(|t| t - times[0]).collect(),
             distances: distances.iter().map(|d| d - distances[0]).collect(),
             speeds: speeds.clone(),
         },
+    }
+}
+
+/// A segment's own distance (from its start) and speed ranges at local time `u`:
+/// [distance low, high, speed low, high].
+fn local_bounds(spread: &Spread, nominal: &Profile, u: f64) -> [f64; 4] {
+    let (ds, v, _) = nominal.at(u);
+    match spread {
+        Spread::Exact => [ds, ds, v, v],
+        Spread::Profiles(a, b) => {
+            let (da, va, _) = a.at(u);
+            let (db, vb, _) = b.at(u);
+            [da.min(db), da.max(db), va.min(vb), va.max(vb)]
+        }
+        Spread::Rows {
+            times,
+            distances,
+            speeds,
+        } => {
+            let d = distances
+                .as_ref()
+                .map_or([ds, ds], |r| lerp_rows(times, r, u));
+            let s = speeds.as_ref().map_or([v, v], |r| lerp_rows(times, r, u));
+            [d[0], d[1], s[0], s[1]]
+        }
     }
 }
 
@@ -328,11 +398,85 @@ impl<'a> Prepared<'a> {
             return err(format!("{}: give at least one motion segment", m.name));
         }
         let mut parts = vec![];
+        let mut spreads = vec![];
         let (mut t, mut s, mut v) = (m.start, m.offset, 0.0);
+        // The distance and speed ranges carried from one segment to the next.
+        let (mut s_lo, mut s_hi, mut v_lo, mut v_hi) = (s, s, v, v);
         for (k, seg) in m.segments.iter().enumerate() {
             let p = profile(&seg.motion, v);
             p.check()
                 .map_err(|e| AnimError(format!("{}, segment {}: {}", m.name, k + 1, e.0)))?;
+            let bad = |what: &str| AnimError(format!("{}, segment {}: {what}", m.name, k + 1));
+            let spread = match &seg.motion {
+                SegmentMotion::Speed {
+                    range: Some([lo, hi]),
+                    speed,
+                } => {
+                    if !(*lo >= 0.0 && lo <= speed && speed <= hi) {
+                        return Err(bad("the speed's range must hold the speed, from 0 up"));
+                    }
+                    Spread::Profiles(
+                        Profile::Constant { speed: *lo },
+                        Profile::Constant { speed: *hi },
+                    )
+                }
+                SegmentMotion::Accelerate {
+                    acceleration,
+                    start_speed,
+                    range,
+                } => {
+                    let r = match (range, start_speed) {
+                        (Some(r), _) => Some(*r),
+                        (None, None) if v_hi > v_lo => Some([v_lo, v_hi]),
+                        _ => None,
+                    };
+                    match r {
+                        Some([lo, hi]) if lo >= 0.0 && lo <= hi => {
+                            let at = |speed| Profile::Phases {
+                                speed,
+                                phases: vec![Phase {
+                                    duration: 1e9,
+                                    acceleration: *acceleration,
+                                }],
+                            };
+                            Spread::Profiles(at(lo), at(hi))
+                        }
+                        Some(_) => {
+                            return Err(bad(
+                                "the start speed's range must run from low to high, from 0 up",
+                            ))
+                        }
+                        None => Spread::Exact,
+                    }
+                }
+                SegmentMotion::Table {
+                    times,
+                    ranges,
+                    speed_ranges,
+                    ..
+                } => {
+                    for rows in [ranges, speed_ranges].into_iter().flatten() {
+                        if rows.len() != times.len()
+                            || rows
+                                .iter()
+                                .any(|r| r[0] > r[1] || r[0].is_nan() || r[1].is_nan())
+                        {
+                            return Err(bad("each row's range must run from low to high"));
+                        }
+                    }
+                    if ranges.is_none() && speed_ranges.is_none() {
+                        Spread::Exact
+                    } else {
+                        Spread::Rows {
+                            times: times.clone(),
+                            distances: ranges.clone(),
+                            speeds: speed_ranges.clone(),
+                        }
+                    }
+                }
+                _ => Spread::Exact,
+            };
+            spreads.push((spread, s_lo, s_hi));
             let dur = match (&seg.motion, seg.duration) {
                 (SegmentMotion::Table { times, .. }, _) => Some(times[times.len() - 1] - times[0]),
                 (_, Some(d)) if d > 0.0 => Some(d),
@@ -342,16 +486,49 @@ impl<'a> Prepared<'a> {
             parts.push((t, dur, p.clone(), s));
             if let Some(d) = dur {
                 let (ds, ve, _) = p.at(d);
+                let b = local_bounds(&spreads[k].0, &p, d);
                 t += d;
                 s += ds;
                 v = ve;
+                (s_lo, s_hi, v_lo, v_hi) = (s_lo + b[0], s_hi + b[1], b[2], b[3]);
             }
         }
         Ok(Prepared {
             mover: m,
             path,
             parts,
+            spreads,
+            end: (s_lo, s_hi),
         })
+    }
+
+    /// The range of the distance along the path and of the speed at time `t`: each segment's
+    /// own range from its source, the distance's carried from segment to segment (the range
+    /// method: the extremes of every stated range together). Clamped to the path.
+    pub fn bounds(&self, t: f64) -> ([f64; 2], [f64; 2]) {
+        let len = self.path.length();
+        let clamp = |a: f64, b: f64| [a.clamp(0.0, len), b.clamp(0.0, len)];
+        let (t0, ..) = self.parts[0];
+        if t < t0 {
+            let o = self.mover.offset;
+            return (clamp(o, o), [0.0, 0.0]);
+        }
+        for (k, (ts, dur, p, _)) in self.parts.iter().enumerate() {
+            if dur.is_none_or(|d| t < ts + d) {
+                let (spread, lo, hi) = &self.spreads[k];
+                let b = local_bounds(spread, p, t - ts);
+                return (clamp(lo + b[0], hi + b[1]), [b[2], b[3]]);
+            }
+        }
+        (clamp(self.end.0, self.end.1), [0.0, 0.0])
+    }
+
+    pub fn mover(&self) -> &Mover {
+        self.mover
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Distance along the path, speed, longitudinal acceleration and segment at time `t`.
@@ -833,7 +1010,10 @@ mod tests {
             vec![
                 Segment {
                     duration: Some(2.0),
-                    motion: SegmentMotion::Speed { speed: 20.0 },
+                    motion: SegmentMotion::Speed {
+                        speed: 20.0,
+                        range: None,
+                    },
                     source: edr,
                 },
                 Segment {
@@ -841,6 +1021,7 @@ mod tests {
                     motion: SegmentMotion::Accelerate {
                         acceleration: -6.0,
                         start_speed: None,
+                        range: None,
                     },
                     source: assume("braking after the EDR record ends"),
                 },
@@ -882,12 +1063,18 @@ mod tests {
             vec![
                 Segment {
                     duration: Some(2.0),
-                    motion: SegmentMotion::Speed { speed: 25.0 },
+                    motion: SegmentMotion::Speed {
+                        speed: 25.0,
+                        range: None,
+                    },
                     source: assume("a"),
                 },
                 Segment {
                     duration: None,
-                    motion: SegmentMotion::Speed { speed: 10.0 },
+                    motion: SegmentMotion::Speed {
+                        speed: 10.0,
+                        range: None,
+                    },
                     source: assume("b"),
                 },
             ],
@@ -932,7 +1119,10 @@ mod tests {
         let m = car(
             vec![Segment {
                 duration: None,
-                motion: SegmentMotion::Speed { speed: 5.0 },
+                motion: SegmentMotion::Speed {
+                    speed: 5.0,
+                    range: None,
+                },
                 source: assume("c"),
             }],
             None,
@@ -963,7 +1153,10 @@ mod tests {
         let mut curve = car(
             vec![Segment {
                 duration: None,
-                motion: SegmentMotion::Speed { speed: 10.0 },
+                motion: SegmentMotion::Speed {
+                    speed: 10.0,
+                    range: None,
+                },
                 source: assume("c"),
             }],
             None,
@@ -1015,7 +1208,10 @@ mod tests {
         let m = car(
             vec![Segment {
                 duration: None,
-                motion: SegmentMotion::Speed { speed: 10.0 },
+                motion: SegmentMotion::Speed {
+                    speed: 10.0,
+                    range: None,
+                },
                 source: assume("c"),
             }],
             None,

@@ -125,3 +125,52 @@ pub async fn animation_evaluate(
     })
     .await
 }
+
+/// The scene's newest revision and its animation.
+pub(crate) fn scene_animation(
+    p: &locus_core::Project,
+    scene_id: i64,
+) -> CmdResult<(Revision, locus_analysis::animation::Animation)> {
+    let rev = p
+        .scene_latest(scene_id)
+        .map_err(err)?
+        .ok_or(format!("No scene {scene_id}."))?;
+    let a = rev
+        .document
+        .get("animation")
+        .cloned()
+        .ok_or("The scene has no animation.")?;
+    let a = serde_json::from_value(a)
+        .map_err(|e| format!("The scene's animation can't be read: {e}"))?;
+    Ok((rev, a))
+}
+
+/// The time–distance–speed report of the scene's animation, as saved (its newest revision),
+/// stored as an analysis record (audit-logged) to print.
+#[tauri::command]
+pub async fn animation_save(
+    app: AppHandle,
+    scene_id: i64,
+    name: String,
+    request: locus_analysis::tds::TdsRequest,
+) -> CmdResult<locus_core::AnalysisRecord> {
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        let (rev, a) = scene_animation(p, scene_id)?;
+        let run = locus_analysis::tds::run(scene_id, rev.number, &a, &request).map_err(|e| {
+            let e = e.to_string();
+            e[..1].to_uppercase() + &e[1..] + "."
+        })?;
+        let record = serde_json::to_value(&run).map_err(err)?;
+        p.add_analysis(
+            "animation",
+            locus_analysis::tds::TDS_METHOD,
+            &name,
+            &record,
+            None,
+        )
+        .map_err(err)
+    })
+    .await
+}

@@ -7,6 +7,7 @@
 //! [`Rendered::text`] lets tests check them against the laid-out document.
 
 pub mod analysis;
+pub mod animation;
 pub mod bloodstain;
 pub mod camera;
 pub mod crash;

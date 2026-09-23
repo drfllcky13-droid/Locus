@@ -92,6 +92,42 @@ An animation states its lighting: daylight, or low light (dusk, dawn, night, or 
 
 For low light, the report always carries this limitation. The brightness and contrast of rendered images do not represent what a person could see: human visibility depends on adaptation, glare, headlamp patterns and contrast that a render does not reproduce. No conclusion about visibility is drawn from renders; that needs a visibility study.
 
+## Time–distance–speed report
+
+Saved as an analysis record (audit-logged) from the scene's saved animation, and printed as a PDF. It is computed by `locus-analysis::tds` from the same motion the timeline plays (tested).
+
+**Per mover**, a table at a chosen interval (seconds from time zero):
+- distance along the path;
+- speed;
+- longitudinal acceleration;
+- heading (degrees anticlockwise from the project's +x);
+- the segment and its source: EDR, Analysis, Measured, or **Assumed**. Assumed rows are labelled so they never read as measured data.
+
+The table sits under the mover's inputs: what its position refers to (a vehicle's rear axle), its path and path source, each segment with its source, and its friction.
+
+**Ranges.** Where a segment's source gives a range, it is printed with the value:
+- an EDR record's distance range (the range method, Phase 7) and its speed tolerance (systematic scale and offset);
+- an analysis's speed range (for example a skid analysis's), taken with its speed.
+
+A segment with a speed range is run at both ends. A distance range carries on into the next segment, since everything after it starts from wherever it ended. So the ranges are those of the range method: the extremes of the stated ranges together. Segments without a stated range are exact as stated.
+
+**Pairs.** For chosen pairs of movers:
+- the straight-line distance between their reference points (not the gap between their bodies), with its range from the ends of each mover's distance range, and the least distance and when;
+- optionally the closing speed: the rate the distance shrinks, negative while they separate.
+
+**Time and distance to a point.** The examiner picks a point, such as a conflict point or a stop line, and gives its source. For each mover the report gives:
+- where the point falls on its path (the nearest point, and how far off the path it is);
+- when it gets there, with the earliest and latest from its distance range;
+- its speed there;
+- the distance still to go at each tabulated time, with its range.
+
+The report also carries:
+- time zero;
+- the plausibility flags and warnings, in "Needs attention";
+- the views, with each eye position, field of view and source;
+- the renders made from the scene;
+- the assumed list, method, assumptions and limitations.
+
 ## Renders
 
 Renders are MP4 at a chosen resolution and frame rate:

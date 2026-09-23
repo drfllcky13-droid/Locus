@@ -709,6 +709,8 @@ export function SceneBuilder({
       </p>
       <AnimationPanel
         engine={engine}
+        sceneId={rev.document_id}
+        saving={dirty}
         doc={doc}
         setAnimation={(f) => setDoc((d) => ({ ...d, animation: f(d.animation) }))}
         evidence={evidence}

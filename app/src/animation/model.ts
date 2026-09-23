@@ -12,10 +12,23 @@ export type Source =
   | { kind: "evidence"; evidence_id: number; name: string; note: string }
   | { kind: "assumption"; note: string };
 
+/** Ranges are (low, high), when the segment's source gives them. */
 export type SegmentMotion =
-  | { kind: "speed"; speed: number }
-  | { kind: "accelerate"; acceleration: number; start_speed: number | null }
-  | { kind: "table"; times: number[]; distances: number[]; speeds?: number[] | null };
+  | { kind: "speed"; speed: number; range?: [number, number] | null }
+  | {
+      kind: "accelerate";
+      acceleration: number;
+      start_speed: number | null;
+      range?: [number, number] | null;
+    }
+  | {
+      kind: "table";
+      times: number[];
+      distances: number[];
+      speeds?: number[] | null;
+      ranges?: [number, number][] | null;
+      speed_ranges?: [number, number][] | null;
+    };
 
 export interface Segment {
   /** Seconds; null (only the last) runs to the end of the timeline. */
@@ -164,6 +177,14 @@ export function sampleAt(samples: Sample[], from: number, step: number, t: numbe
   };
 }
 
+/** The time–distance–speed report's request (locus-analysis tds::TdsRequest). */
+export interface TdsRequest {
+  step: number;
+  pairs: [string, string][];
+  closing: boolean;
+  points: { name: string; position: P3; source: Source }[];
+}
+
 /** A view's camera at time `t`, interpolated like `sampleAt`. */
 export function cameraAt(cams: Camera[], from: number, step: number, t: number): Camera {
   const x = Math.min(Math.max((t - from) / step, 0), cams.length - 1);
@@ -206,6 +227,8 @@ export function edrSegment(
   const st = r.record.stations;
   if (!st || st.length < 2) return null;
   const [t0, d0] = [st[0].t, st[0].distance.value];
+  const samples = r.record.samples?.length === st.length ? r.record.samples : null;
+  const [scale, offset] = [r.record.scale_tolerance ?? 0, r.record.offset_tolerance ?? 0];
   const path = r.record.path ?? [];
   let length = 0;
   for (let i = 1; i < path.length; i++)
@@ -221,8 +244,19 @@ export function edrSegment(
         times: st.map((s) => s.t - t0),
         distances: st.map((s) => d0 - s.distance.value),
         // The record's speeds set the slopes: constant deceleration between samples.
-        speeds:
-          r.record.samples?.length === st.length ? r.record.samples.map((x) => x.speed) : null,
+        speeds: samples ? samples.map((x) => x.speed) : null,
+        // Where the record puts it: its distance range (range method) from the first sample's
+        // nominal distance, and its speed tolerance (systematic scale and offset).
+        ranges: st.map((s) => [d0 - s.distance.high, d0 - s.distance.low] as [number, number]),
+        speed_ranges: samples
+          ? samples.map(
+              (x) =>
+                [Math.max(0, x.speed * (1 - scale) - offset), x.speed * (1 + scale) + offset] as [
+                  number,
+                  number,
+                ],
+            )
+          : null,
       },
       source: { kind: "edr", analysis_id: r.id, name: r.name },
     },

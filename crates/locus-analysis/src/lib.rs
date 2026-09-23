@@ -15,4 +15,5 @@ pub mod motion;
 pub mod stiffness;
 pub mod sun;
 pub mod surface;
+pub mod tds;
 pub mod trajectory;

@@ -362,6 +362,27 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                 ),
                 vec![],
             ),
+            "animation" => {
+                let run: locus_analysis::tds::TdsRun =
+                    serde_json::from_value(a.record.clone()).map_err(err)?;
+                // The scene's renders, listed with it.
+                let renders = p
+                    .analyses()
+                    .map_err(err)?
+                    .into_iter()
+                    .filter(|x| x.tool == "render" && x.withdrawn.is_none())
+                    .filter_map(|x| {
+                        serde_json::from_value::<locus_analysis::animation::RenderRecord>(x.record)
+                            .ok()
+                            .filter(|r| r.scene_id == run.scene_id)
+                            .map(|r| (x.id, r))
+                    })
+                    .collect::<Vec<_>>();
+                (
+                    locus_report::animation::report(&meta(p, &a)?, &run, &renders),
+                    vec![],
+                )
+            }
             t => return Err(format!("No report for {t} analyses yet.")),
         };
         let (report, images) = report;

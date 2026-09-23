@@ -5,7 +5,14 @@
 // with it. See docs/methods/animation.md.
 import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
-import { api, type AnalysisRecord, type CrashRecord, type EvidenceRecord } from "../api";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import {
+  api,
+  type AnalysisRecord,
+  type CrashRecord,
+  type EvidenceRecord,
+  type Spread,
+} from "../api";
 import { vehicleSpec } from "../scene3d/library";
 import type { SceneDoc, SceneObject } from "../scene3d/model";
 import type { Engine } from "../viewer3d/engine";
@@ -28,6 +35,7 @@ import {
   type Sample,
   type Segment,
   type Source,
+  type TdsRequest,
   type View,
 } from "./model";
 
@@ -229,6 +237,31 @@ function SegmentEdit({
         analyses={analyses}
         evidence={evidence}
       />
+      {(() => {
+        // An analysis's speed (and its range-method range) for a constant-speed segment.
+        const src = seg.source;
+        const rec =
+          src.kind === "analysis" ? analyses.find((x) => x.id === src.analysis_id) : undefined;
+        const sp =
+          rec && "speed" in rec.record ? (rec.record.speed as Spread | undefined) : undefined;
+        if (m.kind !== "speed" || !sp) return null;
+        return (
+          <button
+            onClick={() =>
+              onChange({ ...seg, motion: { ...m, speed: sp.value, range: [sp.low, sp.high] } })
+            }
+          >
+            Use its speed ({(sp.value * 3.6).toFixed(1)} km/h, {(sp.low * 3.6).toFixed(1)}–
+            {(sp.high * 3.6).toFixed(1)})
+          </button>
+        );
+      })()}
+      {(m.kind === "speed" || m.kind === "accelerate") && m.range && (
+        <p className="muted">
+          Range {(m.range[0] * 3.6).toFixed(1)}–{(m.range[1] * 3.6).toFixed(1)} km/h{" "}
+          <button onClick={() => onChange({ ...seg, motion: { ...m, range: null } })}>Clear</button>
+        </p>
+      )}
       <button onClick={onRemove}>Remove segment</button>
     </div>
   );
@@ -725,6 +758,8 @@ function Timeline({
 
 export function AnimationPanel({
   engine,
+  sceneId,
+  saving,
   doc,
   setAnimation,
   evidence,
@@ -732,6 +767,9 @@ export function AnimationPanel({
   onNotice,
 }: {
   engine: () => Engine | null;
+  sceneId: number;
+  /** Edits are still waiting to be saved (the report reads the saved revision). */
+  saving: boolean;
   doc: SceneDoc;
   /** Update the scene's animation from its newest state. */
   setAnimation: (f: (a: Animation | undefined) => Animation | undefined) => void;
@@ -774,6 +812,9 @@ export function AnimationPanel({
     return { ...a, movers, views };
   }, [a]);
   const [through, setThrough] = useState<string>("");
+  const [tds, setTds] = useState<TdsRequest>({ step: 0.5, pairs: [], closing: true, points: [] });
+  const [pair, setPair] = useState<[string, string]>(["", ""]);
+  const [reports, setReports] = useState<AnalysisRecord[]>([]);
   const [editingView, setEditingView] = useState<string | null>(null);
   useEffect(() => {
     if (!ready) return setEv(null);
@@ -1195,6 +1236,135 @@ export function AnimationPanel({
           )
         );
       })()}
+      <h4>Time, distance and speed report</h4>
+      {num("Every (s)", tds.step, (step) => step >= 0.01 && setTds({ ...tds, step }), 0.1)}
+      <div className="row">
+        {[0, 1].map((i) => (
+          <select
+            key={i}
+            value={pair[i]}
+            onChange={(e) =>
+              setPair(i === 0 ? [e.target.value, pair[1]] : [pair[0], e.target.value])
+            }
+          >
+            <option value="">Mover…</option>
+            {a.movers.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        ))}
+        <button
+          disabled={!pair[0] || !pair[1] || pair[0] === pair[1]}
+          onClick={() => {
+            setTds({ ...tds, pairs: [...tds.pairs, pair] });
+            setPair(["", ""]);
+          }}
+        >
+          Add pair
+        </button>
+      </div>
+      {tds.pairs.map(([x, y], i) => (
+        <p key={i} className="muted">
+          Distance {a.movers.find((m) => m.id === x)?.name} to{" "}
+          {a.movers.find((m) => m.id === y)?.name}{" "}
+          <button onClick={() => setTds({ ...tds, pairs: tds.pairs.filter((_, j) => j !== i) })}>
+            Remove
+          </button>
+        </p>
+      ))}
+      <label className="inline">
+        <input
+          type="checkbox"
+          checked={tds.closing}
+          onChange={(e) => setTds({ ...tds, closing: e.target.checked })}
+        />
+        With closing speed
+      </label>
+      <button
+        onClick={() =>
+          requestPick("Click the point (a conflict point, a stop line).", (hit) =>
+            api.pickResolve(hit).then(
+              (r) =>
+                setTds((x) => ({
+                  ...x,
+                  points: [
+                    ...x.points,
+                    {
+                      name: `Point ${x.points.length + 1}`,
+                      position: r.project,
+                      source: assumption(),
+                    },
+                  ],
+                })),
+              (e) => onNotice(String(e)),
+            ),
+          )
+        }
+      >
+        Add a point (time and distance to it)
+      </button>
+      {tds.points.map((p, i) => (
+        <div key={i} className="dg-built">
+          <label>
+            Point name
+            <input
+              value={p.name}
+              onChange={(e) =>
+                setTds({
+                  ...tds,
+                  points: tds.points.map((q, j) => (j === i ? { ...q, name: e.target.value } : q)),
+                })
+              }
+            />
+          </label>
+          <SourceEdit
+            label="Why this point"
+            value={p.source}
+            onChange={(source) =>
+              setTds({
+                ...tds,
+                points: tds.points.map((q, j) => (j === i ? { ...q, source } : q)),
+              })
+            }
+            analyses={analyses}
+            evidence={evidence}
+          />
+          <button onClick={() => setTds({ ...tds, points: tds.points.filter((_, j) => j !== i) })}>
+            Remove point
+          </button>
+        </div>
+      ))}
+      <button
+        className="primary"
+        disabled={saving || !ev || !!error}
+        title={saving ? "Waiting for the scene to save" : undefined}
+        onClick={async () => {
+          const name = window.prompt(
+            "Name the report:",
+            `Time, distance and speed ${reports.length + 1}`,
+          );
+          if (!name) return;
+          try {
+            const r = await api.animationSave(sceneId, name, tds);
+            setReports((x) => [...x, r]);
+            const path = await saveDialog({
+              defaultPath: `${name}.pdf`,
+              filters: [{ name: "PDF", extensions: ["pdf"] }],
+            });
+            if (!path) return onNotice(`Saved as analysis ${r.id} (recorded in the audit log).`);
+            const sha = await api.analysisReport(r.id, path);
+            onNotice(
+              `Saved as analysis ${r.id}; report ${path} (SHA-256 ${sha}; recorded in the audit log).`,
+            );
+          } catch (e) {
+            onNotice(String(e));
+          }
+        }}
+      >
+        Save and print the report…
+      </button>
       {ev?.limitations.map((l, i) => (
         <p key={i} className="muted">
           {l}
