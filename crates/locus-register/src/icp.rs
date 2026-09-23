@@ -198,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
     fn refines_a_perturbed_pose_to_the_truth() {
         let opts = Options {
             scans: 2,

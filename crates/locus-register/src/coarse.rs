@@ -43,6 +43,25 @@ pub struct CoarseParams {
     pub feature_radius: f64,
     /// Fraction of points, the most distinctive, whose features are matched.
     pub keep: f64,
+    /// A rough pose (from the scanner's on-site registration, say): only headings and
+    /// translations near it are searched, which also settles symmetric scenes.
+    pub prior: Option<Prior>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prior {
+    pub transform: Isometry3<f64>,
+    /// Largest heading difference searched (°).
+    pub degrees: f64,
+    /// Largest translation difference searched (m).
+    pub metres: f64,
+}
+
+impl Prior {
+    fn heading(&self) -> f64 {
+        let r = self.transform.rotation * Vector3::x();
+        r.y.atan2(r.x)
+    }
 }
 
 impl Default for CoarseParams {
@@ -52,6 +71,7 @@ impl Default for CoarseParams {
             normal_radius: 0.25,
             feature_radius: 1.0,
             keep: 0.2,
+            prior: None,
         }
     }
 }
@@ -357,10 +377,14 @@ fn heading_votes(
     let mut best: Vec<(usize, Isometry3<f64>)> = (0..720)
         .into_par_iter()
         .flat_map_iter(|k| {
-            let rot = nalgebra::UnitQuaternion::from_axis_angle(
-                &Vector3::z_axis(),
-                (k as f64 * 0.5).to_radians(),
-            );
+            let heading = (k as f64 * 0.5).to_radians();
+            if let Some(pr) = &p.prior {
+                let d = (heading - pr.heading()).rem_euclid(std::f64::consts::TAU);
+                if d.min(std::f64::consts::TAU - d) > pr.degrees.to_radians() {
+                    return vec![];
+                }
+            }
+            let rot = nalgebra::UnitQuaternion::from_axis_angle(&Vector3::z_axis(), heading);
             let mut votes: std::collections::HashMap<[i64; 3], (usize, Vector3<f64>)> =
                 std::collections::HashMap::new();
             for &(i, j) in pairs {
@@ -399,9 +423,14 @@ fn heading_votes(
                 if kept.len() == 20 || n < 3 {
                     break;
                 }
-                if kept
-                    .iter()
-                    .all(|(_, k)| (k.translation.vector - t).norm() > 1.0)
+                let near_prior = p
+                    .prior
+                    .as_ref()
+                    .is_none_or(|pr| (pr.transform.translation.vector - t).norm() <= pr.metres);
+                if near_prior
+                    && kept
+                        .iter()
+                        .all(|(_, k)| (k.translation.vector - t).norm() > 1.0)
                 {
                     kept.push((
                         n,
@@ -412,6 +441,10 @@ fn heading_votes(
             kept
         })
         .collect();
+    // The prior itself is always a candidate, in case no feature pair near it is right.
+    if let Some(pr) = &p.prior {
+        best.push((0, pr.transform));
+    }
     // Up to 2000 by support, never two within 1 m and 10° of each other: scoring, not
     // support, picks the winner.
     let mut all = std::mem::take(&mut best);
@@ -559,6 +592,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
     fn aligns_two_scans_with_no_starting_pose_then_icp_reaches_the_truth() {
         // Two scene layouts; each pair shares a good part of the room from different stations.
         for (seed, from, to) in [(5, 1, 0), (9, 2, 0)] {

@@ -21,6 +21,8 @@ pub struct Target {
     pub kind: Kind,
     /// Position in the scan's frame (m).
     pub position: [f64; 3],
+    /// Its 1σ position uncertainty (m, root of the covariance trace).
+    pub sigma: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -40,11 +42,17 @@ fn p(t: &Target) -> Point3<f64> {
     Point3::from(t.position)
 }
 
-/// Match targets of scan `from` to scan `to`. `tolerance` (m) bounds how much a distance
-/// between two targets may differ between scans; it covers both scans' target precision.
+/// Match targets of scan `from` to scan `to`. A distance between two targets may differ
+/// between the scans by `tolerance` (m) plus three times the combined σ of the four target
+/// positions involved; a matched target may be that far from where the transform puts it.
 /// `None` when fewer than three targets can be matched.
 pub fn correspond(from: &[Target], to: &[Target], tolerance: f64) -> Option<Correspondence> {
     let d = |a: &Target, b: &Target| (p(a) - p(b)).norm();
+    // Allowed disagreement between the distance a–b in one scan and c–e in the other.
+    let tol = |a: &Target, b: &Target, c: &Target, e: &Target| {
+        tolerance
+            + 3.0 * (a.sigma.powi(2) + b.sigma.powi(2) + c.sigma.powi(2) + e.sigma.powi(2)).sqrt()
+    };
     let same = |a: &Target, b: &Target| a.kind == b.kind;
     // Hypotheses: (inlier pairs, rms, transform).
     let mut hyps: Vec<Hypothesis> = vec![];
@@ -59,7 +67,7 @@ pub fn correspond(from: &[Target], to: &[Target], tolerance: f64) -> Option<Corr
                 for l in 0..m {
                     if l == k
                         || !same(&from[j], &to[l])
-                        || (d(&to[k], &to[l]) - dij).abs() > tolerance
+                        || (d(&to[k], &to[l]) - dij).abs() > tol(&from[i], &from[j], &to[k], &to[l])
                     {
                         continue;
                     }
@@ -69,12 +77,18 @@ pub fn correspond(from: &[Target], to: &[Target], tolerance: f64) -> Option<Corr
                             if b == k || b == l || !same(&from[a], &to[b]) {
                                 continue;
                             }
-                            if (d(&to[k], &to[b]) - dia).abs() > tolerance
-                                || (d(&to[l], &to[b]) - dja).abs() > tolerance
+                            if (d(&to[k], &to[b]) - dia).abs()
+                                > tol(&from[i], &from[a], &to[k], &to[b])
+                                || (d(&to[l], &to[b]) - dja).abs()
+                                    > tol(&from[j], &from[a], &to[l], &to[b])
                             {
                                 continue;
                             }
                             let seed = [(i, k), (j, l), (a, b)];
+                            // A seed inside a consensus already found would only find it again.
+                            if hyps.iter().any(|h| seed.iter().all(|s| h.0.contains(s))) {
+                                continue;
+                            }
                             if let Some(h) = hypothesis(from, to, &seed, tolerance) {
                                 hyps.push(h);
                             }
@@ -129,7 +143,8 @@ fn hypothesis(
                 let mutual = (0..from.len())
                     .filter(|&o| o != i && from[o].kind == from[i].kind)
                     .all(|o| (f.transform * p(&from[o]) - p(&to[k])).norm() > dist);
-                (dist < tol && mutual).then_some((i, k))
+                let allowed = tol + 3.0 * (from[i].sigma.powi(2) + to[k].sigma.powi(2)).sqrt();
+                (dist < allowed && mutual).then_some((i, k))
             })
             .collect();
         if pairs.len() < 3 {
@@ -168,6 +183,7 @@ mod tests {
                 Target {
                     kind,
                     position: [l[0] + jitter(), l[1] + jitter(), l[2] + jitter()],
+                    sigma: 0.0,
                 }
             })
             .collect()
@@ -247,6 +263,7 @@ mod tests {
             .map(|&position| Target {
                 kind: Kind::Sphere,
                 position,
+                sigma: 0.0,
             })
             .collect();
         let c = correspond(&a, &a, 0.005).unwrap();
@@ -258,6 +275,7 @@ mod tests {
         let a = [[0.0; 3], [3.0, 0.0, 0.0]].map(|position| Target {
             kind: Kind::Sphere,
             position,
+            sigma: 0.0,
         });
         assert!(correspond(&a, &a, 0.005).is_none());
     }

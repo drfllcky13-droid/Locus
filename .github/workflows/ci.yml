@@ -11,6 +11,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Registration on synthetic scans of millions of points takes minutes: its own job, in
+  # parallel with the main one (Phase 3 acceptance).
+  registration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release -p locus-register -p locus-synth -- --include-ignored --nocapture
+
   licenses:
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +47,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      # The runner's preinstalled toolchains we don't use; the 100M-point fixture and the
+      # debug and release builds need the room.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - uses: Swatinem/rust-cache@v2
 
       - uses: pnpm/action-setup@v4

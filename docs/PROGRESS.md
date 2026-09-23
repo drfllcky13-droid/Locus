@@ -137,7 +137,7 @@ Plan (step 1 comes first: every accuracy criterion is measured against it):
    - a JSON sidecar with the ground truth (true poses, target centres, radius and board normals, injected faults), and the same data from an in-memory API that registration tests call without writing files.
 
    Tests: every generated point, mapped through its scan's true pose, lies on a scene surface within the noise; target fits on noiseless data recover the true centres; same seed gives identical output; the sidecar round-trips.
-2. **Registration core (`locus-register`, pure math, tested).** *Built: rigid fit, sphere and checkerboard detection, target matching, point-to-plane ICP, coarse alignment of levelled scans. Still to do: survey control, hybrid.* Rigid least-squares fit with covariance (Horn/Kabsch); sphere detection (RANSAC plus least-squares fit, radius check); checkerboard detection (planar patch plus intensity corner); target correspondence across scans by consistent distance geometry; cloud-to-cloud with FPFH features and RANSAC for the coarse pose, then point-to-plane ICP; survey control points; hybrid mode that mixes all three in one adjustment.
+2. **Registration core (`locus-register`, pure math, tested).** *Built: rigid fit, sphere and checkerboard detection, target matching, point-to-plane ICP, coarse alignment of levelled scans (constrained by rough poses when present), survey control and hybrid mode via the pose graph, the end-to-end pipeline (`pipeline::register`).* Rigid least-squares fit with covariance (Horn/Kabsch); sphere detection (RANSAC plus least-squares fit, radius check); checkerboard detection (planar patch plus intensity corner); target correspondence across scans by consistent distance geometry; cloud-to-cloud with FPFH features and RANSAC for the coarse pose, then point-to-plane ICP; survey control points; hybrid mode that mixes all three in one adjustment.
 3. **Pose graph.** *Built: one adjustment over target, cloud and control links as point pairs (hybrid mode), χ² link test at 99.9 %, worst-first set-aside, untested lone links.* Links between scans (target, cloud or control) with covariances, then global optimisation over all scans. Each link is tested against the solution: a link whose residual is statistically inconsistent is flagged red, with the test and threshold shown.
 4. **Storage and audit.** Schema 3: registrations, links, per-scan poses, detected targets; every run and every manual link change (delete, force) audit-logged. Applying a registration only updates scan poses (octrees stay as built).
 5. **Graph view.** Scans as nodes, links as edges coloured by error; delete or force a link and re-optimise.
@@ -145,8 +145,8 @@ Plan (step 1 comes first: every accuracy criterion is measured against it):
 7. **Method notes** in `docs/methods/registration.md`.
 
 Acceptance criteria:
-- [ ] On synthetic scans with known poses, registration error is under 2 mm and 0.02° (relative to the first scan).
-- [ ] Bad links injected by the test are flagged red.
+- [x] On synthetic scans with known poses, registration error is under 2 mm and 0.02° (relative to the first scan): 6 scans × 4M points, targets + cloud links from rough poses (0.5 m, 5° off), worst error 0.22 mm and 0.0008° (`crates/locus-register/tests/accept.rs`).
+- [x] Bad links injected by the test are flagged: a 2 cm / 0.1° wrong cloud link fails the χ² test (252 per dof against 1.89) and is set aside, with accuracy kept. Without rough poses or shared targets, scans placed by shape alone are reported unverified (a flipped scan in the symmetric synthetic room is caught this way, not by χ²). *Red in the graph view once the UI exists.*
 - [ ] Report numbers match the internal computation.
 
 ## Blocked

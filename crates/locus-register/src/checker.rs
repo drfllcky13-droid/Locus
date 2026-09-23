@@ -373,6 +373,7 @@ mod tests {
     use locus_synth::{scan_points, truth, Options, BOARD_SIZE};
 
     #[test]
+    #[ignore = "slow synthetic-scan test: run with --ignored (CI does, on Linux)"]
     fn finds_the_synthetic_checkerboards_at_their_true_centres() {
         let opts = Options {
             scans: 2,

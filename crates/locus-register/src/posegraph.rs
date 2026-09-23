@@ -50,6 +50,10 @@ pub struct Link {
     pub pairs: Vec<Pair>,
     /// Set by the examiner: never flag or set aside.
     pub forced: bool,
+    /// A cloud link whose starting pose came from shape matching alone (no targets, no prior
+    /// pose). In a symmetric scene every such link can agree on the same wrong answer, which
+    /// no consistency test can catch, so the examiner must confirm it.
+    pub shape_only: bool,
 }
 
 impl Link {
@@ -61,6 +65,7 @@ impl Link {
             b: Some(b),
             pairs,
             forced: false,
+            shape_only: false,
         }
     }
 
@@ -89,6 +94,7 @@ impl Link {
                 })
                 .collect(),
             forced: false,
+            shape_only: false,
         }
     }
 
@@ -528,11 +534,13 @@ mod tests {
         });
         let mut rng = Noise(0x0dd_ba11);
         let mut links = target_links(&t, 0.0005, &mut rng);
-        // Four surveyed spheres, 1 mm survey precision, seen from scan 1.
+        // Four surveyed spheres near the room's corners (control spread around the site, as
+        // a surveyor would place it), 1 mm survey precision, matched in scan 1.
         let inv = iso(&t.scans[1].pose).inverse();
         let survey = Matrix3::identity() * (0.001f64.powi(2) / 3.0);
-        let matched = t.spheres[..4]
+        let matched = [0, 4, 15, 19]
             .iter()
+            .map(|&k| &t.spheres[k])
             .map(|s| {
                 let pa = add((inv * Point3::from(s.centre)).coords.into(), rng.v(0.0005));
                 Pair {

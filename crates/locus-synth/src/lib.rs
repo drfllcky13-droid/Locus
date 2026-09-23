@@ -321,22 +321,26 @@ fn solid(lo: [f64; 3], hi: [f64; 3], rgb: [u8; 3]) -> Solid {
     }
 }
 
-/// Sphere centres, on stands spread through the room at different heights.
+/// Sphere centres, on stands spread through the room at different heights: a 5 × 4 grid
+/// between the pillar rows, each moved up to 1.5 m off its grid point, so every station
+/// sees several and no two groups of them form the same shape (real targets are placed
+/// irregularly; a regular grid would make matching ambiguous).
 fn sphere_layout() -> Vec<SphereTruth> {
-    [
-        [5.0, 5.0, 1.2],
-        [20.0, 4.0, 1.6],
-        [35.0, 6.0, 1.0],
-        [6.0, 24.5, 1.5],
-        [21.0, 26.0, 1.8],
-        [34.0, 23.0, 1.3],
-    ]
-    .into_iter()
-    .map(|centre| SphereTruth {
-        centre,
-        radius: SPHERE_RADIUS,
-    })
-    .collect()
+    let mut r = Rng::new(0x5_9e7e);
+    let mut v = vec![];
+    for y in [3.5, 11.25, 18.75, 26.5] {
+        for x in [4.5, 12.0, 20.0, 28.0, 36.0] {
+            v.push(SphereTruth {
+                centre: [
+                    x + r.range(-1.5, 1.5),
+                    y + r.range(-1.5, 1.5),
+                    r.range(1.0, 1.9),
+                ],
+                radius: SPHERE_RADIUS,
+            });
+        }
+    }
+    v
 }
 
 /// Checkerboards on the four walls, facing into the room.
