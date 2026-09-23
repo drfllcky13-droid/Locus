@@ -57,7 +57,7 @@ impl std::fmt::Display for DefectError {
     }
 }
 
-type P2 = [f64; 2];
+pub(crate) type P2 = [f64; 2];
 
 fn unit(a: P3) -> P3 {
     let n = norm(a);
@@ -65,9 +65,9 @@ fn unit(a: P3) -> P3 {
 }
 
 /// Ellipse parameters: centre x, y, semi-axes a, b, angle of a from +x.
-type Ell = [f64; 5];
+pub(crate) type Ell = [f64; 5];
 
-fn residuals(e: &Ell, pts: &[P2]) -> Vec<f64> {
+pub(crate) fn residuals(e: &Ell, pts: &[P2]) -> Vec<f64> {
     let (c, s) = (e[4].cos(), e[4].sin());
     pts.iter()
         .map(|p| {
@@ -120,7 +120,7 @@ fn jacobian(e: &Ell, pts: &[P2]) -> Vec<[f64; 5]> {
 }
 
 /// Levenberg–Marquardt on the ellipse residuals. Returns the fit and (JᵀJ)⁻¹.
-fn fit_ellipse(pts: &[P2]) -> Option<(Ell, [[f64; 5]; 5])> {
+pub(crate) fn fit_ellipse(pts: &[P2]) -> Option<(Ell, [[f64; 5]; 5])> {
     let n = pts.len() as f64;
     let c = [
         pts.iter().map(|p| p[0]).sum::<f64>() / n,

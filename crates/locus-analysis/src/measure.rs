@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub type P3 = [f64; 3];
 
 /// A value with its 1σ standard uncertainty, in the value's SI unit.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct Measured {
     pub value: f64,
     pub sigma: f64,

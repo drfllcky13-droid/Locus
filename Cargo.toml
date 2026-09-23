@@ -17,6 +17,9 @@ publish = false
 [profile.dev.package.locus-register]
 opt-level = 2
 
+[profile.dev.package.locus-analysis]
+opt-level = 2
+
 [profile.dev.package.locus-synth]
 opt-level = 2
 

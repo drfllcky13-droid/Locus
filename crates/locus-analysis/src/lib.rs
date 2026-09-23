@@ -2,6 +2,7 @@
 //!
 //! Every function returns its result with an uncertainty or residual, never a bare number.
 
+pub mod bloodstain;
 pub mod defect;
 pub mod handmeasure;
 pub mod measure;
