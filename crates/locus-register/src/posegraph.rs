@@ -23,9 +23,10 @@
 use nalgebra::{
     DMatrix, DVector, Isometry3, Matrix3, Point3, Rotation3, Translation3, UnitQuaternion, Vector3,
 };
+use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LinkKind {
     Target,
     Cloud,
@@ -33,7 +34,7 @@ pub enum LinkKind {
 }
 
 /// One observed correspondence. `b == None` means `pb` is a surveyed world coordinate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pair {
     pub pa: [f64; 3],
     pub cov_a: Matrix3<f64>,
@@ -41,7 +42,7 @@ pub struct Pair {
     pub cov_b: Matrix3<f64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     pub kind: LinkKind,
     pub a: usize,
@@ -109,7 +110,7 @@ impl Link {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LinkStatus {
     /// Consistent with the rest of the graph.
     Ok,
@@ -119,7 +120,7 @@ pub enum LinkStatus {
     Untested,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkReport {
     pub status: LinkStatus,
     /// RMS of the pair residuals at the final solution (m), whether or not it was used.

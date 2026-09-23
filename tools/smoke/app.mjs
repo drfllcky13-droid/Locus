@@ -14,17 +14,18 @@ function run(cmd, args) {
 }
 
 /**
- * Generate `scans` × `points` synthetic scans, import them, start the app on the project and
- * connect over CDP. `webviewArgs` are extra WebView2 browser arguments. Returns
+ * Generate `scans` × `points` synthetic scans (`genArgs`: extra `gen-scene` flags), import
+ * them, start the app on the project and connect over CDP. `webviewArgs` are extra WebView2
+ * browser arguments. Returns
  * `{ cdp, child, project, close() }`; `close` kills the app and removes the temp folder.
  */
-export async function launchApp({ scans = 2, points = 300_000, port = 9223, webviewArgs = "" } = {}) {
+export async function launchApp({ scans = 2, points = 300_000, port = 9223, webviewArgs = "", genArgs = [] } = {}) {
   const app = resolve(`target/release/locus${exe}`);
   const validate = resolve(`target/release/locus-validate${exe}`);
   const work = mkdtempSync(join(tmpdir(), "locus-smoke-"));
   const scene = join(work, "room.e57");
   const project = join(work, "smoke.locus");
-  run(validate, ["gen-scene", "--scans", String(scans), "--points-per-scan", String(points), "--out", scene]);
+  run(validate, ["gen-scene", "--scans", String(scans), "--points-per-scan", String(points), "--out", scene, ...genArgs]);
   run(validate, ["import", "--project", project, "--examiner", "Smoke test", scene]);
   const child = spawn(app, [], {
     env: {
