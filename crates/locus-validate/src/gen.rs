@@ -127,9 +127,21 @@ pub fn crush(args: &[String]) -> Result<(), String> {
         c::vehicle(Some((o.radius, o.depth)), o.noise, 2 * o.seed + 1),
         c::pose(o.damaged_at, o.damaged_heading_deg),
     );
+    // The symmetric vehicle, for a mirrored reference, where the damaged one stands (import it
+    // on its own).
+    let m = points(
+        c::symmetric_vehicle(
+            Some((o.radius.min(0.25), o.depth)),
+            o.noise,
+            o.asymmetry,
+            2 * o.seed + 2,
+        ),
+        c::pose(o.damaged_at, o.damaged_heading_deg),
+    );
     for (file, name, pts) in [
         ("reference.e57", "reference vehicle", &r),
         ("damaged.e57", "damaged vehicle", &d),
+        ("symmetric.e57", "symmetric damaged vehicle", &m),
     ] {
         locus_synth::write_points(&dir.join(file), name, pts).map_err(|e| e.to_string())?;
     }

@@ -632,6 +632,8 @@ export type CrashRequest =
       label: string;
       damaged: string;
       reference: string;
+      /** The reference is this vehicle's opposite side, mirrored; pairs are (left, right). */
+      mirror?: boolean;
       pairs: [PickHit, PickHit][];
       lo: P3;
       hi: P3;
@@ -647,6 +649,8 @@ export type CrashRequest =
       /** The speed's accuracy: a fraction and m/s, systematic. */
       scale_tolerance: number;
       offset_tolerance: number;
+      /** Required when the tolerance is wider than ±1 km/h (the recording accuracy). */
+      tolerance_reason: string;
       end_time: number | null;
       path: PickHit[];
     };

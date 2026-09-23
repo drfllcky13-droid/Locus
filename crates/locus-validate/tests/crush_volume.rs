@@ -100,6 +100,7 @@ fn run(runs: usize) {
             Some(PoseUncertainty {
                 covariance: a.covariance,
                 about: a.about.coords.into(),
+                surface: 0.0,
             }),
             200,
             seed as u64,
@@ -117,6 +118,7 @@ fn run(runs: usize) {
             Some(PoseUncertainty {
                 covariance: a.covariance / a.inflation,
                 about: a.about.coords.into(),
+                surface: 0.0,
             }),
             200,
             seed as u64,
@@ -148,6 +150,118 @@ fn run(runs: usize) {
         worst * 100.0
     );
     assert!(worst < 0.10, "worst {worst}");
+    assert!(
+        covered >= runs * 17 / 20 || covered + 1 >= runs,
+        "covered {covered}/{runs}"
+    );
+}
+
+#[test]
+fn mirrored_crush_volume_is_recovered() {
+    run_mirror(8);
+}
+
+#[test]
+#[ignore = "heavy: 40 mirrored registrations and volume Monte Carlos"]
+fn mirrored_crush_volume_coverage() {
+    run_mirror(40);
+}
+
+/// The damaged vehicle's own undamaged side as the reference: a symmetric vehicle front with
+/// a dent right of centre and the left half standing up to 2 mm proud (real asymmetry),
+/// three symmetric pairs picked with 3 mm error, the centre plane fitted, the left side
+/// reflected and registered, and the volume against the dent's exact volume.
+fn run_mirror(runs: usize) {
+    use locus_register::exemplar::align_mirror;
+    use locus_synth::crush::{symmetric_vehicle, SYMMETRIC_DENT, SYMMETRIC_PAIRS};
+    let (mut covered, mut worst, mut sum) = (0, 0.0f64, 0.0);
+    for seed in 0..runs {
+        let mut rng = Rng(0x2545_f491_4f6c_dd1d ^ (seed as u64 + 7));
+        let (r, d) = (0.12 + 0.13 * rng.uniform(), 0.03 + 0.12 * rng.uniform());
+        let truth = std::f64::consts::PI * r * r * d / 2.0;
+        let noise = 0.001 + 0.002 * rng.uniform();
+        let asym = 0.002 * rng.uniform();
+        let pose = Isometry3::from_parts(
+            Translation3::new(10.0 * rng.uniform(), 10.0 * rng.uniform(), 0.0),
+            UnitQuaternion::from_euler_angles(0.0, 0.0, 0.3 * rng.gauss()),
+        );
+        let pts: Vec<[f64; 3]> = symmetric_vehicle(Some((r, d)), noise, asym, seed as u64)
+            .iter()
+            .map(|p| (pose * Point3::from(*p)).coords.into())
+            .collect();
+        let mut pick = |p: [f64; 3]| -> [f64; 3] {
+            let e = Vector3::new(rng.gauss(), rng.gauss(), rng.gauss()) * 0.003;
+            (pose * (Point3::from(p) + e)).coords.into()
+        };
+        let pairs: Vec<_> = SYMMETRIC_PAIRS
+            .iter()
+            .map(|(a, b)| (pick(*a), pick(*b)))
+            .collect();
+        let c = SYMMETRIC_DENT;
+        let m = r + 0.1;
+        let corners: Vec<Point3<f64>> = (0..8)
+            .map(|k| {
+                pose * Point3::new(
+                    if k & 1 == 0 { -0.25 } else { d + 0.1 },
+                    c[1] + if k & 2 == 0 { -m } else { m },
+                    c[2] + if k & 4 == 0 { -m } else { m },
+                )
+            })
+            .collect();
+        let lo =
+            std::array::from_fn(|k| corners.iter().map(|p| p[k]).fold(f64::INFINITY, f64::min));
+        let hi = std::array::from_fn(|k| {
+            corners
+                .iter()
+                .map(|p| p[k])
+                .fold(f64::NEG_INFINITY, f64::max)
+        });
+        let view = (pose * Point3::new(-5.0, 0.0, 1.5)).coords.into();
+        let mi = align_mirror(&pts, view, &pairs, lo, hi, 0.02, noise).unwrap();
+        let moved: Vec<[f64; 3]> = mi
+            .reference
+            .iter()
+            .map(|p| (mi.aligned.transform * Point3::from(*p)).coords.into())
+            .collect();
+        let v = crush_volume(
+            &moved,
+            &pts,
+            lo,
+            hi,
+            view,
+            0.02,
+            noise,
+            Some(PoseUncertainty {
+                covariance: mi.aligned.covariance,
+                about: mi.aligned.about.coords.into(),
+                surface: mi.symmetry_sigma,
+            }),
+            200,
+            seed as u64,
+        )
+        .unwrap();
+        let rel = (v.inward.value - truth) / truth;
+        let inside = v.inward.interval95[0] <= truth && truth <= v.inward.interval95[1];
+        covered += inside as usize;
+        worst = worst.max(rel.abs());
+        sum += rel.abs();
+        println!(
+            "mirror seed {seed}: R {r:.3} D {d:.3} asymmetry {:.1} mm: {:.2} L vs {:.2} L ({:+.1} %), 95 % {:.2}–{:.2} L{}, symmetry σ {:.1} mm",
+            asym * 1000.0,
+            v.inward.value * 1000.0,
+            truth * 1000.0,
+            rel * 100.0,
+            v.inward.interval95[0] * 1000.0,
+            v.inward.interval95[1] * 1000.0,
+            if inside { "" } else { " MISSED" },
+            mi.symmetry_sigma * 1000.0
+        );
+    }
+    println!(
+        "mirrored crush volume: mean error {:.1} %, worst {:.1} %, 95 % interval covers {covered}/{runs}",
+        sum / runs as f64 * 100.0,
+        worst * 100.0
+    );
     assert!(
         covered >= runs * 17 / 20 || covered + 1 >= runs,
         "covered {covered}/{runs}"

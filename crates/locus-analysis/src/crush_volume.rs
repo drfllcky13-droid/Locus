@@ -82,12 +82,15 @@ pub struct CrushVolume {
     pub crushed_area: f64,
 }
 
-/// How the reference's registration may be wrong: covariance of a small correction (ω, τ),
-/// x' = x + ω × (x − about) + τ, as locus-register reports it.
+/// How the reference may be wrong: its registration, the covariance of a small correction
+/// (ω, τ), x' = x + ω × (x − about) + τ, as locus-register reports it; and `surface`, the 1σ
+/// of a systematic offset of the whole reference surface along the normal (a mirrored side's
+/// asymmetry; 0 for an exemplar), drawn once per Monte Carlo draw for every cell.
 #[derive(Debug, Clone, Copy)]
 pub struct PoseUncertainty {
     pub covariance: Matrix6<f64>,
     pub about: P3,
+    pub surface: f64,
 }
 
 fn inside(p: &P3, lo: &P3, hi: &P3) -> bool {
@@ -262,9 +265,11 @@ pub fn crush_volume(
             Vector3::from(p.about),
         )
     });
+    let surface = pose.map_or(0.0, |p| p.surface);
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     let mut vols = Vec::with_capacity(draws);
     for _ in 0..draws {
+        let offset = surface * rng.gauss();
         let drawn = match &chol {
             Some((l, about)) => {
                 let x = l * Vector6::from_fn(|_, _| rng.gauss());
@@ -282,7 +287,7 @@ pub fn crush_volume(
         };
         let noisy: Vec<f64> = drawn
             .iter()
-            .map(|c| c.depth + c.sigma * rng.gauss())
+            .map(|c| c.depth + offset + c.sigma * rng.gauss())
             .collect();
         vols.push(volumes(&drawn, &|k| noisy[k]).0);
     }
@@ -367,11 +372,27 @@ pub struct VolumeRun {
     pub lo: P3,
     pub hi: P3,
     pub registration: Registration,
+    /// When the reference is the vehicle's own opposite side, mirrored: its centre plane.
+    #[serde(default)]
+    pub mirror: Option<MirrorInfo>,
     pub result: CrushVolume,
     pub summary: String,
     pub warnings: Vec<String>,
     pub assumptions: Vec<String>,
     pub limitations: Vec<String>,
+}
+
+/// The centre plane a mirrored reference was reflected across, fitted to symmetric pairs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MirrorInfo {
+    pub plane_point: P3,
+    pub normal: P3,
+    /// Each pair's midpoint distance from the plane (m) and its line's angle to the normal (°).
+    pub midpoint_offsets: Vec<f64>,
+    pub pair_angles_deg: Vec<f64>,
+    /// 1σ of the asymmetry measured on the undamaged surfaces after mirroring (m), drawn in the
+    /// Monte Carlo as one offset of the whole reference surface.
+    pub symmetry_sigma: f64,
 }
 
 pub const VOLUME_ASSUMPTIONS: &[&str] = &[
@@ -387,6 +408,8 @@ pub const VOLUME_LIMITATIONS: &[&str] = &[
     "Crush volume is not an energy: no validated relation to the CRASH3 coefficients is applied.",
 ];
 
+pub const MIRROR_LIMITATION: &str = "A mirrored reference assumes the vehicle was symmetric before the collision. Its asymmetry is measured only where both sides are undamaged; any difference inside the damage region (a side-specific part, trim, an earlier repair) reads as crush or as material pushed outward.";
+
 /// Assemble the stored run from the registration and the volume, with its warnings.
 #[allow(clippy::too_many_arguments)]
 pub fn volume_run(
@@ -397,8 +420,27 @@ pub fn volume_run(
     hi: P3,
     registration: Registration,
     result: CrushVolume,
+    mirror: Option<MirrorInfo>,
 ) -> VolumeRun {
     let mut warnings = vec![];
+    let is_mirror = mirror.is_some();
+    if let Some(m) = &mirror {
+        warnings.push(format!(
+            "The reference is this vehicle's own opposite side, mirrored across its centre plane. Real vehicles are not exactly symmetric (manufacturing tolerance, earlier repairs, damage elsewhere, load and suspension); the asymmetry measured on the undamaged surfaces, {:.1} mm (1σ), is in the interval as an offset of the whole reference surface, but asymmetry inside the damage region can't be measured.",
+            m.symmetry_sigma * 1000.0
+        ));
+        if m.symmetry_sigma > 0.005 {
+            warnings.push("The mirrored surfaces differ from the originals by more than 5 mm where both are undamaged; check the symmetric pairs, or use an exemplar vehicle.".into());
+        }
+        let off = m
+            .midpoint_offsets
+            .iter()
+            .fold(0.0f64, |a, b| a.max(b.abs()));
+        let ang = m.pair_angles_deg.iter().fold(0.0f64, |a, b| a.max(*b));
+        if off > 0.02 || ang > 5.0 {
+            warnings.push(format!("The symmetric pairs disagree on the centre plane (midpoints up to {:.0} mm off it, lines up to {:.1}° from its normal); a pair may not be symmetric.", off * 1000.0, ang));
+        }
+    }
     let total = result.cells.len() + result.uncovered;
     if result.uncovered * 10 > total {
         warnings.push(format!(
@@ -446,11 +488,16 @@ pub fn volume_run(
         lo,
         hi,
         registration,
+        mirror,
         result,
         summary,
         warnings,
         assumptions: VOLUME_ASSUMPTIONS.iter().map(|s| s.to_string()).collect(),
-        limitations: VOLUME_LIMITATIONS.iter().map(|s| s.to_string()).collect(),
+        limitations: VOLUME_LIMITATIONS
+            .iter()
+            .map(|s| s.to_string())
+            .chain(is_mirror.then(|| MIRROR_LIMITATION.to_string()))
+            .collect(),
     }
 }
 
@@ -490,6 +537,7 @@ mod tests {
         let pose = PoseUncertainty {
             covariance: Matrix6::from_diagonal(&Vector6::new(1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6)),
             about: [0.0, 0.8, 0.6],
+            surface: 0.0,
         };
         let v = crush_volume(
             &face(None, 1),

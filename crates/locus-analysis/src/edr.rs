@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 
 pub const EDR_METHOD: &str = "edr/1";
 
+/// The recording accuracy of indicated vehicle speed that 49 CFR 563 requires, ±1 km/h (m/s):
+/// the default speed tolerance, and the least the tool accepts.
+pub const RECORDING_ACCURACY: f64 = 1.0 / 3.6;
+
 fn err<T>(m: impl Into<String>) -> Result<T, CrashError> {
     Err(CrashError(m.into()))
 }
@@ -235,6 +239,9 @@ pub struct EdrRun {
     /// ranges about 0 (systematic: every sample off the same way).
     pub scale_tolerance: f64,
     pub offset_tolerance: f64,
+    /// Why the tolerance is wider than the recording accuracy (required when it is).
+    #[serde(default)]
+    pub tolerance_reason: String,
     /// The time the path's end stands for (s), at or after the last sample.
     pub end_time: f64,
     /// The path picked in the scene (its end is the vehicle's position at `end_time`).
@@ -256,6 +263,8 @@ pub const EDR_ASSUMPTIONS: &[&str] = &[
 ];
 
 pub const EDR_LIMITATIONS: &[&str] = &[
+    "The ±1 km/h default is the recording accuracy of the indicated speed signal (49 CFR 563), not of the vehicle's true speed over the ground. Wheel slip under braking, ABS cycling (the wheels slowing below the vehicle's speed and recovering), wheelspin, and non-original tyre sizes or axle ratios can make the two differ by more; where they may apply, the tolerance should be widened (a reason is required and printed).",
+    "Sample times carry their own uncertainty: a recorder may not sample exactly at the stated times, and different signals may be sampled at different moments within an interval. The distance range does not include it.",
     "EDR sample times are relative to the recorder's trigger (algorithm enable or deployment), not to impact; the offset between the two is a matter for the retrieval report.",
     "The data is as imported or entered by the examiner; this tool doesn't read or verify the recorder's own files.",
     "Positions along the path use the nominal distances; the path's own measurement uncertainty is not added.",
@@ -312,6 +321,7 @@ pub fn edr(
     samples: Vec<Sample>,
     scale_tolerance: f64,
     offset_tolerance: f64,
+    tolerance_reason: &str,
     end_time: Option<f64>,
     path: Vec<P3>,
     path_sources: Vec<PointSource>,
@@ -344,6 +354,13 @@ pub fn edr(
     }
     if !(0.0..=0.2).contains(&scale_tolerance) || !(0.0..=5.0).contains(&offset_tolerance) {
         return err("the speed tolerance must be 0–20 % and 0–5 m/s");
+    }
+    if offset_tolerance < RECORDING_ACCURACY - 1e-9 {
+        return err("the speed tolerance can't be tighter than the recording accuracy, ±1 km/h");
+    }
+    let widened = scale_tolerance > 0.0 || offset_tolerance > RECORDING_ACCURACY + 1e-9;
+    if widened && tolerance_reason.trim().is_empty() {
+        return err("give the reason for widening the speed tolerance beyond ±1 km/h (for example wheel slip under braking, ABS, non-original tyres)");
     }
     if path.len() == 1 {
         return err(
@@ -453,6 +470,11 @@ pub fn edr(
         samples,
         scale_tolerance,
         offset_tolerance,
+        tolerance_reason: if widened {
+            tolerance_reason.trim().to_string()
+        } else {
+            String::new()
+        },
         end_time: end,
         path,
         path_sources,
@@ -504,49 +526,46 @@ mod tests {
     /// 37 m, right 0.5 (20 + 18 + 16 + 14) = 34 m, trapezoid 35.5 m.
     #[test]
     fn distances_are_bounded_by_the_left_and_right_sums() {
-        let (s, cols) = parse_csv(CSV, SpeedUnit::Kmh).unwrap();
-        let r = edr(
-            "Car",
-            "CDR report",
-            CSV,
-            cols,
-            s,
-            0.0,
-            0.0,
-            None,
-            vec![],
-            vec![],
-            2000,
-            1,
-        )
-        .unwrap();
+        let ra = RECORDING_ACCURACY;
+        let run = |scale: f64, offset: f64, why: &str| {
+            let (s, cols) = parse_csv(CSV, SpeedUnit::Kmh).unwrap();
+            edr(
+                "Car",
+                "CDR report",
+                CSV,
+                cols,
+                s,
+                scale,
+                offset,
+                why,
+                None,
+                vec![],
+                vec![],
+                2000,
+                1,
+            )
+        };
+        // At the recording accuracy alone: 34 − 2/3.6 to 37 + 2/3.6 m.
+        let r = run(0.0, ra, "").unwrap();
         let d = r.stations[0].distance;
         assert!((d.value - 35.5).abs() < 1e-9, "{}", d.value);
         assert!(
-            (d.low - 34.0).abs() < 1e-9 && (d.high - 37.0).abs() < 1e-9,
+            (d.low - (34.0 - 2.0 * ra)).abs() < 1e-9 && (d.high - (37.0 + 2.0 * ra)).abs() < 1e-9,
             "{d:?}"
         );
         assert_eq!(r.stations[4].distance.value, 0.0);
-        // A 1 % scale and 1 km/h offset tolerance widen it: 34 × 0.99 − 2/3.6, 37 × 1.01 + 2/3.6.
-        let (s, cols) = parse_csv(CSV, SpeedUnit::Kmh).unwrap();
-        let r = edr(
-            "Car",
-            "CDR",
-            CSV,
-            cols,
-            s,
-            0.01,
-            1.0 / 3.6,
-            None,
-            vec![],
-            vec![],
-            2000,
-            1,
-        )
-        .unwrap();
+        assert!(r.tolerance_reason.is_empty());
+        // Widened by a 1 % scale: 34 × 0.99 − 2/3.6 to 37 × 1.01 + 2/3.6, with its reason.
+        let why = "hard braking with ABS";
+        let r = run(0.01, ra, why).unwrap();
         let d = r.stations[0].distance;
-        assert!((d.low - (34.0 * 0.99 - 2.0 / 3.6)).abs() < 1e-9, "{d:?}");
-        assert!((d.high - (37.0 * 1.01 + 2.0 / 3.6)).abs() < 1e-9, "{d:?}");
+        assert!((d.low - (34.0 * 0.99 - 2.0 * ra)).abs() < 1e-9, "{d:?}");
+        assert!((d.high - (37.0 * 1.01 + 2.0 * ra)).abs() < 1e-9, "{d:?}");
+        assert_eq!(r.tolerance_reason, why);
+        // Widening needs a reason; nothing tighter than ±1 km/h is taken.
+        assert!(run(0.01, ra, " ").is_err());
+        assert!(run(0.0, 2.0 * ra, "").is_err());
+        assert!(run(0.0, 0.1, why).is_err());
     }
 
     #[test]
@@ -561,7 +580,8 @@ mod tests {
             cols,
             s,
             0.0,
-            0.0,
+            RECORDING_ACCURACY,
+            "",
             None,
             path,
             vec![],
@@ -581,7 +601,7 @@ mod tests {
     #[test]
     fn a_gap_to_the_end_time_allows_braking() {
         let (s, cols) = parse_csv(CSV, SpeedUnit::Kmh).unwrap();
-        // 0.5 s after the last sample (14 m/s): 7 m at that speed, 7 − ½ g 0.25 = 5.774 m at 1 g.
+        let ra = RECORDING_ACCURACY;
         let r = edr(
             "Car",
             "CDR",
@@ -589,7 +609,8 @@ mod tests {
             cols,
             s,
             0.0,
-            0.0,
+            ra,
+            "",
             Some(0.5),
             vec![],
             vec![],
@@ -597,12 +618,12 @@ mod tests {
             1,
         )
         .unwrap();
+        // 0.5 s after the last sample (14 m/s): 7 m at that speed; at its lowest, 1 km/h slower
+        // and braking at 1 g, (14 − 1/3.6) 0.5 − ½ g 0.25.
         let d = r.stations[4].distance;
         assert!((d.value - 7.0).abs() < 1e-9, "{d:?}");
-        assert!(
-            (d.low - (7.0 - 0.5 * crate::crash::G * 0.25)).abs() < 1e-9,
-            "{d:?}"
-        );
+        let low = (14.0 - ra) * 0.5 - 0.5 * crate::crash::G * 0.25;
+        assert!((d.low - low).abs() < 1e-9, "{d:?}");
         assert_eq!(r.warnings.len(), 1);
     }
 }

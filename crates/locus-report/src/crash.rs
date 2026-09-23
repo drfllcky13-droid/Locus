@@ -812,8 +812,18 @@ pub fn volume(meta: &Meta, r: &VolumeRun) -> Report {
         ["Face".into(), r.label.clone()],
         ["Damaged vehicle's scan".into(), r.damaged_scan.clone()],
         [
-            "Reference (undamaged) scan".into(),
-            r.reference_scan.clone(),
+            "Reference (undamaged)".into(),
+            match &r.mirror {
+                Some(m) => format!(
+                    "the same scan's opposite side, mirrored across the centre plane through {:.3}, {:.3}, {:.3} m with normal {:.4}, {:.4}, {:.4}, fitted to {} symmetric pairs (midpoints up to {:.1} mm off it); asymmetry on the undamaged surfaces {:.1} mm (1σ)",
+                    m.plane_point[0], m.plane_point[1], m.plane_point[2],
+                    m.normal[0], m.normal[1], m.normal[2],
+                    m.midpoint_offsets.len(),
+                    m.midpoint_offsets.iter().fold(0.0f64, |a, b| a.max(b.abs())) * 1000.0,
+                    m.symmetry_sigma * 1000.0
+                ),
+                None => format!("scan {}", r.reference_scan),
+            },
         ],
         [
             "Damage region (scene frame)".into(),
@@ -901,9 +911,13 @@ pub fn volume(meta: &Meta, r: &VolumeRun) -> Report {
                 Block::Pairs { rows: registration },
                 Block::Table {
                     widths: ["auto", "1fr", "1fr", "auto"].map(String::from).to_vec(),
-                    head: ["Pair", "Reference (m)", "Damaged (m)", "Residual (mm)"]
-                        .map(String::from)
-                        .to_vec(),
+                    head: if r.mirror.is_some() {
+                        ["Pair", "Left (m)", "Right (m)", "Residual, mirrored (mm)"]
+                    } else {
+                        ["Pair", "Reference (m)", "Damaged (m)", "Residual (mm)"]
+                    }
+                    .map(String::from)
+                    .to_vec(),
                     rows,
                 },
             ],
@@ -912,7 +926,7 @@ pub fn volume(meta: &Meta, r: &VolumeRun) -> Report {
             heading: "Method".into(),
             blocks: vec![
                 Block::Text {
-                    text: format!("The reference (an undamaged vehicle of the same make and model) is fitted to the damaged vehicle's scan by the picked pairs, then refined by point-to-plane ICP on both scans' surfaces within 1 m of the pairs and the damage region, leaving the damage region out. Inside the region, the plane fitted to the reference's points is divided into {:.0} mm cells. In each cell both surfaces' heights above the plane are the median of their points, and the crush depth is the reference's minus the damaged's. A cell counts as crushed when its eight neighbours' mean depth is positive; the crush volume is those cells' depths × cell area, and the rest is the volume pushed outward. Classing each cell by its neighbours keeps its own noise from biasing either sum. The 95 % interval is a {}-draw Monte Carlo (seeded): each draw moves the reference by the registration's covariance, rebuilds the cells, and draws each cell's depth about its value with its 1σ (1.2533 × the points' spread / √n for each median). See docs/methods/crash-volume.md.", v.cell * 1000.0, v.inward.draws),
+                    text: format!("The reference (an undamaged vehicle of the same make and model) is fitted to the damaged vehicle's scan by the picked pairs, then refined by point-to-plane ICP on both scans' surfaces within 1 m of the pairs and the damage region, leaving the damage region out. Inside the region, the plane fitted to the reference's points is divided into {:.0} mm cells. In each cell both surfaces' heights above the plane are the median of their points, and the crush depth is the reference's minus the damaged's. A cell counts as crushed when its eight neighbours' mean depth is positive; the crush volume is those cells' depths × cell area, and the rest is the volume pushed outward. Classing each cell by its neighbours keeps its own noise from biasing either sum. The 95 % interval is a {}-draw Monte Carlo (seeded): each draw moves the reference by the registration's covariance, rebuilds the cells, and draws each cell's depth about its value with its 1σ (1.2533 × the points' spread / √n for each median). {}The interval is deliberately conservative: the registration's covariance is scaled as if each 10 cm patch were one independent observation, because real scans' errors are correlated; on synthetic vehicles with independent noise it covered the true volume in 40 of 40 runs, where a calibrated 95 % interval would miss about 2. See docs/methods/crash-volume.md.", v.cell * 1000.0, v.inward.draws, if r.mirror.is_some() { "With a mirrored reference, the vehicle's points outside the damage region are reflected across the centre plane fitted to the symmetric pairs (its normal the pairs' mean direction, through their midpoints), then registered as an exemplar would be; the asymmetry left on the undamaged surfaces (the mirrored surface's offset from the original along its normal, averaged per 5 cm patch, RMS over the patches less the points' noise) is drawn in each Monte Carlo draw as one offset of the whole reference surface. " } else { "" }),
                 },
                 Block::List {
                     items: REFS_VOLUME.iter().map(|s| s.to_string()).collect(),
@@ -1099,11 +1113,16 @@ pub fn edr(meta: &Meta, r: &EdrRun) -> Report {
             ),
         ],
         [
-            "Speed accuracy".into(),
+            "Speed tolerance".into(),
             format!(
-                "±{:.1} % and ±{:.1} km/h, systematic",
+                "±{:.1} % and ±{:.1} km/h, systematic; {}",
                 r.scale_tolerance * 100.0,
-                r.offset_tolerance * 3.6
+                r.offset_tolerance * 3.6,
+                if r.tolerance_reason.is_empty() {
+                    "the recording accuracy of the indicated speed (49 CFR 563), not of the speed over the ground".to_string()
+                } else {
+                    format!("widened beyond the ±1 km/h recording accuracy because: {}", r.tolerance_reason)
+                }
             ),
         ],
     ];

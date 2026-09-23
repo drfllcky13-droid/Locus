@@ -298,6 +298,8 @@ export function CrashPanel({
   // Volumetric crush: the two scans, picked pairs (reference, damaged) and the damage region.
   const [volDamaged, setVolDamaged] = useState("");
   const [volReference, setVolReference] = useState("");
+  // The reference: an exemplar's scan, or this vehicle's opposite side mirrored.
+  const [volMirror, setVolMirror] = useState(false);
   const [volPairs, setVolPairs] = useState<[PickHit, PickHit][]>([]);
   const [region, setRegion] = useState<{ min: V3; max: V3 } | null>(null);
   const [cell, setCell] = useState("0.02");
@@ -310,6 +312,7 @@ export function CrashPanel({
   const [unit, setUnit] = useState<"kmh" | "mph" | "ms">("kmh");
   const [scaleTol, setScaleTol] = useState("0");
   const [offsetTol, setOffsetTol] = useState("1");
+  const [tolReason, setTolReason] = useState("");
   const [endTime, setEndTime] = useState("");
   const [edrPath, setEdrPath] = useState<PickHit[]>([]);
   const [pdof, setPdof] = useState(val(0));
@@ -427,7 +430,6 @@ export function CrashPanel({
                 .map((r) => [r.t, r.speed, r.accel, r.brake, r.steer].join(",")),
             ].join("\n");
       const [st, ot] = [Number(scaleTol || 0) / 100, Number(offsetTol || 0)];
-      const toMs = { kmh: 1 / 3.6, mph: 0.44704, ms: 1 }[unit];
       const end = endTime.trim() === "" ? null : Number(endTime);
       return edrSource.trim() &&
         csv.trim() &&
@@ -441,7 +443,8 @@ export function CrashPanel({
             csv,
             speed_unit: unit,
             scale_tolerance: st,
-            offset_tolerance: ot * toMs,
+            offset_tolerance: ot / 3.6,
+            tolerance_reason: tolReason,
             end_time: end,
             path: edrPath,
           }
@@ -449,8 +452,7 @@ export function CrashPanel({
     }
     if (tool === "volume") {
       return volDamaged &&
-        volReference &&
-        volDamaged !== volReference &&
+        (volMirror || (volReference && volDamaged !== volReference)) &&
         volPairs.length >= 3 &&
         region &&
         Number(cell) > 0
@@ -458,7 +460,8 @@ export function CrashPanel({
             tool,
             label: crushLabel,
             damaged: volDamaged,
-            reference: volReference,
+            reference: volMirror ? volDamaged : volReference,
+            mirror: volMirror,
             pairs: volPairs,
             lo: region.min,
             hi: region.max,
@@ -1035,7 +1038,7 @@ export function CrashPanel({
                 </div>
               )}
               <label>
-                Speed accuracy ± %
+                Speed tolerance ± %
                 <input
                   className="narrow"
                   inputMode="decimal"
@@ -1044,7 +1047,7 @@ export function CrashPanel({
                 />
               </label>
               <label>
-                and ± (in the speed unit)
+                and ± km/h (at least 1, the recording accuracy)
                 <input
                   className="narrow"
                   inputMode="decimal"
@@ -1052,6 +1055,20 @@ export function CrashPanel({
                   onChange={(e) => setOffsetTol(e.target.value)}
                 />
               </label>
+              {(Number(scaleTol || 0) > 0 || Number(offsetTol || 0) > 1) && (
+                <label>
+                  Why wider than ±1 km/h (in the report; required)
+                  <input
+                    value={tolReason}
+                    placeholder="Wheel slip under braking, ABS, non-original tyres…"
+                    onChange={(e) => setTolReason(e.target.value)}
+                  />
+                </label>
+              )}
+              <p className="muted">
+                ±1 km/h is the recording accuracy of the indicated speed, not of the speed over the
+                ground: wheel slip, ABS cycling and non-original tyres can make them differ.
+              </p>
               <label>
                 End time (s; blank for the last sample)
                 <input
@@ -1100,28 +1117,50 @@ export function CrashPanel({
                 </select>
               </label>
               <label>
-                Reference (undamaged) scan
-                <select value={volReference} onChange={(e) => setVolReference(e.target.value)}>
-                  <option value="">Choose…</option>
-                  {scans.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.name}
-                    </option>
-                  ))}
+                Reference
+                <select
+                  value={volMirror ? "mirror" : "exemplar"}
+                  onChange={(e) => {
+                    setVolMirror(e.target.value === "mirror");
+                    setVolPairs([]);
+                  }}
+                >
+                  <option value="exemplar">an undamaged vehicle&apos;s scan (exemplar)</option>
+                  <option value="mirror">this vehicle&apos;s opposite side, mirrored</option>
                 </select>
               </label>
+              {!volMirror && (
+                <label>
+                  Reference (undamaged) scan
+                  <select value={volReference} onChange={(e) => setVolReference(e.target.value)}>
+                    <option value="">Choose…</option>
+                    {scans.map((s) => (
+                      <option key={s.key} value={s.key}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <p className="muted">
-                Pick at least 3 undamaged features away from the damage, each on the reference and
-                then on the damaged vehicle.
+                {volMirror
+                  ? "Pick at least 3 pairs of symmetric features away from the damage (mirror bases, lamp corners, wheel centres): each on the left, then its counterpart on the right. Real vehicles aren't exactly symmetric; the asymmetry measured on the undamaged surfaces goes into the interval."
+                  : "Pick at least 3 undamaged features away from the damage, each on the reference and then on the damaged vehicle."}
               </p>
               <div className="buttons">
                 <button
                   onClick={() =>
-                    requestPick("Click an undamaged feature on the reference.", (r) =>
-                      requestPick("Click the same feature on the damaged vehicle.", (d) =>
-                        setVolPairs((ps) => [...ps, [r, d]]),
-                      ),
-                    )
+                    volMirror
+                      ? requestPick("Click a symmetric feature on the left side.", (r) =>
+                          requestPick("Click its counterpart on the right side.", (d) =>
+                            setVolPairs((ps) => [...ps, [r, d]]),
+                          ),
+                        )
+                      : requestPick("Click an undamaged feature on the reference.", (r) =>
+                          requestPick("Click the same feature on the damaged vehicle.", (d) =>
+                            setVolPairs((ps) => [...ps, [r, d]]),
+                          ),
+                        )
                   }
                 >
                   Pick a pair ({volPairs.length})

@@ -130,6 +130,10 @@ pub enum CrashRequest {
         label: String,
         damaged: String,
         reference: String,
+        /// The reference is the damaged vehicle's own opposite side, mirrored across its centre
+        /// plane; `pairs` are then symmetric features (left, right) on the damaged scan.
+        #[serde(default)]
+        mirror: bool,
         pairs: Vec<[Pick; 2]>,
         lo: P3,
         hi: P3,
@@ -144,6 +148,9 @@ pub enum CrashRequest {
         speed_unit: locus_analysis::edr::SpeedUnit,
         scale_tolerance: f64,
         offset_tolerance: f64,
+        /// Required when the tolerance is wider than the recording accuracy.
+        #[serde(default)]
+        tolerance_reason: String,
         #[serde(default)]
         end_time: Option<f64>,
         #[serde(default)]
@@ -164,30 +171,48 @@ fn crush_volume_run(
     label: &str,
     damaged: &str,
     reference: &str,
+    mirror: bool,
     pairs: &[[Pick; 2]],
     lo: P3,
     hi: P3,
     cell: f64,
 ) -> CmdResult<crush_volume::VolumeRun> {
     use locus_octree::scene::{apply, ScanKey};
+    use locus_register::exemplar;
     use nalgebra::Point3;
     let key = |s: &str| ScanKey::parse(s).ok_or_else(|| format!("No scan {s}."));
-    let (dk, rk) = (key(damaged)?, key(reference)?);
-    if dk == rk {
+    let dk = key(damaged)?;
+    let rk = if mirror { dk } else { key(reference)? };
+    if !mirror && dk == rk {
         return Err("Choose two different scans: the damaged vehicle and the reference.".into());
     }
     if pairs.len() < 3 {
-        return Err("Pick at least 3 pairs: the same undamaged feature on the reference, then on the damaged vehicle.".into());
+        return Err(if mirror {
+            "Pick at least 3 pairs of symmetric features: each on the left, then its counterpart on the right."
+        } else {
+            "Pick at least 3 pairs: the same undamaged feature on the reference, then on the damaged vehicle."
+        }
+        .into());
     }
     if !(0..3).all(|k| hi[k] > lo[k]) {
         return Err("Set the clip box around the damage first.".into());
     }
+    let (first, second) = if mirror {
+        (damaged, damaged)
+    } else {
+        (reference, damaged)
+    };
     let mut rows = vec![];
     for (k, [r, d]) in pairs.iter().enumerate() {
-        if r.scan != reference || d.scan != damaged {
+        if r.scan != first || d.scan != second {
             return Err(format!(
-                "Pair {}: pick the reference's point on the reference scan, then the damaged vehicle's on the damaged scan.",
-                k + 1
+                "Pair {}: {}",
+                k + 1,
+                if mirror {
+                    "pick both symmetric features on the damaged vehicle's scan."
+                } else {
+                    "pick the reference's point on the reference scan, then the damaged vehicle's on the damaged scan."
+                }
             ));
         }
         let (rp, rs) = resolve_all(scene, std::slice::from_ref(r))?;
@@ -210,31 +235,49 @@ fn crush_volume_run(
         }
         (a.map(|v| v - VOLUME_MARGIN), b.map(|v| v + VOLUME_MARGIN))
     };
-    let (da, db) = grow(&mut rows.iter().map(|r| r.damaged).chain([lo, hi]));
-    let (ra, rb) = grow(&mut rows.iter().map(|r| r.reference));
-    let dam = scene.scan_points_in(dk, da, db).map_err(err)?;
-    let refs = scene.scan_points_in(rk, ra, rb).map_err(err)?;
     let view = apply(&scene.scans[&dk].pose, [0.0; 3]);
     let pair_pts: Vec<(P3, P3)> = rows.iter().map(|r| (r.reference, r.damaged)).collect();
-    let a = locus_register::exemplar::align_exemplar(
-        &refs,
-        &dam,
-        view,
-        &pair_pts,
-        lo,
-        hi,
-        VOLUME_SPACING,
-    )
-    .map_err(|e| capital(&e))?;
-    let map = |p: P3| -> P3 { (a.transform * Point3::from(p)).coords.into() };
-    for r in &mut rows {
-        let m = map(r.reference);
-        r.residual = (0..3)
-            .map(|k| (m[k] - r.damaged[k]).powi(2))
-            .sum::<f64>()
-            .sqrt();
-    }
-    let moved: Vec<P3> = refs.iter().map(|p| map(*p)).collect();
+    let (da, db) = grow(
+        &mut rows
+            .iter()
+            .flat_map(|r| [r.damaged, r.reference])
+            .filter(|_| mirror)
+            .chain(rows.iter().map(|r| r.damaged))
+            .chain([lo, hi]),
+    );
+    let dam = scene.scan_points_in(dk, da, db).map_err(err)?;
+    // The reference's points and how a reference point maps onto the damaged scan.
+    let (refs, a, mirrored) = if mirror {
+        let m = exemplar::align_mirror(&dam, view, &pair_pts, lo, hi, VOLUME_SPACING, point_sigma)
+            .map_err(|e| capital(&e))?;
+        let info = crush_volume::MirrorInfo {
+            plane_point: m.plane.point,
+            normal: m.plane.normal,
+            midpoint_offsets: m.plane.midpoint_offsets.clone(),
+            pair_angles_deg: m.plane.pair_angles_deg.clone(),
+            symmetry_sigma: m.symmetry_sigma,
+        };
+        let plane = m.plane.clone();
+        for r in &mut rows {
+            let t = m.aligned.transform * Point3::from(exemplar::reflect(r.reference, &plane));
+            r.residual = (t.coords - nalgebra::Vector3::from(r.damaged)).norm();
+        }
+        (m.reference, m.aligned, Some(info))
+    } else {
+        let (ra, rb) = grow(&mut rows.iter().map(|r| r.reference));
+        let refs = scene.scan_points_in(rk, ra, rb).map_err(err)?;
+        let a = exemplar::align_exemplar(&refs, &dam, view, &pair_pts, lo, hi, VOLUME_SPACING)
+            .map_err(|e| capital(&e))?;
+        for r in &mut rows {
+            let t = a.transform * Point3::from(r.reference);
+            r.residual = (t.coords - nalgebra::Vector3::from(r.damaged)).norm();
+        }
+        (refs, a, None)
+    };
+    let moved: Vec<P3> = refs
+        .iter()
+        .map(|p| (a.transform * Point3::from(*p)).coords.into())
+        .collect();
     let result = crush_volume::crush_volume(
         &moved,
         &dam,
@@ -246,6 +289,7 @@ fn crush_volume_run(
         Some(crush_volume::PoseUncertainty {
             covariance: a.covariance,
             about: a.about.coords.into(),
+            surface: mirrored.as_ref().map_or(0.0, |m| m.symmetry_sigma),
         }),
         VOLUME_DRAWS,
         1,
@@ -273,11 +317,12 @@ fn crush_volume_run(
     Ok(crush_volume::volume_run(
         label,
         damaged,
-        reference,
+        if mirror { damaged } else { reference },
         lo,
         hi,
         registration,
         result,
+        mirrored,
     ))
 }
 
@@ -518,6 +563,7 @@ fn crash_run(
             speed_unit,
             scale_tolerance,
             offset_tolerance,
+            tolerance_reason,
             end_time,
             path,
         } => {
@@ -532,6 +578,7 @@ fn crash_run(
                 samples,
                 *scale_tolerance,
                 *offset_tolerance,
+                tolerance_reason,
                 *end_time,
                 points,
                 sources,
@@ -552,6 +599,7 @@ fn crash_run(
             label,
             damaged,
             reference,
+            mirror,
             pairs,
             lo,
             hi,
@@ -563,6 +611,7 @@ fn crash_run(
                 label,
                 damaged,
                 reference,
+                *mirror,
                 pairs,
                 *lo,
                 *hi,

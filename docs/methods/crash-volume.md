@@ -25,6 +25,37 @@ The volume tool measures how much of a vehicle's outer surface was pushed in. It
    Leaving the region out keeps the damage from pulling the fit.
 3. **Uncertainty.** The ICP's covariance treats every pair of points as independent, so it is too small: neighbouring points share their errors. It is scaled by the number of pairs per 10 cm patch (about 20 on typical data), as if each patch were one independent observation. The report prints the factor and the resulting 1σ in translation and rotation.
 
+## Mirrored opposite side as the reference
+
+Without an exemplar, the reference can be the damaged vehicle's own undamaged side, reflected. Code: `locus-register::exemplar::{centre_plane, align_mirror}`.
+
+1. **The centre plane.** The examiner picks at least 3 pairs of symmetric features (mirror bases, lamp corners, wheel centres), each on the left and then its counterpart on the right, all on the damaged scan.
+   - The plane's normal is the pairs' mean direction.
+   - It passes through the centroid of their midpoints.
+   - The report lists how far each midpoint lies off the plane and each pair's angle to the normal, and warns above 20 mm or 5°.
+2. **The reference.** The vehicle's points outside the damage region are reflected across the plane. The damaged points are left out before reflecting, so the mirrored damage never enters. The reflection is then registered by ICP onto the undamaged surfaces, as an exemplar is, starting from each pair's reflected point landing on its counterpart.
+3. **Symmetry uncertainty.** Real vehicles aren't exactly symmetric: manufacturing tolerance, earlier repairs, damage elsewhere, load and suspension. Where both sides are undamaged, each reflected point's offset from the original along the original's normal is:
+   - averaged per 5 cm patch;
+   - combined as an RMS over the patches;
+   - reduced by the part the points' noise leaves in a patch mean.
+
+   The result is the symmetry σ. In each Monte Carlo draw, one offset drawn with that σ is added to the whole reference surface. The model is systematic: a side standing proud reads as crush over the whole region.
+4. **The report** always warns that the reference is mirrored and that asymmetry inside the damage region can't be measured. It adds that as a limitation, and warns when the symmetry σ exceeds 5 mm.
+
+**Validation.** `mirrored_crush_volume_*` in `crates/locus-validate/tests/crush_volume.rs` uses:
+- a symmetric vehicle front, 1.6 m wide, with a dent right of centre;
+- the left half standing 0–2 mm proud, as real asymmetry;
+- three symmetric pairs picked with 3 mm error;
+- a random pose.
+
+Over 40 runs:
+- mean error +5.0 %, worst +16 %, biased upward by the asymmetry;
+- the 95 % interval covered the truth in 39 of 40.
+
+In the app (`gen-crush`'s `symmetric.e57`, 1 mm asymmetry, true volume 7.854 L):
+- result 8.16 L, 95 % 7.60–8.98 L;
+- symmetry σ 0.8 mm.
+
 ## Volume
 
 1. **The plane.** Inside the region, a plane is fitted to the reference's points. Its normal points outward, toward the damaged scan's scanner.
@@ -64,7 +95,7 @@ It then registers and measures as the app does.
 - Result: mean error 0.3 %, worst 1.9 %.
 - The 95 % interval covers the truth in 40 of 40 runs, so on this data, whose noise is independent, it is conservative. With the unscaled (formal) ICP covariance it covers 39 of 40.
 
-On real scans the noise is correlated, and that is why the covariance is scaled.
+**The interval is deliberately conservative.** The registration covariance is scaled as if each 10 cm patch were one independent observation, because real scans' errors are correlated: neighbouring points share range bias, incidence effects and registration error. On synthetic vehicles with independent noise, where no such correlation exists, the interval covered the true volume in 40 of 40 runs; a calibrated 95 % interval would miss about 2. The report says so in its method section.
 
 In the app, on `gen-crush`'s scans (dent 0.25 × 0.08 m, 7.854 L):
 - four pairs picked on the cloud;
