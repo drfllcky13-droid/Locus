@@ -634,6 +634,21 @@ mod tests {
         }
     }
 
+    /// Sizes (mm) of every rectangle on the page.
+    fn rect_sizes(frame: &Frame, out: &mut Vec<(f64, f64)>) {
+        for (_, item) in frame.items() {
+            match item {
+                FrameItem::Group(g) => rect_sizes(&g.frame, out),
+                FrameItem::Shape(shape, _) => {
+                    if let typst::visualize::Geometry::Rect(size) = &shape.geometry {
+                        out.push((size.x.to_mm(), size.y.to_mm()));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     #[test]
     fn the_printed_page_measures_correctly() {
         let s = sheet(&diagram(PLAN), &symbols(), &opts(100.0)).unwrap();
@@ -659,6 +674,13 @@ mod tests {
             hit.is_some(),
             "no 100 mm line at x = {want_x} pt among {found:?}"
         );
+        // The 100 mm calibration bar in the title block.
+        let mut rects = vec![];
+        rect_sizes(&page.frame, &mut rects);
+        let bar = rects
+            .iter()
+            .any(|(w, h)| (w - 100.0).abs() < 1e-6 && (h - 2.0).abs() < 1e-6);
+        assert!(bar, "no 100 mm calibration bar among {rects:?}");
         // And the whole thing renders to PDF.
         let out = pdf(&diagram(PLAN), &symbols(), &opts(100.0)).unwrap();
         assert!(out.pdf.starts_with(b"%PDF"));

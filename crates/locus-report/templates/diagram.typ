@@ -99,6 +99,16 @@
   ])
 }
 
+// Calibration bar: exactly 100 mm, ticks every 10 mm, in the title block, so a printout
+// can be checked with a ruler.
+#let cal-x = (f.at(0) + f.at(2)) / 2 - 50
+#let cal-y = f.at(3) + 24
+#at(cal-x, cal-y, rect(width: 100 * mm, height: 2 * mm, stroke: 0.25 * mm + ink))
+#for i in range(11) {
+  place(top + left, line(start: ((cal-x + i * 10) * mm, (cal-y - 1) * mm), end: ((cal-x + i * 10) * mm, (cal-y + 2) * mm), stroke: 0.2 * mm + ink))
+}
+#at(cal-x, cal-y + 3, box(width: 100 * mm, align(center, text(size: 6.5pt)[Calibration bar: 100 mm. Measure it to check the print scale.])))
+
 // Title block.
 #at(f.at(0), f.at(3) + 3, block(width: (f.at(2) - f.at(0)) * mm)[
   #grid(

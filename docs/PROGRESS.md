@@ -168,10 +168,12 @@ Plan (the hand-measurement solver first: one acceptance criterion depends on it,
 
 Acceptance criteria:
 - [x] Triangulation input reproduces known positions exactly: to 1e-12 m in `locus-analysis` tests (two and three references, both sides, baseline extension), and to 4e-16 m through the app's Measured point tool, with the tape readings stored with the point.
-- [ ] A diagram printed at 1:100 measures correctly on paper. *In the PDF: proven by test on the laid-out page (a 10 m line is 100.000 mm, the 5 m scale bar 50 mm, A4 landscape exactly 297 × 210 mm), and the app prints a saved revision with its hash in the title block and the audit log. Still to do by hand: print the PDF at actual size and measure it with a ruler.*
+- [ ] A diagram printed at 1:100 measures correctly on paper. *In the PDF: proven by test on the laid-out page (a 10 m line is 100.000 mm, the 5 m scale bar 50 mm, A4 landscape exactly 297 × 210 mm), and the app prints a saved revision with its hash in the title block and the audit log. The physical check with a ruler is under Blocked, to be done before release.*
 - [x] The legend updates live: it is derived from the document on every render (`legendItems`, tested), and in the app it follows added symbols and markers and drops a deleted symbol at once.
 
 ## Blocked
+
+- **Physical print-scale check at 1:100** (2026-09-22): print a scaled diagram PDF at actual size and measure it (the 10 m line and the 100 mm calibration bar in the title block) with a ruler. The PDF geometry is proven by tests; the physical check must be done before release.
 
 - **Mid-range GPU measurement** (2026-09-22): Phase 2's frame-rate criterion has been measured on an RTX 3070 Ti and an Intel UHD 770 only. It still needs a run on a real mid-range card (e.g. RTX 3060 or GTX 1660).
 
