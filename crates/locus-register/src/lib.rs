@@ -4,6 +4,7 @@
 
 pub mod checker;
 pub mod coarse;
+pub mod exemplar;
 pub mod icp;
 pub mod normals;
 pub mod pipeline;

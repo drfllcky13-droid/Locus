@@ -16,6 +16,7 @@ use std::path::Path;
 
 pub mod bloodstain;
 pub mod camera;
+pub mod crush;
 mod e57_out;
 pub mod trajectory;
 pub use e57_out::{write_e57, write_points};

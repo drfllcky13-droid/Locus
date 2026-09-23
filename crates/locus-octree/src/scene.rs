@@ -211,6 +211,26 @@ impl Scene {
         Ok(out)
     }
 
+    /// Every visible point of one scan (project frame) inside the box `lo`–`hi`.
+    pub fn scan_points_in(
+        &self,
+        key: ScanKey,
+        lo: [f64; 3],
+        hi: [f64; 3],
+    ) -> Result<Vec<[f64; 3]>> {
+        let cloud = self
+            .scans
+            .get(&key)
+            .ok_or_else(|| Error::Invalid(format!("no scan {key}")))?;
+        let mut out = vec![];
+        crate::cleanup::for_points_near(cloud, lo, hi, &mut |_, _, p| {
+            if (0..3).all(|k| p[k] >= lo[k] && p[k] <= hi[k]) {
+                out.push(p);
+            }
+        })?;
+        Ok(out)
+    }
+
     pub fn origin(&self) -> [f64; 3] {
         let mut lo = [f64::INFINITY; 3];
         let mut hi = [f64::NEG_INFINITY; 3];

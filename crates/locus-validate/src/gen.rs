@@ -101,6 +101,50 @@ pub fn bloodstain(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Volumetric crush: `reference.e57` (an undamaged vehicle's front corner) and `damaged.e57`
+/// (the same with a dent of known volume), each where its options place it.
+pub fn crush(args: &[String]) -> Result<(), String> {
+    use locus_synth::crush as c;
+    let dir = out_dir(args)?;
+    let mut o: c::Options = options(args)?;
+    o.seed = arg(args, "--seed", Some(o.seed))?;
+    let truth = c::truth(&o);
+    write_json(&dir.join("truth.json"), &truth)?;
+    let points = |pts: Vec<[f64; 3]>, pose: locus_synth::Pose| -> Vec<locus_synth::Point> {
+        pts.into_iter()
+            .map(|p| locus_synth::Point {
+                xyz: pose.apply(p),
+                intensity: 1200,
+                rgb: [170, 175, 185],
+            })
+            .collect()
+    };
+    let r = points(
+        c::vehicle(None, o.noise, 2 * o.seed),
+        c::pose(o.reference_at, o.reference_heading_deg),
+    );
+    let d = points(
+        c::vehicle(Some((o.radius, o.depth)), o.noise, 2 * o.seed + 1),
+        c::pose(o.damaged_at, o.damaged_heading_deg),
+    );
+    for (file, name, pts) in [
+        ("reference.e57", "reference vehicle", &r),
+        ("damaged.e57", "damaged vehicle", &d),
+    ] {
+        locus_synth::write_points(&dir.join(file), name, pts).map_err(|e| e.to_string())?;
+    }
+    eprintln!(
+        "crush: dent {:.3} m × {:.3} m, volume {:.3} L; {} + {} points, in {}",
+        o.radius,
+        o.depth,
+        truth.volume * 1000.0,
+        r.len(),
+        d.len(),
+        dir.display()
+    );
+    Ok(())
+}
+
 pub fn camera(args: &[String]) -> Result<(), String> {
     use locus_synth::camera as c;
     let dir = out_dir(args)?;

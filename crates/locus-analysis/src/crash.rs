@@ -102,18 +102,18 @@ pub struct Spread {
 }
 
 /// Deterministic uniform and normal draws (xorshift64*, Box–Muller).
-struct Rng(u64);
+pub(crate) struct Rng(pub(crate) u64);
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
         self.0.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 11
     }
-    fn uniform(&mut self) -> f64 {
+    pub(crate) fn uniform(&mut self) -> f64 {
         (self.next() as f64 + 0.5) / (1u64 << 53) as f64
     }
-    fn gauss(&mut self) -> f64 {
+    pub(crate) fn gauss(&mut self) -> f64 {
         let (u, v) = (self.uniform(), self.uniform());
         (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()
     }

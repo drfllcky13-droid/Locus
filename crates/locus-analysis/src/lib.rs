@@ -5,6 +5,7 @@
 pub mod bloodstain;
 pub mod camera;
 pub mod crash;
+pub mod crush_volume;
 pub mod defect;
 pub mod handmeasure;
 pub mod measure;

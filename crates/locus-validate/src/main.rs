@@ -7,7 +7,7 @@
 //!   `--no-targets`, `--tilt-deg D` (0.5), `--noise-mm R` (1), `--outliers F` (0),
 //!   `--stored-pose true|none|M,DEG` (true; `M,DEG` perturbs by M metres and DEG degrees),
 //!   `--move-sphere K,FROM,DX,DY,DZ` (sphere K moved by DX,DY,DZ m from scan FROM on).
-//! - `locus-validate gen-trajectory|gen-bloodstain|gen-camera --out DIR [--seed S]
+//! - `locus-validate gen-trajectory|gen-bloodstain|gen-camera|gen-crush --out DIR [--seed S]
 //!   [--options FILE.json]` write ground truth for the analysis tools (see `gen.rs`):
 //!   `truth.json`, `scene.e57`, and images. `gen-bloodstain` also takes
 //!   `--flight straight|ballistic`.
@@ -125,10 +125,11 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Some(cmd @ ("gen-trajectory" | "gen-bloodstain" | "gen-camera")) => {
+        Some(cmd @ ("gen-trajectory" | "gen-bloodstain" | "gen-camera" | "gen-crush")) => {
             let r = match cmd {
                 "gen-trajectory" => gen::trajectory(&args),
                 "gen-bloodstain" => gen::bloodstain(&args),
+                "gen-crush" => gen::crush(&args),
                 _ => gen::camera(&args),
             };
             match r {
@@ -170,7 +171,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene`, `gen-trajectory`, `gen-bloodstain`, `gen-camera` or `import`.");
+            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene`, `gen-trajectory`, `gen-bloodstain`, `gen-camera`, `gen-crush` or `import`.");
             ExitCode::FAILURE
         }
     }
