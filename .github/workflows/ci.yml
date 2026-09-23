@@ -75,6 +75,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # The runner's preinstalled toolchains we don't use; the build and its cache need the room.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - run: cargo nextest run --workspace --profile ci
@@ -108,7 +112,8 @@ jobs:
         if: steps.go.outputs.run == 'true'
       # Registration accuracy (Phase 3) and the 100M-point E57 import under 4 GB (Phase 1).
       - if: steps.go.outputs.run == 'true'
-        run: cargo nextest run --workspace --release --run-ignored only --profile ci
+        # The app crate (Tauri) has no heavy tests and would need the GUI libraries.
+        run: cargo nextest run --workspace --exclude locus --release --run-ignored only --profile ci
 
   app:
     strategy:
