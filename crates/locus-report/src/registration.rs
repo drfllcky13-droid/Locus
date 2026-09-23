@@ -345,7 +345,7 @@ mod tests {
         let tmp = std::env::temp_dir();
         std::fs::write(tmp.join("locus-registration-report.pdf"), &out.pdf).unwrap();
         let data = serde_json::to_vec(&doc).unwrap();
-        for (i, png) in crate::pages_png(TEMPLATE, data).iter().enumerate() {
+        for (i, png) in crate::pages_png(TEMPLATE, data, vec![]).iter().enumerate() {
             std::fs::write(
                 tmp.join(format!("locus-registration-report-{}.png", i + 1)),
                 png,

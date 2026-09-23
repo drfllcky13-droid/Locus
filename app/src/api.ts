@@ -305,6 +305,14 @@ export const api = {
     invoke<DiagramRevision>("diagram_create", { name, document }),
   diagramSave: (diagramId: number, name: string, document: Diagram) =>
     invoke<DiagramRevision>("diagram_save", { diagramId, name, document }),
+  /** Prints the newest saved revision; returns the PDF's SHA-256 (also logged). */
+  diagramPdf: (
+    diagramId: number,
+    scale: number,
+    paper: "A4" | "A3",
+    landscape: boolean,
+    path: string,
+  ) => invoke<string>("diagram_pdf", { diagramId, scale, paper, landscape, path }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
     invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),

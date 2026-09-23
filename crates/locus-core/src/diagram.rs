@@ -217,6 +217,33 @@ impl Project {
         Ok(out)
     }
 
+    /// Log that revision `revision_id` of a diagram was printed to `path` at 1:`scale`, with
+    /// the file's hash.
+    pub fn record_diagram_export(
+        &mut self,
+        revision_id: i64,
+        scale: f64,
+        path: &str,
+        sha256: &str,
+        bytes: u64,
+    ) -> Result<()> {
+        let rev = self
+            .diagram_revision(revision_id)?
+            .ok_or_else(|| crate::Error::NotFound(format!("diagram revision {revision_id}")))?;
+        self.logged("diagram.exported", |_| {
+            let details = json!({
+                "diagram": rev.diagram_id,
+                "revision": revision_id,
+                "revision_sha256": rev.sha256,
+                "scale": format!("1:{scale}"),
+                "path": path,
+                "sha256": sha256,
+                "bytes": bytes,
+            });
+            Ok(((), details))
+        })
+    }
+
     /// A diagram's revisions, oldest first.
     pub fn diagram_history(&self, diagram_id: i64) -> Result<Vec<HistoryEntry>> {
         Ok(self

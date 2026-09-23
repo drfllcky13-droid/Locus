@@ -107,3 +107,52 @@ pub fn hand_solve(
     }
     .map_err(|e: HandError| e.to_string())
 }
+
+/// Print the diagram's newest saved revision to PDF at 1:`scale`, and log the export.
+/// Returns the PDF's SHA-256.
+#[tauri::command]
+pub async fn diagram_pdf(
+    app: AppHandle,
+    diagram_id: i64,
+    scale: f64,
+    paper: locus_report::diagram::Paper,
+    landscape: bool,
+    path: String,
+) -> CmdResult<String> {
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        let rev = p
+            .diagram_latest(diagram_id)
+            .map_err(err)?
+            .ok_or(format!("No diagram {diagram_id}."))?;
+        let d: locus_report::diagram::Diagram =
+            serde_json::from_value(rev.document.clone()).map_err(err)?;
+        let o = locus_report::diagram::PrintOptions {
+            scale,
+            paper,
+            landscape,
+            title: rev.name.clone(),
+            details: vec![
+                ("Project".into(), p.name().map_err(err)?),
+                (
+                    "Revision".into(),
+                    format!("{} (SHA-256 {})", rev.number, &rev.sha256[..16]),
+                ),
+                ("Drawn by".into(), rev.created_by.clone()),
+                (
+                    "Printed".into(),
+                    format!("{}, {}", locus_core::timestamp(), p.examiner()),
+                ),
+            ],
+        };
+        let out = locus_report::diagram::pdf(&d, &locus_report::diagram::symbols(), &o)?;
+        std::fs::write(&path, &out.pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
+        let (sha256, bytes) =
+            locus_core::hash::sha256_reader(out.pdf.as_slice(), &mut |_| {}).map_err(err)?;
+        p.record_diagram_export(rev.revision_id, scale, &path, &sha256, bytes)
+            .map_err(err)?;
+        Ok(sha256)
+    })
+    .await
+}

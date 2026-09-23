@@ -1,3 +1,4 @@
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
 import { dist, endpoints, foot, segments, snap, type Snap } from "./geometry";
@@ -134,6 +135,11 @@ export function DiagramEditor({
     null,
   );
   const [form, setForm] = useState({ text: "", height: 3, x: "", y: "", label: "", length: 5 });
+  const [printing, setPrinting] = useState<{
+    scale: number;
+    paper: "A4" | "A3";
+    landscape: boolean;
+  } | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ center: [0, 0], scale: 40, width: 800, height: 600 });
   const dragging = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -546,6 +552,9 @@ export function DiagramEditor({
             {k}
           </label>
         ))}
+        <button onClick={() => setPrinting({ scale: 100, paper: "A4", landscape: true })}>
+          Print to scale…
+        </button>
         <span className="muted dg-status">
           {dirty ? "Saving…" : `Revision ${saved.revision} saved`}
         </span>
@@ -626,6 +635,84 @@ export function DiagramEditor({
               </span>
             )}
           </div>
+          {printing && (
+            <div
+              className="dg-form"
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              <strong>Print to scale</strong>
+              <label>
+                Scale
+                <select
+                  value={printing.scale}
+                  onChange={(e) => setPrinting({ ...printing, scale: Number(e.target.value) })}
+                >
+                  {[10, 20, 25, 50, 100, 200, 250, 500, 1000].map((n) => (
+                    <option key={n} value={n}>
+                      1:{n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Paper
+                <select
+                  value={printing.paper}
+                  onChange={(e) =>
+                    setPrinting({ ...printing, paper: e.target.value as "A4" | "A3" })
+                  }
+                >
+                  <option value="A4">A4</option>
+                  <option value="A3">A3</option>
+                </select>
+              </label>
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  checked={printing.landscape}
+                  onChange={(e) => setPrinting({ ...printing, landscape: e.target.checked })}
+                />
+                Landscape
+              </label>
+              <p className="muted">
+                Prints the saved revision. Print the PDF at actual size (100 %) for the scale to
+                hold on paper.
+              </p>
+              <div className="buttons">
+                <button onClick={() => setPrinting(null)}>Cancel</button>
+                <button
+                  className="primary"
+                  onClick={async () => {
+                    const path = await saveDialog({
+                      title: "Save diagram PDF",
+                      defaultPath: `${name}-1_${printing.scale}.pdf`,
+                      filters: [{ name: "PDF", extensions: ["pdf"] }],
+                    });
+                    if (!path) return;
+                    try {
+                      if (latest.current.dirty) await save();
+                      const sha = await api.diagramPdf(
+                        initial.diagram_id,
+                        printing.scale,
+                        printing.paper,
+                        printing.landscape,
+                        path,
+                      );
+                      onNotice(
+                        `Diagram saved to ${path} at 1:${printing.scale} (SHA-256 ${sha}; recorded in the audit log).`,
+                      );
+                      setPrinting(null);
+                    } catch (e) {
+                      onNotice(String(e));
+                    }
+                  }}
+                >
+                  Save PDF…
+                </button>
+              </div>
+            </div>
+          )}
           {tool === "measure" && (
             <MeasureDialog
               points={visible.filter(

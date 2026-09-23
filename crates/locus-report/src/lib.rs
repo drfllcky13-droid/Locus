@@ -6,6 +6,7 @@
 //! template, so the numbers in a report are exactly the strings computed in Rust, and
 //! [`Rendered::text`] lets tests check them against the laid-out document.
 
+pub mod diagram;
 pub mod registration;
 
 use typst::diag::{FileError, FileResult};
@@ -38,6 +39,8 @@ struct MemWorld {
     fonts: Vec<Font>,
     main: Source,
     data: Bytes,
+    /// Further read-only files the template may use (symbol images), by path.
+    files: Vec<(String, Bytes)>,
 }
 
 impl World for MemWorld {
@@ -57,15 +60,21 @@ impl World for MemWorld {
             Err(FileError::AccessDenied)
         }
     }
-    /// Only `data.json` exists.
+    /// Only `data.json` and the files given to [`render_with`] exist.
     fn file(&self, id: FileId) -> FileResult<Bytes> {
         let path = id.get();
-        let in_project = matches!(path.root(), typst::syntax::VirtualRoot::Project);
-        if in_project && path.vpath().get_without_slash() == "data.json" {
-            Ok(self.data.clone())
-        } else {
-            Err(FileError::AccessDenied)
+        if !matches!(path.root(), typst::syntax::VirtualRoot::Project) {
+            return Err(FileError::AccessDenied);
         }
+        let name = path.vpath().get_without_slash();
+        if name == "data.json" {
+            return Ok(self.data.clone());
+        }
+        self.files
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, b)| b.clone())
+            .ok_or(FileError::AccessDenied)
     }
     fn font(&self, index: usize) -> Option<Font> {
         self.fonts.get(index).cloned()
@@ -85,7 +94,16 @@ pub struct Rendered {
 
 /// Compile `template` with `data` (the bytes of `data.json`) to PDF.
 pub fn render(template: &str, data: Vec<u8>) -> Result<Rendered, String> {
-    let doc = compile(template, data)?;
+    render_with(template, data, vec![])
+}
+
+/// As [`render`], with further read-only files the template can load by name.
+pub fn render_with(
+    template: &str,
+    data: Vec<u8>,
+    files: Vec<(String, Vec<u8>)>,
+) -> Result<Rendered, String> {
+    let doc = compile(template, data, files)?;
     let mut text = String::new();
     for page in doc.pages() {
         let mut last = None;
@@ -97,7 +115,11 @@ pub fn render(template: &str, data: Vec<u8>) -> Result<Rendered, String> {
     Ok(Rendered { pdf, text })
 }
 
-fn compile(template: &str, data: Vec<u8>) -> Result<PagedDocument, String> {
+fn compile(
+    template: &str,
+    data: Vec<u8>,
+    files: Vec<(String, Vec<u8>)>,
+) -> Result<PagedDocument, String> {
     let fonts = fonts();
     let world = MemWorld {
         library: LazyHash::new(Library::default()),
@@ -105,6 +127,7 @@ fn compile(template: &str, data: Vec<u8>) -> Result<PagedDocument, String> {
         fonts,
         main: Source::detached(template),
         data: Bytes::new(data),
+        files: files.into_iter().map(|(n, b)| (n, Bytes::new(b))).collect(),
     };
     let warned = typst::compile::<PagedDocument>(&world);
     // A missing font or glyph is only a warning in Typst and the text silently vanishes; in
@@ -119,8 +142,12 @@ fn compile(template: &str, data: Vec<u8>) -> Result<PagedDocument, String> {
 
 /// Page images of a report (tests and visual checks only).
 #[cfg(test)]
-pub(crate) fn pages_png(template: &str, data: Vec<u8>) -> Vec<Vec<u8>> {
-    let doc = compile(template, data).unwrap();
+pub(crate) fn pages_png(
+    template: &str,
+    data: Vec<u8>,
+    files: Vec<(String, Vec<u8>)>,
+) -> Vec<Vec<u8>> {
+    let doc = compile(template, data, files).unwrap();
     doc.pages()
         .iter()
         .map(|p| {
