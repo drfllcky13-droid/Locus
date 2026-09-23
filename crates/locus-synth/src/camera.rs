@@ -59,11 +59,23 @@ impl Camera {
         let rot = self.rotation();
         let d = sub(x, self.position);
         let c = [dot(rot[0], d), dot(rot[1], d), dot(rot[2], d)];
-        if c[2] <= 1e-6 {
+        if c[2] <= 1e-6 || (c[0] / c[2]).hypot(c[1] / c[2]) >= self.max_radius() {
             return None;
         }
         let [ad, bd] = self.distort(c[0] / c[2], c[1] / c[2]);
         Some([self.fx * ad + self.cx, self.fy * bd + self.cy])
+    }
+
+    /// The largest undistorted radius the lens model is valid for: where the radial
+    /// distortion stops increasing with radius. Beyond it the polynomial folds back, and a
+    /// point well outside the field of view would land inside the image.
+    pub fn max_radius(&self) -> f64 {
+        let [k1, k2, k3, ..] = self.distortion;
+        let slope = |r2: f64| 1.0 + 3.0 * k1 * r2 + 5.0 * k2 * r2 * r2 + 7.0 * k3 * r2 * r2 * r2;
+        (1..=2000)
+            .map(|i| i as f64 * 0.005)
+            .find(|r2| slope(*r2) <= 0.0)
+            .map_or(f64::INFINITY, f64::sqrt)
     }
 
     /// Distorted normalised coordinates of undistorted ones (the lens model).
