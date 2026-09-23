@@ -541,9 +541,23 @@ export interface BloodstainParameters {
   include_not_upward: string | null;
   reference: string;
   reference_deg: number;
+  /** Also find where floor stains converge in plan (a separate 2-D result). */
+  floor_convergence: boolean;
 }
 
-/** A photo placed on its surface: pixel (x, y) is at origin + x·x_step + y·y_step. */
+/** A perspective correction from a scale's four corners (row-major pixel → rectified pixel). */
+export interface Rectification {
+  corners_px: [P2, P2, P2, P2];
+  /** Width and height (m). */
+  size: P2;
+  corner_sigma_px: number;
+  h: [P3, P3, P3];
+  pixels_per_metre: number;
+  stretch: number;
+}
+
+/** A photo placed on its surface: pixel p is at origin + q.x·x_step + q.y·y_step, for q the
+ * pixel after the perspective correction (p itself without one). */
 export interface Alignment {
   pairs: { px: P2; world: P3 }[];
   plane_point: P3;
@@ -554,6 +568,18 @@ export interface Alignment {
   pixels_per_metre: number;
   residuals: number[];
   rms: number | null;
+  /** 1σ of the photo's rotation on the surface (degrees). */
+  rotation_sigma_deg: number;
+  rectification: Rectification | null;
+  scale_ratio: number | null;
+  plane_rms: number;
+}
+
+/** Four corners of a rectangle on the scale, in order around it, and its size (m). */
+export interface ScaleCorners {
+  corners_px: [P2, P2, P2, P2];
+  size: P2;
+  corner_sigma_px?: number | null;
 }
 
 export interface StainRequest {
@@ -561,7 +587,12 @@ export interface StainRequest {
   surface: string;
   /** Evidence id of the stain's photo. */
   photo: number;
-  align: { pairs: { px: P2; pick: PickHit }[]; eye: P3; plane_radius?: number };
+  align: {
+    pairs: { px: P2; pick: PickHit }[];
+    eye: P3;
+    plane_radius?: number;
+    scale?: ScaleCorners | null;
+  };
   edges: P2[];
   auto_edge: { seed: P2; threshold: number } | null;
   tail_px: P2;
@@ -583,7 +614,13 @@ export interface StainInput {
   travel: P3;
   travel_sigma_deg: number;
   excluded: string | null;
-  fit: { edge_points: number; trimmed: number; rms: number; axis_sigma_deg: number } | null;
+  fit: {
+    edge_points: number;
+    trimmed: number;
+    rms: number;
+    axis_sigma_deg: number;
+    perspective: { stretch: number; width_sigma: number } | null;
+  } | null;
   alignment: Alignment | null;
 }
 
@@ -598,6 +635,8 @@ export interface StainResult {
   residual: number;
   residual_sigmas: number;
   behind: boolean;
+  /** Share of the origin fit's information (0 for a stain not used). */
+  influence: number;
 }
 
 /** A stored or previewed bloodstain run (locus-analysis bloodstain::Run). */
@@ -618,7 +657,27 @@ export interface BloodstainRun {
     bootstrap: number;
     bootstrap_failed: number;
     conditioning: number;
+    near_round_share: number;
   };
+  /** The conventional point (perpendicular distances), for comparison. */
+  conventional: {
+    point: P3;
+    height: Measured;
+    ellipsoid: { semi_axes: P3; axes: [P3, P3, P3] };
+    shift: number;
+  } | null;
+  /** Floor stains' plan-view convergence: a separate 2-D result. */
+  convergence: {
+    point: P2;
+    sigma: P2;
+    semi_axes: P2;
+    axis: P2;
+    conventional: P2;
+    chi2: number;
+    dof: number;
+    stains: number[];
+  } | null;
+  convergence_note: string | null;
   summary: string;
   assumptions: string[];
   limitations: string[];

@@ -13,6 +13,7 @@ import {
   type BloodstainRecord,
   type BloodstainRun,
   type Measured,
+  type ScaleCorners,
   type StainInput,
   type StainRequest,
   type StainResult,
@@ -25,13 +26,15 @@ import { PhotoEditor } from "./PhotoEditor";
 
 type P2 = [number, number];
 type Photo = Awaited<ReturnType<typeof api.underlayImages>>[number];
-type Mode = "pairs" | "auto" | "click" | "tail";
+type Mode = "pairs" | "scale" | "auto" | "click" | "tail";
 
 interface Draft {
   label: string;
   surface: string;
   photo: Photo;
   pairs: { px: P2; pick: PickHit | null }[];
+  /** A scale's four corners and its size (mm, as typed), for a photo not taken square on. */
+  scale: { corners: P2[]; width: string; height: string };
   edges: P2[];
   auto: { seed: P2; threshold: number } | null;
   tail: P2 | null;
@@ -51,10 +54,27 @@ const DEFAULT_PARAMS: BloodstainParameters = {
   include_not_upward: null,
   reference: "project north (+y)",
   reference_deg: 0,
+  floor_convergence: false,
 };
 
 const fmt = (m: Measured, digits = 1) =>
   `${m.value.toFixed(digits)}° ± ${m.sigma.toFixed(digits)}°`;
+
+/** The perspective correction's corners and size (m), once all four corners and a size are in. */
+function scaleCorners(d: Draft): ScaleCorners | null {
+  const [w, h] = [Number(d.scale.width), Number(d.scale.height)];
+  if (d.scale.corners.length !== 4 || !(w > 0) || !(h > 0)) return null;
+  return { corners_px: d.scale.corners as ScaleCorners["corners_px"], size: [w / 1000, h / 1000] };
+}
+
+/** How to place the photo, once it has two pairs. */
+function alignRequest(d: Draft, eye: [number, number, number]): StainRequest["align"] {
+  return {
+    pairs: d.pairs.filter((p) => p.pick).map((p) => ({ px: p.px, pick: p.pick! })),
+    eye,
+    scale: scaleCorners(d),
+  };
+}
 
 /** The stain as the backend needs it, once it has pairs, edges and a tail. */
 function request(d: Draft): StainRequest | null {
@@ -65,7 +85,7 @@ function request(d: Draft): StainRequest | null {
     label: d.label,
     surface: d.surface,
     photo: d.photo.evidence_id,
-    align: { pairs: pairs.map((p) => ({ px: p.px, pick: p.pick! })), eye },
+    align: alignRequest(d, eye),
     edges: d.edges,
     auto_edge: d.auto,
     tail_px: d.tail,
@@ -168,7 +188,10 @@ function StainEditor({
   const click = (px: P2) => {
     if (!image) return;
     if (px[0] < 0 || px[1] < 0 || px[0] > image.naturalWidth || px[1] > image.naturalHeight) return;
-    if (mode === "pairs") {
+    if (mode === "scale") {
+      const corners = draft.scale.corners.length >= 4 ? [px] : [...draft.scale.corners, px];
+      onChange({ scale: { ...draft.scale, corners } });
+    } else if (mode === "pairs") {
       const i = draft.pairs.length;
       onChange({ pairs: [...draft.pairs, { px, pick: null }] });
       requestPick(`Click point ${i + 1} on the scan: the same place as in the photo.`, (hit) =>
@@ -189,6 +212,7 @@ function StainEditor({
         {(
           [
             ["pairs", "Point pairs"],
+            ["scale", "Scale corners"],
             ["auto", "Edge: automatic"],
             ["click", "Edge: click"],
             ["tail", "Tail"],
@@ -203,6 +227,8 @@ function StainEditor({
       <div className="stain-editor-bar muted">
         {mode === "pairs" &&
           "Click a feature in the photo (a scale mark, a corner), then the same point on the scan. Two pairs place the photo; three or more check it."}
+        {mode === "scale" &&
+          "Only for a photo not taken square on: click four corners of a rectangle on the scale, in order around it (C1 to C2 is its width), and give its size. The photo is then corrected for perspective."}
         {mode === "auto" &&
           "Click inside the stain. Adjust the threshold until the red edge follows it."}
         {mode === "click" &&
@@ -227,6 +253,35 @@ function StainEditor({
             Undo point
           </button>
         )}
+        {mode === "scale" && (
+          <>
+            <label>
+              Width
+              <input
+                className="narrow"
+                inputMode="decimal"
+                value={draft.scale.width}
+                onChange={(e) => onChange({ scale: { ...draft.scale, width: e.target.value } })}
+              />{" "}
+              mm
+            </label>
+            <label>
+              Height
+              <input
+                className="narrow"
+                inputMode="decimal"
+                value={draft.scale.height}
+                onChange={(e) => onChange({ scale: { ...draft.scale, height: e.target.value } })}
+              />{" "}
+              mm
+            </label>
+            {draft.scale.corners.length > 0 && (
+              <button onClick={() => onChange({ scale: { ...draft.scale, corners: [] } })}>
+                Clear corners
+              </button>
+            )}
+          </>
+        )}
         {mode === "pairs" && draft.pairs.length > 0 && (
           <button onClick={() => onChange({ pairs: draft.pairs.slice(0, -1), alignment: null })}>
             Remove last pair
@@ -250,6 +305,7 @@ function StainEditor({
           image={image}
           marks={{
             pairs: draft.pairs.map((q) => ({ px: q.px, done: q.pick !== null })),
+            corners: draft.scale.corners,
             edges: draft.edges,
             seed: draft.auto?.seed ?? null,
             tail: draft.tail,
@@ -266,8 +322,29 @@ function StainEditor({
             {draft.alignment.rms === null
               ? "two pairs (exact, no check)"
               : `pairs fit to ${(draft.alignment.rms * 1000).toFixed(1)} mm RMS`}
+            {draft.alignment.rectification &&
+              `; perspective corrected (stretch ${(draft.alignment.rectification.stretch * 100).toFixed(0)} %, scale over scan ${(draft.alignment.scale_ratio ?? 1).toFixed(3)})`}
           </span>
         )}
+        {draft.alignment?.rectification && draft.alignment.rectification.stretch > 0.1 && (
+          <span className="error">
+            Large perspective correction: the photo is about{" "}
+            {((Math.acos(1 / (1 + draft.alignment.rectification.stretch)) * 180) / Math.PI).toFixed(
+              0,
+            )}
+            ° off square-on. Retake it square on if you can.
+          </span>
+        )}
+        {draft.alignment?.scale_ratio != null &&
+          // Beyond 2 % and 2.5σ of the pairs' own scale error (their rotation's σ, in radians).
+          Math.abs(draft.alignment.scale_ratio - 1) >
+            Math.max(0.02, (2.5 * draft.alignment.rotation_sigma_deg * Math.PI) / 180) && (
+            <span className="error">
+              The scale&apos;s size and the scan disagree by{" "}
+              {((draft.alignment.scale_ratio - 1) * 100).toFixed(1)} %: check the size, corners and
+              pairs.
+            </span>
+          )}
         {p && (
           <span>
             {(p.input.width.value * 1000).toFixed(2)} × {(p.input.length.value * 1000).toFixed(2)}{" "}
@@ -334,13 +411,13 @@ export function BloodstainPanel({
   useEffect(() => {
     drafts.forEach((d, i) => {
       const done = d.pairs.filter((q) => q.pick);
-      const key = JSON.stringify(done.map((q) => [q.px, q.pick]));
+      const key = JSON.stringify([done.map((q) => [q.px, q.pick]), scaleCorners(d)]);
       if (aligned.current.get(i) === key) return;
       aligned.current.set(i, key);
       if (done.length < 2) return patch(i, { alignment: null });
       const e = d.eye ?? eye();
       if (!d.eye) patch(i, { eye: e });
-      api.bloodstainAlign({ pairs: done.map((q) => ({ px: q.px, pick: q.pick! })), eye: e }).then(
+      api.bloodstainAlign(alignRequest(d, e)).then(
         (alignment) => patch(i, { alignment, error: null }),
         (e) => patch(i, { alignment: null, error: String(e) }),
       );
@@ -419,6 +496,7 @@ export function BloodstainPanel({
         surface: ds[ds.length - 1]?.surface ?? "wall",
         photo: ph,
         pairs: [],
+        scale: { corners: [], width: "", height: "" },
         edges: [],
         auto: null,
         tail: null,
@@ -605,6 +683,14 @@ export function BloodstainPanel({
               <input value={reason} onChange={(e) => setReason(e.target.value)} />
             </label>
           )}
+          <label>
+            <input
+              type="checkbox"
+              checked={params.floor_convergence}
+              onChange={(e) => setParams({ ...params, floor_convergence: e.target.checked })}
+            />{" "}
+            Also find where floor stains converge in plan (a separate 2-D result)
+          </label>
 
           {ready.length < 4 && (
             <p className="muted">
@@ -631,6 +717,35 @@ export function BloodstainPanel({
                 {preview.origin.stains_used} of {preview.stains.length} stains; χ²{" "}
                 {preview.origin.chi2.toFixed(1)} on {preview.origin.dof}
               </div>
+              {preview.conventional && (
+                <div className="muted">
+                  Conventional point (perpendicular distances, for comparison){" "}
+                  {preview.conventional.point.map((v) => v.toFixed(3)).join(", ")} m,{" "}
+                  {(preview.conventional.shift * 1000).toFixed(0)} mm from the result
+                </div>
+              )}
+              {preview.origin.near_round_share > 0.5 && (
+                <p className="error">
+                  Near-round stains (impact 70° or more) carry{" "}
+                  {(preview.origin.near_round_share * 100).toFixed(0)} % of the fit: their angles
+                  are poorly determined. Check their edges and tails.
+                </p>
+              )}
+              {preview.convergence && (
+                <div>
+                  Floor stains converge in plan at{" "}
+                  <strong>
+                    x {preview.convergence.point[0].toFixed(3)}, y{" "}
+                    {preview.convergence.point[1].toFixed(3)} m
+                  </strong>{" "}
+                  <span className="muted">
+                    (95 % half-axes{" "}
+                    {preview.convergence.semi_axes.map((v) => v.toFixed(2)).join(" × ")} m, from{" "}
+                    {preview.convergence.stains.length} floor stains; separate from the origin)
+                  </span>
+                </div>
+              )}
+              {preview.convergence_note && <p className="muted">{preview.convergence_note}.</p>}
               {preview.origin.dof > 0 && preview.origin.chi2 / preview.origin.dof > 2 && (
                 <p className="error">
                   The stains scatter more than their stated uncertainties: check for stains from

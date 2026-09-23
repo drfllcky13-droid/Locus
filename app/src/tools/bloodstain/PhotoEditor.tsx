@@ -1,12 +1,15 @@
 // A stain photo on a canvas: wheel to zoom about the cursor, drag to pan, click to place a
 // point (reported in image pixels: x right, y down, pixel (i, j) spans [i, i + 1)). Draws
-// the alignment pairs, the edge points, the automatic edge's seed and the marked tail.
+// the alignment pairs, the scale's corners, the edge points, the automatic edge's seed and the
+// marked tail.
 import { useEffect, useRef, useState } from "react";
 
 type P2 = [number, number];
 
 export interface PhotoMarks {
   pairs: { px: P2; done: boolean }[];
+  /** The scale's corners for the perspective correction, in click order. */
+  corners: P2[];
   edges: P2[];
   seed: P2 | null;
   tail: P2 | null;
@@ -81,6 +84,24 @@ export function PhotoEditor({
       ctx.fillStyle = "#3fa9ff";
       ctx.fillText(String(i + 1), x + 8, y - 8);
     });
+    if (marks.corners.length > 0) {
+      ctx.strokeStyle = "#bf5af2";
+      ctx.fillStyle = "#bf5af2";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      marks.corners.forEach((p, i) => {
+        const [x, y] = at(p);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      if (marks.corners.length === 4) ctx.closePath();
+      ctx.stroke();
+      marks.corners.forEach((p, i) => {
+        const [x, y] = at(p);
+        ctx.fillRect(x - 3, y - 3, 6, 6);
+        ctx.fillText(`C${i + 1}`, x + 6, y + 14);
+      });
+    }
     const cross = (p: P2, colour: string, label: string) => {
       const [x, y] = at(p);
       ctx.strokeStyle = colour;

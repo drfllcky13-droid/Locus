@@ -1,6 +1,7 @@
 // Bloodstain area of origin in the 3D view: each stain's path back to the point nearest the
-// origin (used: dark red; left out: grey, dashed), the origin and its 95 % ellipsoid, and the
-// photo being worked on laid on its surface (with its opacity), to check the alignment.
+// origin (used: dark red; left out: grey, dashed), the origin and its 95 % ellipsoid, the floor
+// stains' plan-view convergence when asked for (blue, on the floor), and the photo being worked
+// on laid on its surface (with its opacity), to check the alignment.
 // Relative to the view's render origin.
 import * as THREE from "three";
 import type { Alignment, BloodstainRun } from "../../api";
@@ -10,6 +11,7 @@ type V3 = [number, number, number];
 const USED = 0xc0392b;
 const UNUSED = 0x9a9a9a;
 const REGION = 0xff6b5a;
+const FLOOR = 0x3f8fe0;
 
 export interface PhotoLayer {
   url: string;
@@ -78,17 +80,38 @@ export function bloodstainOverlay(
     ell.matrix.setPosition(rel(o));
     ell.renderOrder = 11;
     g.add(ell);
+    const cv = run.convergence;
+    if (cv) {
+      const z = run.parameters.floor_z + 0.002;
+      const at = (x: number, y: number) => rel([x, y, z]);
+      const mat = new THREE.LineBasicMaterial({ color: FLOOR, depthTest: false });
+      for (const k of cv.stains) {
+        const c = run.inputs[k].centre;
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([at(c[0], c[1]), at(cv.point[0], cv.point[1])]),
+          mat,
+        );
+        line.renderOrder = 10;
+        g.add(line);
+      }
+      const ring: THREE.Vector3[] = [];
+      for (let k = 0; k <= 48; k++) {
+        const t = (k / 48) * Math.PI * 2;
+        const [u, v] = [cv.semi_axes[0] * Math.cos(t), cv.semi_axes[1] * Math.sin(t)];
+        ring.push(
+          at(
+            cv.point[0] + u * cv.axis[0] - v * cv.axis[1],
+            cv.point[1] + u * cv.axis[1] + v * cv.axis[0],
+          ),
+        );
+      }
+      const loop = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), mat);
+      loop.renderOrder = 10;
+      g.add(loop);
+    }
   }
   if (photo) {
-    const al = photo.alignment;
-    const at = (x: number, y: number) =>
-      rel([0, 1, 2].map((i) => al.origin[i] + x * al.x_step[i] + y * al.y_step[i]) as V3)
-        // A millimetre off the surface, toward the viewer's side, so the points don't hide it.
-        .addScaledVector(new THREE.Vector3(...al.plane_normal), 0.001);
-    const [w, h] = [photo.width, photo.height];
-    const geo = new THREE.BufferGeometry().setFromPoints([at(0, 0), at(w, 0), at(w, h), at(0, h)]);
-    geo.setIndex([0, 1, 2, 0, 2, 3]);
-    geo.setAttribute("uv", new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+    const geo = photoGeometry(photo.alignment, photo.width, photo.height, rel);
     const tex = new THREE.TextureLoader().load(photo.url, onLoad);
     tex.colorSpace = THREE.SRGBColorSpace;
     const quad = new THREE.Mesh(
@@ -98,11 +121,70 @@ export function bloodstainOverlay(
         transparent: true,
         opacity: photo.opacity,
         side: THREE.DoubleSide,
-        depthWrite: false,
+        // Written, so the eye-dome pass keeps the photo where no scan points lie behind it.
+        depthWrite: true,
       }),
     );
     quad.renderOrder = 9;
     g.add(quad);
   }
   return g;
+}
+
+/** Where a photo pixel lies on its surface (render-relative), or null if the perspective
+ * correction sends it past the horizon or more than 1.5 m from the stain. */
+export function photoPoint(al: Alignment, x: number, y: number): V3 | null {
+  const h = al.rectification?.h;
+  let q: [number, number] = [x, y];
+  if (h) {
+    const w = h[2][0] * x + h[2][1] * y + h[2][2];
+    const [cx, cy] = [0, 1].map(
+      (k) => al.rectification!.corners_px.reduce((s, c) => s + c[k], 0) / 4,
+    );
+    const wc = h[2][0] * cx + h[2][1] * cy + h[2][2];
+    if (!(w * wc > 0)) return null;
+    q = [(h[0][0] * x + h[0][1] * y + h[0][2]) / w, (h[1][0] * x + h[1][1] * y + h[1][2]) / w];
+  }
+  const p = [0, 1, 2].map((i) => al.origin[i] + q[0] * al.x_step[i] + q[1] * al.y_step[i]) as V3;
+  const d = Math.hypot(...[0, 1, 2].map((i) => p[i] - al.plane_point[i]));
+  return d <= 1.5 ? p : null;
+}
+
+/** The photo as a mesh on its surface: one quad for a square-on photo, a 24 × 24 grid when
+ * corrected for perspective (the correction isn't affine, so a single quad would bend it).
+ * Lifted off the surface toward the viewer by three times the surface's roughness (at least
+ * 1 mm), so the scan points don't show through it. */
+function photoGeometry(
+  al: Alignment,
+  width: number,
+  height: number,
+  rel: (p: V3) => THREE.Vector3,
+): THREE.BufferGeometry {
+  const n = al.rectification ? 24 : 1;
+  const lift = new THREE.Vector3(...al.plane_normal).multiplyScalar(
+    Math.max(0.001, 3 * (al.plane_rms ?? 0)),
+  );
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const ok: boolean[] = [];
+  for (let j = 0; j <= n; j++)
+    for (let i = 0; i <= n; i++) {
+      const p = photoPoint(al, (i / n) * width, (j / n) * height);
+      const v = p ? rel(p).add(lift) : new THREE.Vector3();
+      ok.push(p !== null);
+      pos.push(v.x, v.y, v.z);
+      uv.push(i / n, 1 - j / n);
+    }
+  const index: number[] = [];
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      const a = j * (n + 1) + i;
+      const [b, c, d] = [a + 1, a + n + 2, a + n + 1];
+      if (ok[a] && ok[b] && ok[c] && ok[d]) index.push(a, b, c, a, c, d);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  return geo;
 }
