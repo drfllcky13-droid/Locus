@@ -4,6 +4,7 @@
 
 pub mod bloodstain;
 pub mod camera;
+pub mod crash;
 pub mod defect;
 pub mod handmeasure;
 pub mod measure;
