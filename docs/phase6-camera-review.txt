@@ -1,0 +1,120 @@
+Phase 6: bloodstain decisions applied, overlay bug fixed, camera matching and height built.
+For review.
+2026-09-23
+
+1. BLOODSTAIN DECISIONS (applied)
+
+  - The fit in angles stays primary. Beside it: the conventional ray-distance point, with its
+    own 95 % region and its distance from the result.
+    - The report's method section explains why, cites Camana 2013 and Illes & Boué 2013, and
+      gives the validation comparison on the same stains:
+        photos       0.6 mm, region covers 8/8      against   4.8 mm, 0/8
+        hand noise   233 mm, 95 %                   against   302 mm, 92 %
+    - Each stain's share of the fit is shown. "Needs attention" names the near-round stains
+      (70° or more) when they carry over half of it.
+  - Floor stains: an optional plan-view convergence.
+    - It is a separate 2-D result with its own section and figure; the 3-D origin is
+      unchanged by it.
+    - In a test with 3° direction noise, its 95 % ellipse covered the truth in 92.5 % of 200
+      runs.
+    - Limit: the 3-D origin must still be computable, so a run of floor stains alone is not
+      supported yet. Say if you need it.
+  - Four-point perspective correction from the scale's corners.
+    - The corner-click error is carried to each stain by Monte Carlo.
+    - Flagged: a stretch over 10 % (about 25° off square on), and a scale size that disagrees
+      with the scan by more than the pairs' own uncertainty allows.
+    - In the app, with photos warped 35° off square on and corrected: impact angles within 1°
+      of the truth, origin 27 mm from the truth.
+    - The in-app run is also why the second flag checks against the pairs' uncertainty. Scan
+      points snap within their ~3 mm spacing, so on a 35 mm scale the pairs alone were 1–10 %
+      off. A fixed 2 % test would have fired on nearly every photo.
+
+2. THE BLANK CLOSE-UPS: A REAL BUG, FIXED
+
+  - Cause: the eye-dome lighting pass painted everything nearer than 1 m to the camera as
+    background. The scan and the photo overlay both vanished at close range.
+  - It affected the whole viewer, not just bloodstain.
+  - Not the cause: the near plane (5 mm).
+  - Depth fighting is guarded against anyway: the photo is lifted off the wall by three times
+    the scan's roughness there.
+  - The CI viewer smoke test now checks a close-up.
+  - Please do the steps in docs/phase6-overlay-check.txt (about 10 minutes).
+
+3. CI: Linux per push; Windows nightly (only on days the code changed) and for release tags
+   or runs by hand; heavy tests on release tags and runs by hand.
+  - Estimate: about 30 Linux minutes per push, plus about 60 per nightly Windows run.
+    Pushing often and changing code daily would exceed the free 2,000 minutes, so I batch
+    pushes.
+  - The quota is still used up this month, so CI stays blocked until it resets.
+
+4. CAMERA MATCHING, HEIGHT, WITNESS PERSPECTIVE (built)
+
+  Person model:
+  - Drillis and Contini stature fractions, cited; the same as the camera generator.
+  - Exactly its stature, soles to the top of the head.
+
+  Camera solve:
+  - Six or more pixel–scan pairs.
+  - Start: the DLT on the pairs nearest the image centre.
+  - Refinement: Levenberg–Marquardt in stages. You choose the lens model: focal length only;
+    + k1; + k1, k2; or full, with the principal point and k1–k3, p1, p2.
+  - Pose and lens are reported with 1σ, plus each pair's residual, RMS and χ², with warnings.
+
+  Heights:
+  - Mark the feet and the head; the height comes by reverse projection onto the floor.
+  - A Monte Carlo over the camera's covariance and the picks gives 1σ and a 95 % interval.
+  - A person model of that height is drawn over the photo and in 3D. You can set its height,
+    pose and facing to match the frame by eye, then use its head point; the report says so.
+
+  Photo over the scene:
+  - The 3D view can look through the solved camera, with the photo drawn over it through
+    the lens distortion and an opacity slider.
+  - In the photo editor, the scan and each pair's residual are drawn over the photo.
+
+  Witness:
+  - Pick where they stood, state the eye height, pick where they looked, and set the field of
+    view.
+  - Lines of sight to picked targets come out clear or blocked, with where. You can view from
+    the eye.
+
+  Each tool has a PDF report: result, pairs table with scan sources, heights, the photo
+  (hash-checked), method, assumptions, limitations, references and sign-off.
+
+  Validation (generator: a wide-angle CCTV with strong distortion, and a handheld photo; three
+  people 1.63, 1.84 and 1.72 m):
+    40 rooms × 2 cameras × 3 people    mean height error 6.0 mm; with a good solve, 95 % of
+                                       errors under 14 mm, worst 28 mm; 95 % interval covers 92 %
+    In the app (CCTV, 14 pairs)        heights +9.8, +11.6, +7.3 mm (1σ 13–17 mm)
+
+  The validation found and fixed two real problems:
+    a. The generator placed a marker 67° off-axis in the middle of the CCTV image. The
+       distortion polynomial folds back past a certain radius. The generator and the solver
+       now treat points past that radius as not seen.
+    b. A one-step solve from the DLT fell into a wrong minimum on the wide-angle lens. It is now
+       staged.
+
+5. YOUR CALLS
+
+  a. The spec's height bound, "under 2 cm with a good camera solve", I read as: 95 % of errors
+     under 2 cm when the solve states the height to 1 cm (1σ). That gives 14 mm. The worst of
+     211 such cases was 28 mm, about 2.8σ, which is statistically expected at that count.
+     -> Confirm, or give the bound you want.
+  b. Lens model default: "focal length, k1, k2", which holds the principal point at the image
+     centre. The full model is more accurate but needs about 14 or more pairs.
+     -> Should the default be full when there are at least 14 pairs?
+  c. Pairs all on one plane (for example a CCTV that sees only the floor) are refused. A
+     planar start (from a homography) can be added if your cameras often see only one surface.
+  d. Eye height is only what the examiner states. I found no verified source for an eye-height
+     fraction of stature to offer as a default, so none is given.
+  e. Line of sight defaults: blocked by 3 or more scan points within 30 mm of the line,
+     ignoring 100 mm at each end. -> Adjust if your practice differs.
+  f. Not done yet:
+     - exporting the witness view or the look-through view as an image for the report;
+     - video (choosing a frame, rolling shutter);
+     - drawing the whole scan over the photo (only the points loaded at the time are drawn).
+     -> Say which you need now.
+
+6. CHECKS
+
+  All pass locally: workspace tests, clippy, frontend lint and types, 97 frontend tests, the
+  camera validation, and the bloodstain heavy validations (release).
