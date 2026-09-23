@@ -1,5 +1,14 @@
 // Parameters of a selected room or road; every edit rebuilds its geometry (builders.ts).
-import { DASH, road, room, type Opening, type RoadParams } from "./builders";
+import {
+  DASH,
+  DOOR_HEAD,
+  WINDOW_HEAD,
+  WINDOW_SILL,
+  road,
+  room,
+  type Opening,
+  type RoadParams,
+} from "./builders";
 import type { Entity } from "./model";
 
 type Room = Extract<Entity, { kind: "room" }>;
@@ -82,6 +91,13 @@ export function BuiltPanel({
             </label>
             {num("From wall start (m)", o.at, (at) => setOpening(i, { at }))}
             {num("Width (m)", o.width, (width) => width > 0 && setOpening(i, { width }))}
+            {o.kind === "window" &&
+              num("Sill height, 3D (m)", o.sill ?? WINDOW_SILL, (sill) => setOpening(i, { sill }))}
+            {num(
+              "Head height, 3D (m)",
+              o.head ?? (o.kind === "door" ? DOOR_HEAD : WINDOW_HEAD),
+              (head) => head > 0 && setOpening(i, { head }),
+            )}
             {o.kind === "door" && (
               <label>
                 Hinge

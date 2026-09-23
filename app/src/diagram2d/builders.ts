@@ -33,6 +33,30 @@ export interface Opening {
   width: number;
   /** Door hinge at the near or far side of the opening; the leaf opens into the room. */
   hinge: "near" | "far";
+  /** Top of the opening above the floor (m); for the 3D. Default DOOR_HEAD / WINDOW_HEAD. */
+  head?: number;
+  /** Bottom of a window above the floor (m); for the 3D. Default WINDOW_SILL. */
+  sill?: number;
+}
+
+export const DOOR_HEAD = 2.1;
+export const WINDOW_SILL = 0.9;
+export const WINDOW_HEAD = 2.1;
+
+/** One wall of a room, as both the plan and the 3D build it. */
+export interface Wall {
+  /** Inner face, anticlockwise around the room. */
+  a: Pt;
+  b: Pt;
+  /** Outer face (mitred at the corners). */
+  oa: Pt;
+  ob: Pt;
+  /** Along the wall, and square to it toward the outside. */
+  u: Pt;
+  out: Pt;
+  len: number;
+  /** Openings on this wall, measured from `a` along the inner face; those that fit. */
+  openings: Opening[];
 }
 
 const unit = (v: Pt): Pt => scale(v, 1 / Math.hypot(v[0], v[1]));
@@ -102,33 +126,49 @@ function cut(a: Pt, b: Pt, cuts: [number, number][]): Segment[] {
 }
 
 /**
- * A room from its inner outline (any orientation; made anticlockwise), wall thickness and
- * openings. Walls are drawn as inner and outer faces; each opening leaves a gap with jambs; a
- * door gets its leaf and swing, a window a pane line in the middle of the wall.
+ * A room's walls from its inner outline (any orientation; made anticlockwise), wall thickness
+ * and openings (numbered against the outline as entered).
  */
-export function room(outline: Pt[], thickness: number, openings: Opening[]): Geometry {
+export function walls(outline: Pt[], thickness: number, openings: Opening[]): Wall[] {
   const inner = area(outline) < 0 ? [...outline].reverse() : outline;
   // Openings are given against the outline as entered; follow the reversal.
   const flipped = inner !== outline;
   const n = inner.length;
   const outer = offset(inner, -thickness, true);
-  const segments: Segment[] = [];
-  const arcs: Arc[] = [];
-  for (let w = 0; w < n; w++) {
-    const [a, b] = [inner[w], inner[(w + 1) % n]];
-    const [oa, ob] = [outer[w], outer[(w + 1) % n]];
+  return inner.map((a, w) => {
+    const b = inner[(w + 1) % n];
     const len = dist(a, b);
     const u = unit(sub(b, a));
-    const out = scale(left(u), -1); // toward the outside
-    const here = openings
-      .filter((o) => (flipped ? n - 2 - o.wall + (o.wall === n - 1 ? n : 0) : o.wall) % n === w)
-      .map(
-        (o) =>
-          (flipped
-            ? { ...o, at: len - o.at - o.width, hinge: o.hinge === "near" ? "far" : "near" }
-            : o) as Opening,
-      )
-      .filter((o) => o.at >= 0 && o.at + o.width <= len + 1e-9);
+    return {
+      a,
+      b,
+      oa: outer[w],
+      ob: outer[(w + 1) % n],
+      u,
+      out: scale(left(u), -1),
+      len,
+      openings: openings
+        .filter((o) => (flipped ? n - 2 - o.wall + (o.wall === n - 1 ? n : 0) : o.wall) % n === w)
+        .map(
+          (o) =>
+            (flipped
+              ? { ...o, at: len - o.at - o.width, hinge: o.hinge === "near" ? "far" : "near" }
+              : o) as Opening,
+        )
+        .filter((o) => o.at >= 0 && o.at + o.width <= len + 1e-9),
+    };
+  });
+}
+
+/**
+ * A room from its inner outline (any orientation; made anticlockwise), wall thickness and
+ * openings. Walls are drawn as inner and outer faces; each opening leaves a gap with jambs; a
+ * door gets its leaf and swing, a window a pane line in the middle of the wall.
+ */
+export function room(outline: Pt[], thickness: number, openings: Opening[]): Geometry {
+  const segments: Segment[] = [];
+  const arcs: Arc[] = [];
+  for (const { a, b, oa, ob, u, out, openings: here } of walls(outline, thickness, openings)) {
     segments.push(
       ...cut(
         a,
@@ -241,31 +281,56 @@ export function dashes(pts: Pt[], [on, off]: [number, number] = DASH): Segment[]
   return out;
 }
 
+/** One line of a road, as both the plan and the 3D build it. */
+export interface RoadLine {
+  /** Offset from the centreline, positive to its left (m). */
+  offset: number;
+  pts: Pt[];
+  dashed: boolean;
+  /** A painted marking (false for the paved edge beyond a shoulder). */
+  painted: boolean;
+}
+
 /**
- * A road along a centreline: the centre marking, dashed lane dividers, solid edge lines, and
- * the outer edges of the shoulders. Dashed markings are drawn as their painted pieces.
+ * The lines of a road along a centreline (its corners rounded by `radius`): the centre
+ * marking, dashed lane dividers, solid edge lines, and the outer edges of the shoulders.
  */
-export function road(drawn: Pt[], p: RoadParams): Geometry {
+export function roadLines(drawn: Pt[], p: RoadParams): RoadLine[] {
   const centreline = fillet(drawn, p.radius ?? 0);
-  const segments: Segment[] = [];
-  const line = (pts: Pt[], dashed: boolean) => {
-    if (dashed) segments.push(...dashes(pts, p.dash ?? DASH));
-    else for (let i = 1; i < pts.length; i++) segments.push({ a: pts[i - 1], b: pts[i], dashed });
-  };
+  const lines: RoadLine[] = [];
+  const line = (d: number, dashed: boolean, painted = true) =>
+    lines.push({
+      offset: d,
+      pts: d === 0 ? centreline : offset(centreline, d, false),
+      dashed,
+      painted,
+    });
   if (p.centre === "double") {
-    line(offset(centreline, 0.1, false), false);
-    line(offset(centreline, -0.1, false), false);
+    line(0.1, false);
+    line(-0.1, false);
   } else if (p.centre !== "none") {
-    line(centreline, p.centre === "dashed");
+    line(0, p.centre === "dashed");
   }
   for (const [side, n] of [
     [1, p.lanes[0]],
     [-1, p.lanes[1]],
   ] as const) {
-    for (let k = 1; k < n; k++) line(offset(centreline, side * k * p.laneWidth, false), true);
+    for (let k = 1; k < n; k++) line(side * k * p.laneWidth, true);
     const edge = side * n * p.laneWidth;
-    line(offset(centreline, edge, false), false);
-    if (p.shoulder > 0) line(offset(centreline, edge + side * p.shoulder, false), false);
+    line(edge, false);
+    if (p.shoulder > 0) line(edge + side * p.shoulder, false, false);
+  }
+  return lines;
+}
+
+/** A road drawn in plan. Dashed markings are drawn as their painted pieces. */
+export function road(drawn: Pt[], p: RoadParams): Geometry {
+  const segments: Segment[] = [];
+  for (const l of roadLines(drawn, p)) {
+    if (l.dashed) segments.push(...dashes(l.pts, p.dash ?? DASH));
+    else
+      for (let i = 1; i < l.pts.length; i++)
+        segments.push({ a: l.pts[i - 1], b: l.pts[i], dashed: false });
   }
   return { segments, arcs: [] };
 }
