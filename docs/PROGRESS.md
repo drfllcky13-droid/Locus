@@ -211,9 +211,10 @@ Plan (ground truth first, then the tools in order of complexity; the trajectory 
 
 Acceptance criteria:
 - [x] Synthetic multi-surface trajectory recovered within 0.5°: worst 0.066° over 50 generated scenes (three panels, 2 mm picking noise), the stated 95 % cone covering the truth in 94.5 % of 400 runs; in the app, picking the generated scene's defects gave 0.105°.
+- [x] Area of origin mean error under 10 cm on clean synthetic data: from the generator's stain photos (alignment, automatic edges, marked tails) 0.6 mm mean over 8 rooms, the truth inside the 95 % region in all 8; in the app, six stains gave 11.5 mm. With hand-measurement noise, 233 mm with the region covering the truth 95 % of the time.
 - [ ] All crime tools pass the `locus-validate` error bounds (bounds set with the generators, checked in Phase 13).
 
-Status (2026-09-23): items 1–3 done (generators for all three tools; the analysis record, report pattern and trajectory tool). Paused for review of the analysis pattern before bloodstain and camera/height copy it: see docs/phase6-trajectory-review.txt.
+Status (2026-09-23): items 1–4 done. Trajectory review decisions applied (hole-centre fits with the ellipse cross-check, angle conventions, both zones, report additions). Bloodstain area of origin built on the same pattern; paused for review before camera matching and height: see docs/phase6-bloodstain-review.txt.
 
 ## Blocked
 
