@@ -24,6 +24,10 @@ const IMPORT_EXTENSIONS = [
   "jpg",
   "jpeg",
   "png",
+  "mp4",
+  "m4v",
+  "mov",
+  "avi",
 ];
 
 type Dialog =
@@ -108,6 +112,12 @@ export function App() {
         setNotice(String(e));
       }
     });
+  }, []);
+
+  // Evidence added by the backend itself (a photogrammetry point cloud).
+  useEffect(() => {
+    const unlisten = listen<ProjectInfo>("project-changed", ({ payload }) => setProject(payload));
+    return () => void unlisten.then((f) => f());
   }, []);
 
   useEffect(() => {

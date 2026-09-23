@@ -47,7 +47,7 @@ pub struct ProjectInfo {
     integrity: Option<IntegrityReport>,
 }
 
-fn info(p: &Project, integrity: Option<IntegrityReport>) -> CmdResult<ProjectInfo> {
+pub(crate) fn info(p: &Project, integrity: Option<IntegrityReport>) -> CmdResult<ProjectInfo> {
     let log = p.audit_log().map_err(err)?;
     let head = log.last();
     Ok(ProjectInfo {

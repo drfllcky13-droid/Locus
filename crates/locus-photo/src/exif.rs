@@ -2,7 +2,7 @@
 //! Stdlib only: JPEG APP1 segments, a TIFF header and IFDs (Exif 2.32, CIPA DC-008), and the
 //! XMP packet read as text.
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GpsTags {
     /// WGS84 latitude and longitude (°, north and east positive) and altitude (m; above sea
     /// level as the EXIF altitude reference says).

@@ -402,6 +402,22 @@ export const api = {
     invoke<StiffnessEntry[]>("stiffness_lookup", { make, model, yearFrom, yearTo }),
   crashCrushProfile: (request: { picks: PickHit[]; stations: number; band: number }) =>
     invoke<CrushProfile>("crash_crush_profile", { request }),
+  photoSetup: () => invoke<PhotoSetup>("photo_setup"),
+  photoSetupSet: (path: string | null, cpuOnly: boolean) =>
+    invoke<PhotoSetup>("photo_setup_set", { path, cpuOnly }),
+  photoSources: () => invoke<PhotoSources>("photo_sources"),
+  photoRun: (request: PhotoRunRequest) => invoke<void>("photo_run", { request }),
+  photoCancel: () => invoke<void>("photo_cancel"),
+  photoJob: () => invoke<PhotoJob | null>("photo_job"),
+  photoImage: (name: string) => invoke<ArrayBuffer>("photo_image", { name }),
+  photoTriangulate: (clicks: PhotoClick[]) =>
+    invoke<{ point: [number, number, number]; angle_deg: number; residuals_px: number[] }>(
+      "photo_triangulate",
+      { clicks },
+    ),
+  photoScale: (scale: PhotoScale) => invoke<PhotoScaleRecord>("photo_scale", { scale }),
+  photoImport: (name: string, scale: PhotoScale) =>
+    invoke<{ record: AnalysisRecord; evidence_id: number }>("photo_import", { name, scale }),
   crashPreview: (request: CrashRequest) => invoke<CrashRun>("crash_preview", { request }),
   crashSave: (name: string, request: CrashRequest, revises: number | null) =>
     invoke<AnalysisRecord>("crash_save", { name, request, revises }),
@@ -549,6 +565,7 @@ export type AnalysisRecord = AnalysisBase &
     | { tool: "camera"; record: CameraRun }
     | { tool: "witness"; record: WitnessRun }
     | { tool: "skid" | "yaw" | "momentum" | "crush" | "crush_volume" | "edr"; record: CrashRun }
+    | { tool: "photogrammetry"; record: PhotoRun }
   );
 export type TrajectoryRecord = Extract<AnalysisRecord, { tool: "trajectory" }>;
 export type BloodstainRecord = Extract<AnalysisRecord, { tool: "bloodstain" }>;
@@ -668,6 +685,105 @@ export interface CrushVolume {
   outward: number;
   max_depth: number;
   crushed_area: number;
+}
+
+// ---------- photogrammetry ----------
+
+/** Where COLMAP is (installed by the examiner) and what it is. */
+export interface PhotoSetup {
+  configured: string | null;
+  cpu_only: boolean;
+  found: {
+    path: string;
+    banner: string;
+    version: [number, number, number];
+    cuda: boolean;
+    sha256: string;
+    supported: boolean;
+  } | null;
+  error: string | null;
+  candidates: string[];
+  releases: string;
+  oldest: [number, number, number];
+}
+
+export interface PhotoSources {
+  images: {
+    evidence_id: number;
+    name: string;
+    sha256: string;
+    file: string;
+    width: number;
+    height: number;
+  }[];
+  videos: { evidence_id: number; name: string; sha256: string }[];
+}
+
+export interface PhotoRunRequest {
+  source:
+    | { kind: "photos"; evidence_ids: number[] }
+    | { kind: "video"; evidence_id: number; interval: number };
+  camera_model: string;
+  single_camera: boolean;
+  dense: boolean;
+  max_image_size: number;
+  dense_max_image_size: number;
+}
+
+/** A finished reconstruction waiting to be scaled and imported. */
+export interface PhotoJob {
+  images_total: number;
+  registered: string[];
+  sparse_points: number;
+  mean_error_px: number;
+  other_models: number[];
+  dense: boolean;
+  note: string | null;
+  gps: number;
+  rtk: number;
+  seconds: number;
+}
+
+export interface PhotoClick {
+  image: string;
+  x: number;
+  y: number;
+}
+
+export type PhotoScale =
+  | { method: "gps" }
+  | {
+      method: "distances";
+      items: { label: string; a: PhotoClick[]; b: PhotoClick[]; length: number; sigma: number }[];
+    }
+  | {
+      method: "gcps";
+      items: {
+        label: string;
+        clicks: PhotoClick[];
+        world: [number, number, number] | null;
+        pick: PickHit | null;
+        check: boolean;
+      }[];
+    };
+
+export interface PhotoScaleRecord {
+  method: string;
+  transform: { scale: number; rotation: number[][]; translation: [number, number, number] };
+  scale_sigma_rel: number;
+  rows: { label: string; target: string; residual: number; check: boolean; angle_deg: number }[];
+  rms: number;
+  enu_origin: [number, number, number] | null;
+  notes: string[];
+  warnings: string[];
+}
+
+export interface PhotoRun {
+  method: string;
+  name: string;
+  summary: string;
+  warnings: string[];
+  output: { evidence_id: number; sha256: string; points: number; from: string };
 }
 
 /** A crush profile measured on a damaged vehicle's scan (locus-analysis crash::CrushProfile). */

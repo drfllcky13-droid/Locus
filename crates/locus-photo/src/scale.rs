@@ -9,7 +9,7 @@
 use crate::model::P3;
 use nalgebra::{Matrix3, Vector3};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Similarity {
     pub scale: f64,
     /// Rotation, rows.

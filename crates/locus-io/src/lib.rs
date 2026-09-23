@@ -10,6 +10,8 @@ mod mesh;
 mod ply;
 mod stats;
 mod text;
+mod write;
+pub use write::write_e57;
 
 use locus_core::hash::sha256_file;
 use locus_core::{Contents, EvidenceRecord, LinearUnit, Project};
@@ -58,6 +60,9 @@ pub enum Format {
     Glb,
     Jpeg,
     Png,
+    /// A video, kept as evidence for photogrammetry's frame sampling (read by Media Foundation
+    /// there, not here).
+    Video,
 }
 
 impl Format {
@@ -81,8 +86,21 @@ impl Format {
             "glb" => Format::Glb,
             "jpg" | "jpeg" => Format::Jpeg,
             "png" => Format::Png,
+            "mp4" | "m4v" | "mov" | "avi" => Format::Video,
             _ => return Err(Error::Unsupported(path.display().to_string())),
         };
+        if format == Format::Video {
+            // MP4/MOV: an ISO base media "ftyp" box at byte 4; AVI: a RIFF "AVI " header.
+            let mut head = [0u8; 12];
+            File::open(path)?.read_exact(&mut head).ok();
+            if &head[4..8] != b"ftyp" && !(&head[..4] == b"RIFF" && &head[8..12] == b"AVI ") {
+                return Err(parse_err(
+                    "video",
+                    "the file's contents don't match its extension",
+                ));
+            }
+            return Ok(format);
+        }
         let magic: &[u8] = match format {
             Format::E57 => b"ASTM-E57",
             Format::Las | Format::Laz => b"LASF",
@@ -116,6 +134,7 @@ impl Format {
             Format::Glb => "GLB",
             Format::Jpeg => "JPEG",
             Format::Png => "PNG",
+            Format::Video => "Video",
         }
     }
 }
@@ -155,6 +174,7 @@ pub fn inspect(path: &Path, progress: ProgressFn) -> Result<Contents> {
         Format::Obj => mesh::inspect_obj(path)?,
         Format::Gltf | Format::Glb => mesh::inspect_gltf(path)?,
         Format::Jpeg | Format::Png => image::inspect(path)?,
+        Format::Video => Contents::new("Video"),
     };
     contents.format = format.name().into();
     Ok(contents)

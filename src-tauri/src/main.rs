@@ -9,6 +9,7 @@ mod camera_cmds;
 mod commands;
 mod crash_cmds;
 mod diagram_cmds;
+mod photo_cmds;
 mod register_cmds;
 mod scene3d_cmds;
 mod scene_cmds;
@@ -89,6 +90,16 @@ fn main() {
             crash_cmds::crash_preview,
             crash_cmds::crash_save,
             crash_cmds::crash_crush_profile,
+            photo_cmds::photo_setup,
+            photo_cmds::photo_setup_set,
+            photo_cmds::photo_sources,
+            photo_cmds::photo_run,
+            photo_cmds::photo_cancel,
+            photo_cmds::photo_job,
+            photo_cmds::photo_image,
+            photo_cmds::photo_triangulate,
+            photo_cmds::photo_scale,
+            photo_cmds::photo_import,
             crash_cmds::stiffness_lookup,
             crash_cmds::stiffness_makes,
             analysis_cmds::analyses,
@@ -110,6 +121,7 @@ fn main() {
         .setup(|app| {
             use tauri::Manager;
             app.manage(scene_cmds::Builder::start(app.handle().clone()));
+            app.manage(photo_cmds::PhotoState::default());
             Ok(())
         });
 

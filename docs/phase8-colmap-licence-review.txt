@@ -111,3 +111,10 @@ Verified means read from the source: the licence files, src/thirdparty/, CMakeLi
      - ETH3D high-resolution multi-view, one scene with its laser-scan ground truth (a few hundred MB);
      - or Strecha's fountain-P11 (about 100 MB).
    - Video frames. For video I plan to use Windows Media Foundation, which is part of the OS: nothing to download or ship. ffmpeg is LGPL/GPL, so avoid it unless you say otherwise.
+
+
+DECISION (2026-09-23)
+
+   Option A. Locus runs a user-installed COLMAP from a configured path, records its version and executable SHA-256 in every photogrammetry record, and offers a CPU-only feature setting (COLMAP's BSD CPU SIFT, avoiding SiftGPU). The setup help summarises these licences so agencies can decide.
+   OpenMVG (MPL-2.0) is logged in DECISIONS.md as a possible future bundled sparse pipeline.
+   Nothing from COLMAP enters THIRD_PARTY_NOTICES, because nothing from it ships.

@@ -13,6 +13,7 @@ locus-analysis = { version = "0.1.0", path = "../crates/locus-analysis" }
 locus-core = { version = "0.1.0", path = "../crates/locus-core" }
 locus-io = { version = "0.1.0", path = "../crates/locus-io" }
 locus-octree = { version = "0.1.0", path = "../crates/locus-octree" }
+locus-photo = { version = "0.1.0", path = "../crates/locus-photo" }
 locus-register = { version = "0.1.0", path = "../crates/locus-register" }
 locus-report = { version = "0.1.0", path = "../crates/locus-report" }
 nalgebra = "0.35.0"

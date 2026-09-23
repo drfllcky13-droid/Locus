@@ -11,6 +11,7 @@ pub mod bloodstain;
 pub mod camera;
 pub mod crash;
 pub mod diagram;
+pub mod photo;
 pub mod registration;
 pub mod trajectory;
 

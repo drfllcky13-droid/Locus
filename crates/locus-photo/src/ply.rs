@@ -31,10 +31,18 @@ fn value(t: &str, b: &[u8]) -> f64 {
 }
 
 pub fn read(bytes: &[u8]) -> Result<PlyPoints, String> {
+    // The header ends at "end_header" and its line break (\n, or \r\n as some writers put).
     let end = bytes
-        .windows(11)
-        .position(|w| w == b"end_header\n")
+        .windows(10)
+        .position(|w| w == b"end_header")
         .ok_or("not a PLY file (no end_header)")?;
+    let body = end
+        + 10
+        + bytes[end + 10..]
+            .iter()
+            .position(|b| *b == b'\n')
+            .ok_or("not a PLY file (no end_header)")?
+        + 1;
     let header = String::from_utf8_lossy(&bytes[..end]);
     let mut lines = header.lines();
     if lines.next().map(str::trim) != Some("ply") {
@@ -66,7 +74,7 @@ pub fn read(bytes: &[u8]) -> Result<PlyPoints, String> {
         xyz: Vec::with_capacity(count),
         rgb: Vec::with_capacity(count),
     };
-    let data = &bytes[end + 11..];
+    let data = &bytes[body..];
     match format.as_str() {
         "binary_little_endian" => {
             let sizes: Vec<usize> = props
@@ -140,5 +148,12 @@ mod tests {
         assert_eq!(a.xyz, vec![[0.5, 1.0, 2.0]]);
         assert!(a.rgb.is_empty());
         assert!(read(&b[..b.len() - 3]).is_err());
+        // Windows line breaks in the header.
+        let h = b.windows(10).position(|w| w == b"end_header").unwrap() + 11;
+        let mut w = String::from_utf8_lossy(&b[..h])
+            .replace('\n', "\r\n")
+            .into_bytes();
+        w.extend(&b[h..]);
+        assert_eq!(read(&w).unwrap().xyz, r.xyz);
     }
 }

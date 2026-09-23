@@ -2892,6 +2892,7 @@ dependencies = [
  "locus-core",
  "locus-io",
  "locus-octree",
+ "locus-photo",
  "locus-register",
  "locus-report",
  "nalgebra",
@@ -2969,7 +2970,10 @@ name = "locus-photo"
 version = "0.1.0"
 dependencies = [
  "nalgebra",
+ "png 0.18.1",
  "serde",
+ "serde_json",
+ "windows",
 ]
 
 [[package]]
@@ -2988,6 +2992,7 @@ name = "locus-report"
 version = "0.1.0"
 dependencies = [
  "locus-analysis",
+ "locus-photo",
  "locus-register",
  "nalgebra",
  "serde",

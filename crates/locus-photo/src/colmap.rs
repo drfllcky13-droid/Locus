@@ -76,8 +76,16 @@ pub struct Settings {
     pub camera_model: String,
     /// Dense reconstruction (needs CUDA).
     pub dense: bool,
-    /// Longest image side for extraction and dense (px); 0 for COLMAP's default.
+    /// Longest image side for feature extraction (px); 0 for COLMAP's default.
     pub max_image_size: u32,
+    /// Longest image side for the dense cloud (px); 0 for full size. PatchMatch's time grows
+    /// with the pixel count: 4800 px took 26 min for 14 photos where 2000 px takes minutes.
+    #[serde(default = "dense_size")]
+    pub dense_max_image_size: u32,
+}
+
+fn dense_size() -> u32 {
+    2000
 }
 
 impl Default for Settings {
@@ -92,6 +100,7 @@ impl Default for Settings {
             // percentile distance error from 1.02 % to 0.60 %. The full 6048 px crashed
             // COLMAP 4.2's CPU SIFT.
             max_image_size: 4800,
+            dense_max_image_size: 2000,
         }
     }
 }
@@ -198,8 +207,11 @@ pub fn dense_stages(s: &Settings, images: &Path, model: &Path, work: &Path) -> V
         "--output_type".into(),
         "COLMAP".into(),
     ];
-    if s.max_image_size > 0 {
-        und.extend(["--max_image_size".into(), s.max_image_size.to_string()]);
+    if s.dense_max_image_size > 0 {
+        und.extend([
+            "--max_image_size".into(),
+            s.dense_max_image_size.to_string(),
+        ]);
     }
     vec![
         Stage {
@@ -235,6 +247,10 @@ pub fn progress(stage: &str, line: &str) -> Option<(u32, u32)> {
     // "Fusing image [3/14]", "Undistorting image [3/14]".
     let key = match stage {
         "feature_extractor" => "Processed file [",
+        // COLMAP 4 logs "Processing block", 3.x "Matching block".
+        "exhaustive_matcher" | "sequential_matcher" if line.contains("Processing block [") => {
+            "Processing block ["
+        }
         "exhaustive_matcher" | "sequential_matcher" => "Matching block [",
         "image_undistorter" => "Undistorting image [",
         "patch_match_stereo" => "Processing view ",
@@ -457,6 +473,13 @@ mod tests {
     fn progress_is_read_from_the_log() {
         assert_eq!(
             progress(
+                "exhaustive_matcher",
+                "I0923 pairing.cc:212] Processing block [2/4, 1/1]"
+            ),
+            Some((2, 4))
+        );
+        assert_eq!(
+            progress(
                 "feature_extractor",
                 "I0923 feature_extraction.cc:258] Processed file [3/14]"
             ),
@@ -468,7 +491,10 @@ mod tests {
         );
         assert_eq!(progress("mapper", "Registering image #7 (8)"), Some((8, 0)));
         assert_eq!(
-            progress("patch_match_stereo", "Processing view 3 / 14 for IMG.JPG"),
+            progress(
+                "patch_match_stereo",
+                "=== Processing view 3 / 14 for 10_DSC_0642.JPG ==="
+            ),
             Some((3, 14))
         );
         assert_eq!(

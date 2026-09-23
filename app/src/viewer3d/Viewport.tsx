@@ -9,6 +9,7 @@ import { ScenePanel, type BuildStatus } from "./ScenePanel";
 import { SceneBuilder } from "../scene3d/SceneBuilder";
 import { BloodstainPanel } from "../tools/bloodstain/BloodstainPanel";
 import { CameraPanel } from "../tools/camera/CameraPanel";
+import { PhotoPanel } from "../tools/photo/PhotoPanel";
 import { CrashPanel } from "../tools/crash/CrashPanel";
 import { WitnessPanel } from "../tools/camera/WitnessPanel";
 import { TrajectoryPanel } from "../tools/trajectory/TrajectoryPanel";
@@ -456,6 +457,14 @@ export function Viewport({
             key={`w${project.root}`}
             engine={getEngine}
             origin={shownScene?.origin.join() ?? ""}
+            requestPick={(hint, then) => {
+              setTool("orbit");
+              setPickRequest({ hint, then });
+            }}
+            onNotice={onNotice}
+          />
+          <PhotoPanel
+            key={`p${project.root}`}
             requestPick={(hint, then) => {
               setTool("orbit");
               setPickRequest({ hint, then });

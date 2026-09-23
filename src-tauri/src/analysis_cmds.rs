@@ -348,6 +348,13 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                 ),
                 vec![],
             ),
+            "photogrammetry" => (
+                locus_report::photo::report(
+                    &meta(p, &a)?,
+                    &serde_json::from_value(a.record.clone()).map_err(err)?,
+                ),
+                vec![],
+            ),
             "crush_volume" => (
                 locus_report::crash::volume(
                     &meta(p, &a)?,

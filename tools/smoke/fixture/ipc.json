@@ -352,5 +352,23 @@
  "diagrams": [],
  "scenes": [],
  "analyses": [],
- "case_number": null
+ "case_number": null,
+ "photo_setup": {
+  "configured": null,
+  "cpu_only": false,
+  "found": null,
+  "error": null,
+  "candidates": [],
+  "releases": "https://github.com/colmap/colmap/releases",
+  "oldest": [
+   3,
+   9,
+   0
+  ]
+ },
+ "photo_sources": {
+  "images": [],
+  "videos": []
+ },
+ "photo_job": null
 }
