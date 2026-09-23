@@ -5,6 +5,7 @@
 
 pub mod audit;
 mod contents;
+mod diagram;
 pub mod hash;
 mod project;
 mod registration;
@@ -15,6 +16,7 @@ pub use audit::AuditEntry;
 pub use contents::{
     Bounds, Contents, ExifField, ImageInfo, ImageKind, MeshInfo, ScanInfo, IDENTITY,
 };
+pub use diagram::{DiagramRevision, HistoryEntry};
 pub use project::{
     now as timestamp, Error, EvidenceRecord, EvidenceStatus, IntegrityReport, Project, Result,
 };

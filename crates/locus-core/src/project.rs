@@ -45,7 +45,7 @@ pub enum Error {
 }
 
 const DB_FILE: &str = "project.sqlite";
-const SCHEMA_VERSION: &str = "3";
+const SCHEMA_VERSION: &str = "4";
 
 const SCHEMA: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -172,6 +172,7 @@ impl Project {
         tx.execute_batch(audit::SCHEMA)?;
         tx.execute_batch(crate::state::SCHEMA_V2)?;
         tx.execute_batch(crate::registration::SCHEMA_V3)?;
+        tx.execute_batch(crate::diagram::SCHEMA_V4)?;
         let created_at = now();
         for (k, v) in [
             ("schema_version", SCHEMA_VERSION),
@@ -222,6 +223,7 @@ impl Project {
         let migrations = [
             ("1", "2", crate::state::SCHEMA_V2),
             ("2", "3", crate::registration::SCHEMA_V3),
+            ("3", "4", crate::diagram::SCHEMA_V4),
         ];
         if version != SCHEMA_VERSION && !migrations.iter().any(|m| m.0 == version) {
             return Err(Error::SchemaVersion(version));

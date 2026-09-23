@@ -17,6 +17,7 @@ fn schema_1_projects_are_migrated_step_by_step_and_each_step_is_logged() {
     c.execute_batch(
         "DROP TABLE settings; DROP TABLE octrees; DROP TABLE measurements; DROP TABLE cleanup_ops;
          DROP TABLE registration_poses; DROP TABLE registrations;
+         DROP TABLE diagram_revisions; DROP TABLE diagrams;
          UPDATE meta SET value = '1' WHERE key = 'schema_version';",
     )
     .unwrap();
@@ -33,6 +34,7 @@ fn schema_1_projects_are_migrated_step_by_step_and_each_step_is_logged() {
         actions,
         [
             "project.created",
+            "project.migrated",
             "project.migrated",
             "project.migrated",
             "project.opened"
