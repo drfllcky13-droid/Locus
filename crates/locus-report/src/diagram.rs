@@ -19,6 +19,27 @@ pub struct Diagram {
     pub entities: Vec<Entity>,
 }
 
+impl Diagram {
+    /// Project files (with their recorded SHA-256) of the underlays on visible layers.
+    pub fn underlays(&self) -> Vec<(&str, &str)> {
+        self.entities
+            .iter()
+            .filter(|e| self.visible(e))
+            .filter_map(|e| match e {
+                Entity::Underlay { file, sha256, .. } => Some((file.as_str(), sha256.as_str())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn visible(&self, e: &Entity) -> bool {
+        self.layers
+            .iter()
+            .find(|l| l.id == e.layer())
+            .is_none_or(|l| l.visible)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Layer {
     pub id: String,
@@ -99,6 +120,24 @@ pub enum Entity {
         layer: String,
         geometry: Built,
     },
+    /// An image under the drawing (app/src/diagram2d/underlay.ts): project file, hash, and
+    /// the similarity placing its pixels in the project frame.
+    Underlay {
+        layer: String,
+        file: String,
+        sha256: String,
+        width: f64,
+        height: f64,
+        placement: Placement,
+        opacity: f64,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Placement {
+    pub origin: Pt,
+    pub pixel: f64,
+    pub rotation: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -136,7 +175,8 @@ impl Entity {
             | Entity::Scalebar { layer, .. }
             | Entity::Legend { layer, .. }
             | Entity::Room { layer, .. }
-            | Entity::Road { layer, .. } => layer,
+            | Entity::Road { layer, .. }
+            | Entity::Underlay { layer, .. } => layer,
         }
     }
 }
@@ -202,6 +242,20 @@ pub struct Label {
 /// A legend row: label, and a symbol file or glyph name (marker, point, measured).
 pub type LegendRow = (String, String);
 
+/// An underlay on the page: top-left corner (mm), size (mm), rotation (degrees, clockwise on
+/// the page) about that corner.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Underlay {
+    pub file: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub rotation: f64,
+    /// 0–1; printed by laying white over the image.
+    pub opacity: f64,
+}
+
 /// What the template draws, all in page millimetres (origin top left, y down).
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Sheet {
@@ -210,6 +264,8 @@ pub struct Sheet {
     pub scale_label: String,
     pub title: String,
     pub details: Vec<[String; 2]>,
+    /// Underlay images, drawn first and clipped to the frame.
+    pub images: Vec<Underlay>,
     /// [x1, y1, x2, y2, stroke width].
     pub lines: Vec<[f64; 5]>,
     /// Polylines (arcs are sampled finely enough to be within 0.01 mm of the circle).
@@ -275,21 +331,13 @@ fn arc_points(c: Pt, r: f64, start: f64, end: f64, scale_mm: f64) -> Vec<Pt> {
 
 /// Lay the diagram out on the sheet at the chosen scale.
 pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<Sheet, PrintError> {
-    let visible: Vec<&Entity> = d
-        .entities
-        .iter()
-        .filter(|e| {
-            d.layers
-                .iter()
-                .find(|l| l.id == e.layer())
-                .is_none_or(|l| l.visible)
-        })
-        .collect();
+    let visible: Vec<&Entity> = d.entities.iter().filter(|e| d.visible(e)).collect();
     let mm_per_m = 1000.0 / o.scale;
     let sym = |id: &str| symbols.iter().find(|s| s.id == id);
 
     // Extent of the drawing in world metres (points of every entity).
     let mut pts: Vec<Pt> = vec![];
+    let mut underlay_pts: Vec<Pt> = vec![];
     for e in &visible {
         match e {
             Entity::Line { a, b, .. } | Entity::Dimension { a, b, .. } => pts.extend([*a, *b]),
@@ -313,6 +361,22 @@ pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<She
                 pts.extend([[at[0] - half, at[1] - half], [at[0] + half, at[1] + half]]);
             }
             Entity::Scalebar { at, length, .. } => pts.extend([*at, [at[0] + length, at[1]]]),
+            // An underlay (often far bigger than the drawing) is clipped to the frame instead,
+            // unless there is nothing else: then the underlay is the drawing.
+            Entity::Underlay {
+                width,
+                height,
+                placement: pl,
+                ..
+            } => {
+                let (c, s) = (pl.rotation.cos(), pl.rotation.sin());
+                for (u, v) in [(0.0, 0.0), (*width, 0.0), (0.0, *height), (*width, *height)] {
+                    underlay_pts.push([
+                        pl.origin[0] + pl.pixel * (u * c + v * s),
+                        pl.origin[1] + pl.pixel * (u * s - v * c),
+                    ]);
+                }
+            }
             Entity::Room { geometry, .. } | Entity::Road { geometry, .. } => {
                 for g in &geometry.segments {
                     pts.extend([g.a, g.b]);
@@ -322,6 +386,9 @@ pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<She
                 }
             }
         }
+    }
+    if pts.is_empty() {
+        pts = underlay_pts;
     }
     if pts.is_empty() {
         return Err(PrintError::Empty);
@@ -365,6 +432,7 @@ pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<She
             .iter()
             .map(|(k, v)| [k.clone(), v.clone()])
             .collect(),
+        images: vec![],
         lines: vec![],
         paths: vec![],
         texts: vec![],
@@ -382,6 +450,25 @@ pub fn sheet(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<She
             Entity::Line { a, b, .. } => {
                 let (a, b) = (p(*a), p(*b));
                 s.lines.push([a[0], a[1], b[0], b[1], 0.35]);
+            }
+            Entity::Underlay {
+                file,
+                width,
+                height,
+                placement: pl,
+                opacity,
+                ..
+            } => {
+                let at = p(pl.origin);
+                s.images.push(Underlay {
+                    file: file.clone(),
+                    x: at[0],
+                    y: at[1],
+                    width: width * pl.pixel * mm_per_m,
+                    height: height * pl.pixel * mm_per_m,
+                    rotation: deg(pl.rotation),
+                    opacity: opacity.clamp(0.0, 1.0),
+                });
             }
             Entity::Room { geometry, .. } | Entity::Road { geometry, .. } => {
                 for g in &geometry.segments {
@@ -572,13 +659,20 @@ fn ranges(s: &[u32]) -> String {
 }
 
 /// Render the diagram to PDF at scale. `symbols` supplies the symbol SVGs as files.
-pub fn pdf(d: &Diagram, symbols: &[SymbolDef], o: &PrintOptions) -> Result<Rendered, String> {
+/// Print a diagram. `underlays` holds each underlay's image bytes by its project file name.
+pub fn pdf(
+    d: &Diagram,
+    symbols: &[SymbolDef],
+    o: &PrintOptions,
+    underlays: Vec<(String, Vec<u8>)>,
+) -> Result<Rendered, String> {
     let s = sheet(d, symbols, o).map_err(|e| e.to_string())?;
     let data = serde_json::to_vec(&s).map_err(|e| e.to_string())?;
-    let files: Vec<(String, Vec<u8>)> = symbols
+    let mut files: Vec<(String, Vec<u8>)> = symbols
         .iter()
         .map(|d| (format!("symbols/{}.svg", d.id), d.svg.as_bytes().to_vec()))
         .collect();
+    files.extend(underlays);
     render_with(TEMPLATE, data, files)
 }
 
@@ -695,6 +789,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn underlays_are_placed_by_their_calibration_and_set_the_extent_only_alone() {
+        // A 1000 × 500 px image at 0.05 m/px (50 × 25 m, bigger than an A4 frame at 1:100),
+        // turned 90° anticlockwise, under a 10 m line.
+        let d = diagram(
+            r##"{"version":1,"layers":[{"id":"base","name":"Base","visible":true,"locked":false,"color":"#fff"}],
+          "entities":[
+            {"id":"u","layer":"base","kind":"underlay","file":"evidence/1/aerial.svg","sha256":"x",
+             "width":1000,"height":500,"opacity":0.6,"calibration":null,
+             "placement":{"origin":[5,-3],"pixel":0.05,"rotation":1.5707963267948966}},
+            {"id":"l","layer":"base","kind":"line","a":[0,0],"b":[10,0]}
+          ]}"##,
+        );
+        assert_eq!(d.underlays(), vec![("evidence/1/aerial.svg", "x")]);
+        let s = sheet(&d, &symbols(), &opts(100.0)).unwrap();
+        let (u, l) = (&s.images[0], s.lines[0]);
+        assert!((u.width - 500.0).abs() < 1e-9 && (u.height - 250.0).abs() < 1e-9);
+        assert!((u.rotation + 90.0).abs() < 1e-9);
+        // Its corner is at (5, −3) m: 50 mm right of the line's start and 30 mm below it.
+        assert!((u.x - l[0] - 50.0).abs() < 1e-9 && (u.y - l[1] - 30.0).abs() < 1e-9);
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500"><rect width="1000" height="500" fill="#8a8"/></svg>"##;
+        let out = pdf(
+            &d,
+            &symbols(),
+            &opts(100.0),
+            vec![("evidence/1/aerial.svg".into(), svg.to_vec())],
+        )
+        .unwrap();
+        assert!(out.pdf.starts_with(b"%PDF"));
+        // On its own, the underlay is the drawing: 25 m across by 50 m up fits A3 at 1:250.
+        let alone = Diagram {
+            entities: d.entities[..1].to_vec(),
+            ..d
+        };
+        let a3 = PrintOptions {
+            paper: Paper::A3,
+            ..opts(250.0)
+        };
+        let s = sheet(&alone, &symbols(), &a3).unwrap();
+        assert!((s.images[0].width - 200.0).abs() < 1e-9);
+    }
+
     /// Every line's end points in the laid-out page (pt), from the frame tree.
     fn lines(frame: &Frame, at: Point, out: &mut Vec<(f64, f64)>) {
         for (pos, item) in frame.items() {
@@ -759,7 +895,7 @@ mod tests {
             .any(|(w, h)| (w - 100.0).abs() < 1e-6 && (h - 2.0).abs() < 1e-6);
         assert!(bar, "no 100 mm calibration bar among {rects:?}");
         // And the whole thing renders to PDF.
-        let out = pdf(&diagram(PLAN), &symbols(), &opts(100.0)).unwrap();
+        let out = pdf(&diagram(PLAN), &symbols(), &opts(100.0), vec![]).unwrap();
         assert!(out.pdf.starts_with(b"%PDF"));
         assert!(out.text.contains("Scale 1:100"));
         assert!(out.text.contains("10.000 m"));
@@ -812,7 +948,7 @@ mod tests {
             paper: Paper::A3,
             ..opts(200.0)
         };
-        let out = pdf(&d, &lib, &o).unwrap();
+        let out = pdf(&d, &lib, &o, vec![]).unwrap();
         assert!(out.pdf.starts_with(b"%PDF"));
     }
 

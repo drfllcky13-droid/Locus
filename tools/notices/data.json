@@ -847,6 +847,14 @@
         "../THIRD_PARTY_NOTICES.txt"
       ],
       "reason": "This notices file itself, shown in the app."
+    },
+    {
+      "crate": "locus-report",
+      "version": "0.1.0",
+      "files": [
+        "../../assets/symbols/index.json"
+      ],
+      "reason": "First-party (assets/symbols, drawn for Locus), and read only by a unit test that checks the print library matches the editor's."
     }
   ],
   "licences": {

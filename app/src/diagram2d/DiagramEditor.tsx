@@ -6,6 +6,13 @@ import { MeasureDialog } from "./MeasureDialog";
 import { road, room } from "./builders";
 import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL } from "./BuiltPanel";
 import {
+  UnderlayPanel,
+  useUnderlayUrl,
+  type Calibrating,
+  type UnderlayEntity,
+} from "./UnderlayPanel";
+import { imageToWorld, worldToImage } from "./underlay";
+import {
   legendItems,
   nextMarker,
   renumberMarkers,
@@ -137,6 +144,7 @@ export function DiagramEditor({
   const [clicks, setClicks] = useState<Pt[]>([]);
   const [cursor, setCursor] = useState<Snap | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [calibrating, setCalibrating] = useState<Calibrating | null>(null);
   const [symbol, setSymbol] = useState(SYMBOLS[0]?.id ?? "car");
   const [activeLayer, setActiveLayer] = useState(doc.layers[0]?.id ?? "base");
   const [snaps, setSnaps] = useState({
@@ -259,6 +267,15 @@ export function DiagramEditor({
   };
 
   const click = (p: Pt) => {
+    if (calibrating) {
+      const u = doc.entities.find((e) => e.id === calibrating.id);
+      if (u?.kind === "underlay")
+        setCalibrating({
+          ...calibrating,
+          rows: [...calibrating.rows, { pixel: worldToImage(u.placement, p), x: "", y: "" }],
+        });
+      return;
+    }
     const pts = [...clicks, p];
     switch (tool) {
       case "select": {
@@ -640,7 +657,11 @@ export function DiagramEditor({
             const d = dragging.current;
             dragging.current = null;
             if (d?.moved || ev.button !== 0) return;
-            click(tool === "select" ? toWorld(view, screen(ev)) : snapAt(screen(ev)).point);
+            click(
+              tool === "select" || calibrating
+                ? toWorld(view, screen(ev))
+                : snapAt(screen(ev)).point,
+            );
           }}
           onDoubleClick={() => multi && finishPolyline()}
           onPointerLeave={() => setCursor(null)}
@@ -657,6 +678,17 @@ export function DiagramEditor({
                 <line x1="-4" y1="4" x2="4" y2="-4" stroke="currentColor" />
               </marker>
             </defs>
+            {visible.map(
+              (e) =>
+                e.kind === "underlay" && (
+                  <UnderlayImage
+                    key={e.id}
+                    u={e}
+                    S={S}
+                    calibrating={calibrating?.id === e.id ? calibrating : null}
+                  />
+                ),
+            )}
             {gridLines}
             {visible.map(drawEntity)}
             {preview}
@@ -870,6 +902,27 @@ export function DiagramEditor({
               </div>
             </>
           )}
+          <UnderlayPanel
+            underlays={doc.entities.filter((e): e is UnderlayEntity => e.kind === "underlay")}
+            points={visible.filter(
+              (e): e is Extract<Entity, { kind: "point" }> => e.kind === "point",
+            )}
+            view={{
+              topLeft: toWorld(view, [0, 0]),
+              width: view.width / view.scale,
+            }}
+            calibrating={calibrating}
+            setCalibrating={setCalibrating}
+            add={add}
+            update={(u) =>
+              change({ ...doc, entities: doc.entities.map((x) => (x.id === u.id ? u : x)) })
+            }
+            remove={(id) => {
+              if (calibrating?.id === id) setCalibrating(null);
+              change({ ...doc, entities: doc.entities.filter((x) => x.id !== id) });
+            }}
+            onNotice={onNotice}
+          />
           {selectedBuilt && (
             <BuiltPanel
               entity={selectedBuilt}
@@ -1012,6 +1065,50 @@ function LegendBox({
             <text x={36} y={cy + 4} className="dg-text" fill={color}>
               {it.label}
               {typeof it.glyph === "object" && it.count > 1 ? ` (${it.count})` : ""}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** An underlay's image, placed by its calibration; numbered crosses on calibration clicks. */
+function UnderlayImage({
+  u,
+  S,
+  calibrating,
+}: {
+  u: UnderlayEntity;
+  S: (p: Pt) => Pt;
+  calibrating: Calibrating | null;
+}) {
+  const url = useUnderlayUrl(u.file, u.sha256);
+  const o = S(imageToWorld(u.placement, [0, 0]));
+  const ex = S(imageToWorld(u.placement, [1, 0]));
+  const ey = S(imageToWorld(u.placement, [0, 1]));
+  // Image pixels to screen: the columns are the screen steps of one pixel right and down.
+  const m = [ex[0] - o[0], ex[1] - o[1], ey[0] - o[0], ey[1] - o[1], o[0], o[1]].join(" ");
+  return (
+    <g>
+      {url && (
+        <image
+          href={url}
+          width={u.width}
+          height={u.height}
+          transform={`matrix(${m})`}
+          opacity={u.opacity}
+          preserveAspectRatio="none"
+          style={{ imageRendering: u.slice ? "pixelated" : "auto" }}
+        />
+      )}
+      {calibrating?.rows.map((r, i) => {
+        const [x, y] = S(imageToWorld(u.placement, r.pixel));
+        return (
+          <g key={i} className="dg-calib">
+            <path d={`M ${x - 7} ${y} H ${x + 7} M ${x} ${y - 7} V ${y + 7}`} />
+            <text x={x + 6} y={y - 6} className="dg-text">
+              {i + 1}
             </text>
           </g>
         );

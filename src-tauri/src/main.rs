@@ -62,6 +62,10 @@ fn main() {
             diagram_cmds::diagram_history,
             diagram_cmds::hand_solve,
             diagram_cmds::diagram_pdf,
+            diagram_cmds::underlay_images,
+            diagram_cmds::underlay_bytes,
+            diagram_cmds::underlay_slice,
+            diagram_cmds::underlay_calibrated,
         ])
         .register_asynchronous_uri_scheme_protocol("locus", |ctx, request, responder| {
             let app = ctx.app_handle().clone();

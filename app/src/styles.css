@@ -769,3 +769,36 @@ td.num {
   fill: #1e1f22;
   user-select: none;
 }
+
+/* Builders and underlays in the diagram side panel. */
+.dg-side fieldset {
+  border: 1px solid #3a3d42;
+  border-radius: 4px;
+  margin: 6px 0;
+  padding: 4px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dg-underlay {
+  border-top: 1px solid #3a3d42;
+  padding: 6px 0;
+}
+.dg-underlay-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dg-calibrate {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+.dg-calib path {
+  stroke: #f2a53a;
+  stroke-width: 2;
+}
+.dg-calib text {
+  fill: #f2a53a;
+}

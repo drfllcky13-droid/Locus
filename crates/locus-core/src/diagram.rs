@@ -244,6 +244,12 @@ impl Project {
         })
     }
 
+    /// Log an underlay being made or calibrated (`diagram.underlay_sliced`,
+    /// `diagram.underlay_calibrated`) with what it was made from and how well it fits.
+    pub fn record_underlay(&mut self, action: &str, details: Value) -> Result<()> {
+        self.logged(action, |_| Ok(((), details)))
+    }
+
     /// A diagram's revisions, oldest first.
     pub fn diagram_history(&self, diagram_id: i64) -> Result<Vec<HistoryEntry>> {
         Ok(self

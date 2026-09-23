@@ -14,6 +14,7 @@ mod build;
 pub mod cleanup;
 mod read;
 pub mod scene;
+pub mod slice;
 
 pub use build::{build, BuildOptions, BuildProgress, BuildStage, Source};
 pub use read::{NodePoints, Octree, SERVE_HEADER};

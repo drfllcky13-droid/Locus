@@ -14,6 +14,19 @@
 #let f = d.frame
 #at(f.at(0), f.at(1), rect(width: (f.at(2) - f.at(0)) * mm, height: (f.at(3) - f.at(1)) * mm, stroke: 0.5pt + ink))
 
+// Underlays: images under everything, clipped to the frame.
+#at(f.at(0), f.at(1), box(width: (f.at(2) - f.at(0)) * mm, height: (f.at(3) - f.at(1)) * mm, clip: true)[
+  #for u in d.images {
+    place(top + left, dx: (u.x - f.at(0)) * mm, dy: (u.y - f.at(1)) * mm,
+      rotate(u.rotation * 1deg, origin: top + left, reflow: false,
+        box(width: u.width * mm, height: u.height * mm, {
+          image(u.file, width: u.width * mm, height: u.height * mm, fit: "stretch")
+          place(top + left, rect(width: 100%, height: 100%, stroke: none,
+            fill: white.transparentize(u.opacity * 100%)))
+        })))
+  }
+])
+
 // Geometry.
 #for l in d.lines {
   place(top + left, line(start: (l.at(0) * mm, l.at(1) * mm), end: (l.at(2) * mm, l.at(3) * mm), stroke: l.at(4) * mm + ink))

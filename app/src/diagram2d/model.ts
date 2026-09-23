@@ -3,6 +3,7 @@
 // y north); angles are radians, anticlockwise from +x. Units are converted only for display.
 
 import type { Geometry, Opening, RoadParams } from "./builders";
+import type { Pair, Placement } from "./underlay";
 
 export type Pt = [number, number];
 
@@ -76,7 +77,26 @@ export type Entity =
       openings: Opening[];
       geometry: Geometry;
     })
-  | (Base & { kind: "road"; centreline: Pt[]; road: RoadParams; geometry: Geometry });
+  | (Base & { kind: "road"; centreline: Pt[]; road: RoadParams; geometry: Geometry })
+  /**
+   * An image under the drawing: a project file (image evidence, or a point-cloud slice the
+   * app wrote) checked against `sha256` whenever it is shown or printed.
+   */
+  | (Base & {
+      kind: "underlay";
+      name: string;
+      file: string;
+      sha256: string;
+      /** Pixels. */
+      width: number;
+      height: number;
+      placement: Placement;
+      opacity: number;
+      /** How an image was placed: its known points and the fit (null for a slice). */
+      calibration: { pairs: Pair[]; residuals: number[]; rms: number } | null;
+      /** How a slice was made. */
+      slice: { zMin: number; zMax: number; resolution: number; points: number } | null;
+    });
 
 export type EntityKind = Entity["kind"];
 

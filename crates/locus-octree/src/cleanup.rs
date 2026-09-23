@@ -24,7 +24,7 @@ fn inside(p: &[f64; 3], lo: &[f64; 3], hi: &[f64; 3]) -> bool {
 }
 
 /// Visit every visible point of a scan whose node could intersect the project-frame box.
-fn for_points_near(
+pub(crate) fn for_points_near(
     c: &ScanCloud,
     lo: [f64; 3],
     hi: [f64; 3],

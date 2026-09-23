@@ -313,6 +313,31 @@ export const api = {
     landscape: boolean,
     path: string,
   ) => invoke<string>("diagram_pdf", { diagramId, scale, paper, landscape, path }),
+  underlayImages: () =>
+    invoke<
+      {
+        evidence_id: number;
+        name: string;
+        file: string;
+        sha256: string;
+        width: number;
+        height: number;
+      }[]
+    >("underlay_images"),
+  /** The image bytes, after the backend has checked their hash. */
+  underlayBytes: (file: string, sha256: string) =>
+    invoke<ArrayBuffer>("underlay_bytes", { file, sha256 }),
+  underlaySlice: (zMin: number, zMax: number, resolution: number) =>
+    invoke<{
+      file: string;
+      sha256: string;
+      origin: [number, number];
+      resolution: number;
+      width: number;
+      height: number;
+      points: number;
+    }>("underlay_slice", { zMin, zMax, resolution }),
+  underlayCalibrated: (details: unknown) => invoke<void>("underlay_calibrated", { details }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
     invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
   startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),

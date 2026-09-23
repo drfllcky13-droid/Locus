@@ -2895,6 +2895,7 @@ dependencies = [
  "locus-register",
  "locus-report",
  "nalgebra",
+ "png 0.18.1",
  "roaring",
  "serde",
  "serde_json",
