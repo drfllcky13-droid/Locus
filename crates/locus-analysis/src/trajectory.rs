@@ -555,7 +555,9 @@ pub struct CrossCheck {
     /// Impact angle from the hole's ellipse, and from the fitted path at the hole's face.
     pub ellipse: Measured,
     pub trajectory: Measured,
-    /// Their difference, and whether it is within 1.96 × the combined σ (95 %).
+    /// Their difference (degrees), and whether they agree at 95 %. The test is made on the
+    /// axis ratio b / a against sin(path impact), where the errors are near Gaussian:
+    /// through asin they are strongly skewed as the hole approaches round.
     pub difference: f64,
     pub agrees: bool,
 }
@@ -683,7 +685,13 @@ pub fn run(inputs: Vec<InputPoint>, parameters: Parameters) -> Result<Run, Traje
             )
             .impact;
             let difference = f.impact.value - t.value;
-            let combined = (f.impact.sigma.powi(2) + t.sigma.powi(2)).sqrt();
+            let [a, b] = f.semi_axes;
+            let ratio = b.value / a.value;
+            let ratio_sigma =
+                ratio * ((a.sigma / a.value).powi(2) + (b.sigma / b.value).powi(2)).sqrt();
+            let expected = t.value.to_radians().sin();
+            let expected_sigma = t.value.to_radians().cos() * t.sigma.to_radians();
+            let combined = (ratio_sigma.powi(2) + expected_sigma.powi(2)).sqrt();
             Some(CrossCheck {
                 input: k,
                 surface: i.surface.clone(),
@@ -691,7 +699,7 @@ pub fn run(inputs: Vec<InputPoint>, parameters: Parameters) -> Result<Run, Traje
                 ellipse: f.impact,
                 trajectory: t,
                 difference,
-                agrees: difference.abs() <= 1.96 * combined,
+                agrees: (ratio - expected).abs() <= 1.96 * combined,
             })
         })
         .collect();
@@ -1082,7 +1090,7 @@ mod tests {
                     sigma: 0.0003,
                 },
                 Measured {
-                    value: 0.0045,
+                    value: 0.005 * impact.to_radians().sin(),
                     sigma: 0.0003,
                 },
             ],

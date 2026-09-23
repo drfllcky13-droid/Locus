@@ -338,7 +338,7 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
         let mut blocks = vec![];
         if !holes.is_empty() {
             blocks.push(Block::Text {
-                text: "Each fitted hole: the centre's 1σ, the ellipse's axes (corrected for the point spacing), the rim points used and the point spacing, and the impact angle from the ellipse (asin of short over long axis) against the fitted path's impact angle at that face. They are independent; a disagreement beyond their combined 95 % uncertainty is flagged.".into(),
+                text: "Each fitted hole: the centre's 1σ, the ellipse's axes (corrected for the point spacing), the rim points used and the point spacing, and the impact angle from the ellipse (asin of short over long axis) against the fitted path's impact angle at that face. They are independent. Agreement is tested at 95 % on the axis ratio (short over long) against the sine of the path's impact angle, where the errors are close to normal; the angle's own uncertainty is lopsided for near-round holes, so a large difference in degrees can still agree. With few rim points the ellipse angle is weak evidence: read its uncertainty.".into(),
             });
             blocks.push(Block::Table {
                 widths: [
