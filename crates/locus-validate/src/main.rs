@@ -7,14 +7,23 @@
 //!   `--no-targets`, `--tilt-deg D` (0.5), `--noise-mm R` (1), `--outliers F` (0),
 //!   `--stored-pose true|none|M,DEG` (true; `M,DEG` perturbs by M metres and DEG degrees),
 //!   `--move-sphere K,FROM,DX,DY,DZ` (sphere K moved by DX,DY,DZ m from scan FROM on).
+//! - `locus-validate gen-trajectory|gen-bloodstain|gen-camera --out DIR [--seed S]
+//!   [--options FILE.json]` write ground truth for the analysis tools (see `gen.rs`):
+//!   `truth.json`, `scene.e57`, and images. `gen-bloodstain` also takes
+//!   `--flight straight|ballistic`.
 //! - `locus-validate import --project DIR --examiner NAME [--unit meter] FILE...` imports
 //!   files and builds their octrees exactly as the app does, reporting time and memory.
 
+mod gen;
 mod import;
 
 use std::process::ExitCode;
 
-fn arg<T: std::str::FromStr>(args: &[String], name: &str, default: Option<T>) -> Result<T, String> {
+pub(crate) fn arg<T: std::str::FromStr>(
+    args: &[String],
+    name: &str,
+    default: Option<T>,
+) -> Result<T, String> {
     match args.iter().position(|a| a == name) {
         Some(i) => args
             .get(i + 1)
@@ -116,6 +125,20 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some(cmd @ ("gen-trajectory" | "gen-bloodstain" | "gen-camera")) => {
+            let r = match cmd {
+                "gen-trajectory" => gen::trajectory(&args),
+                "gen-bloodstain" => gen::bloodstain(&args),
+                _ => gen::camera(&args),
+            };
+            match r {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{cmd}: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Some("import") => {
             let run = || -> Result<(), String> {
                 let project: String = arg(&args, "--project", None)?;
@@ -147,7 +170,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene` or `import`.");
+            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene`, `gen-trajectory`, `gen-bloodstain`, `gen-camera` or `import`.");
             ExitCode::FAILURE
         }
     }

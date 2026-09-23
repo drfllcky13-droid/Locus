@@ -1,6 +1,6 @@
 //! Writing a scene as a multi-scan E57, as scanner software exports it.
 
-use crate::{scan_points, Options, Truth};
+use crate::{scan_points, Options, Point, Truth};
 use e57::{
     E57Writer, Quaternion, Record, RecordDataType, RecordName, RecordValue, Transform, Translation,
 };
@@ -94,6 +94,50 @@ pub fn write_e57(
     }
     w.finalize()?;
     Ok(total)
+}
+
+/// Write one scan of points already in the project frame (identity pose), as a generator's
+/// scene for the app to import.
+pub fn write_points(out: &Path, name: &str, points: &[Point]) -> e57::Result<()> {
+    let mut w = E57Writer::from_file(out, "locus-synthetic")?;
+    let coord = |name| Record {
+        name,
+        data_type: RecordDataType::ScaledInteger {
+            min: -700_000,
+            max: 700_000,
+            scale: 0.0001,
+            offset: 0.0,
+        },
+    };
+    let int = |name, max| Record {
+        name,
+        data_type: RecordDataType::Integer { min: 0, max },
+    };
+    let proto = vec![
+        coord(RecordName::CartesianX),
+        coord(RecordName::CartesianY),
+        coord(RecordName::CartesianZ),
+        int(RecordName::Intensity, 2047),
+        int(RecordName::ColorRed, 255),
+        int(RecordName::ColorGreen, 255),
+        int(RecordName::ColorBlue, 255),
+    ];
+    let mut pc = w.add_pointcloud(name, proto)?;
+    pc.set_name(Some(name.to_string()));
+    let q = |v: f64| RecordValue::ScaledInteger((v / 0.0001).round() as i64);
+    for p in points {
+        pc.add_point(vec![
+            q(p.xyz[0]),
+            q(p.xyz[1]),
+            q(p.xyz[2]),
+            RecordValue::Integer(p.intensity.into()),
+            RecordValue::Integer(p.rgb[0].into()),
+            RecordValue::Integer(p.rgb[1].into()),
+            RecordValue::Integer(p.rgb[2].into()),
+        ])?;
+    }
+    pc.finalize()?;
+    w.finalize()
 }
 
 #[cfg(test)]

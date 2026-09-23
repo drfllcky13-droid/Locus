@@ -14,43 +14,46 @@ use serde::{Deserialize, Serialize};
 use std::f64::consts::TAU;
 use std::path::Path;
 
+pub mod bloodstain;
+pub mod camera;
 mod e57_out;
-pub use e57_out::write_e57;
+pub mod trajectory;
+pub use e57_out::{write_e57, write_points};
 
 /// Sphere target radius (a 145 mm reference sphere).
 pub const SPHERE_RADIUS: f64 = 0.0725;
 /// Checkerboard target edge; 2 × 2 squares, so each square is half this.
 pub const BOARD_SIZE: f64 = 0.3;
 
-struct Rng(u64);
+pub(crate) struct Rng(u64);
 
 impl Rng {
     /// Seeded from any u64, mixed (splitmix64) so nearby seeds give unrelated streams.
-    fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         let mut z = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         Rng((z ^ (z >> 31)) | 1)
     }
 
-    fn unit(&mut self) -> f64 {
+    pub(crate) fn unit(&mut self) -> f64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         (self.0 >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    fn range(&mut self, lo: f64, hi: f64) -> f64 {
+    pub(crate) fn range(&mut self, lo: f64, hi: f64) -> f64 {
         lo + self.unit() * (hi - lo)
     }
 
     /// Standard normal (Box–Muller).
-    fn normal(&mut self) -> f64 {
+    pub(crate) fn normal(&mut self) -> f64 {
         let (u, v) = (self.unit().max(1e-300), self.unit());
         (-2.0 * u.ln()).sqrt() * (TAU * v).cos()
     }
 
-    fn direction(&mut self) -> [f64; 3] {
+    pub(crate) fn direction(&mut self) -> [f64; 3] {
         let z = self.unit() * 2.0 - 1.0;
         let a = self.unit() * TAU;
         let r = (1.0 - z * z).sqrt();
@@ -58,19 +61,19 @@ impl Rng {
     }
 }
 
-fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(crate) fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(crate) fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
-fn scale(a: [f64; 3], s: f64) -> [f64; 3] {
+pub(crate) fn scale(a: [f64; 3], s: f64) -> [f64; 3] {
     [a[0] * s, a[1] * s, a[2] * s]
 }
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],

@@ -3009,6 +3009,8 @@ dependencies = [
  "locus-io",
  "locus-octree",
  "locus-synth",
+ "png 0.18.1",
+ "serde",
  "serde_json",
  "windows-sys 0.61.2",
 ]
