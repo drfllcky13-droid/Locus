@@ -149,6 +149,28 @@ Acceptance criteria:
 - [x] Bad links injected by the test are flagged: a 2 cm / 0.1° wrong cloud link fails the χ² test (252 per dof against 1.89) and is set aside, with accuracy kept. Without rough poses or shared targets, scans placed by shape alone are reported unverified (a flipped scan in the symmetric synthetic room is caught this way, not by χ²). *Red in the graph view once the UI exists.*
 - [x] Report numbers match the internal computation: the report is rebuilt from the stored links and poses, and tests check the laid-out PDF text against the adjustment's figures for every link, the target residuals and the scan poses.
 
+### Phase 4: 2D diagramming
+
+Plan (the hand-measurement solver first: one acceptance criterion depends on it, and diagrams are built from its output):
+
+1. **Hand-measurement solver (`locus-analysis`, pure, tested).** Point positions from field measurements, each with a propagated uncertainty:
+   - baseline/offset: a distance along a baseline between two known points, then a perpendicular offset, left or right;
+   - triangulation (trilateration): distances from two or more known points; with two, the side of the baseline is stated; with more, least squares with residuals, and a check that flags an inconsistent tape;
+   - measurements chain: solved points can be the known points of later measurements.
+   Tests: known positions reproduced exactly from exact distances (acceptance), hand-checked values, uncertainty propagation against Monte Carlo, degenerate inputs refused (collinear, circles that don't meet).
+2. **Diagram model and storage.** A diagram is a document in project coordinates (metres, SI): layers, entities (line, arc, polyline, dimension, text, symbol, north arrow, scale bar, legend, underlay), each with a stable id. Schema 4 stores each saved state as an immutable revision (full document + SHA-256), with an audit entry per revision; the editor autosaves after changes settle, with undo/redo in the editor. Measurement records keep the raw field entries and the solved positions, so a point can be traced back to the tape readings.
+3. **Canvas editor (`app/src/diagram2d/`).** SVG canvas with pan and zoom, layers (visibility, lock, colour), snapping (endpoint, midpoint, perpendicular, grid) with a visible snap marker, and tools for lines, arcs, polylines, dimensions (length measured from the geometry), text, north arrow and scale bar. Geometry, snapping and hit-testing are pure functions with tests.
+4. **Symbols, evidence markers and legend.** An original in-house symbol set in `assets/` (created for Locus, nothing copied). Evidence markers are numbered automatically, and renumbering is explicit. The legend is built from the symbols in use and updates live.
+5. **Builders.** Room builder (walls with thickness from a polygon, door and window openings). Roadway builder (a centreline with lanes, lane widths, shoulders and markings, following curves).
+6. **Underlays.** An aerial image scaled and rotated by calibrating two known points to a real distance, with the calibration residual shown and logged. A point-cloud slice: a top-down orthographic raster of the registered scene between two heights, at a chosen resolution, placed exactly in project coordinates.
+7. **Print at scale.** Diagram to PDF at a chosen scale (1:50, 1:100, 1:200…) and paper size through the Typst report pipeline, with the scale bar and scale statement. Test: a 10 m line at 1:100 is 100 mm in the PDF's drawing coordinates, and the scale bar agrees.
+8. **Method notes** (`docs/methods/hand-measurements.md`, `docs/methods/diagrams.md`).
+
+Acceptance criteria:
+- [ ] Triangulation input reproduces known positions exactly.
+- [ ] A diagram printed at 1:100 measures correctly on paper.
+- [ ] The legend updates live.
+
 ## Blocked
 
 - **Mid-range GPU measurement** (2026-09-22): Phase 2's frame-rate criterion has been measured on an RTX 3070 Ti and an Intel UHD 770 only. It still needs a run on a real mid-range card (e.g. RTX 3060 or GTX 1660).
