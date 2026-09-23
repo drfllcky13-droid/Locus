@@ -8,6 +8,7 @@
 //! project frame (bearing clockwise from +y, elevation up from horizontal) and relative to
 //! each impacted surface.
 
+use crate::defect::DefectFit;
 use crate::measure::{cross, dot, eigen_sym, norm, sub, Measured, P3};
 use serde::{Deserialize, Serialize};
 
@@ -407,20 +408,62 @@ fn hull(mut p: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
 
 // ---------- a complete run, as stored ----------
 
-/// Method identifier stored with every run: which formulas produced it.
-pub const METHOD: &str = "trajectory/1";
+/// Method identifier stored with every run: which formulas produced it. Version 2 adds hole
+/// centres fitted from the rim, the ellipse cross-check, the examiner's angle conventions,
+/// the computed cone's muzzle zone and each point's source. Version 1 records still read.
+pub const METHOD: &str = "trajectory/2";
 
 /// One input point as the examiner gave it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct InputPoint {
     /// "entry" or "exit" (defects) or "rod" (probe rod ends).
     pub kind: String,
     /// The surface it is on, as the examiner named it (e.g. "vehicle door").
     pub surface: String,
+    /// The point used: a fitted hole centre, or the picked point.
     pub point: P3,
     pub sigma: f64,
     /// The plane fitted around a defect (for angles to the surface), with its residual.
     pub plane: Option<FittedPlane>,
+    /// How the point was found: "fitted" (hole centre from its rim), "manual" (the picked
+    /// point, e.g. an override) or "rod".
+    #[serde(default = "manual")]
+    pub centre: String,
+    /// The examiner's reason for a manual centre where a fit was possible.
+    #[serde(default)]
+    pub override_reason: Option<String>,
+    /// Where the examiner clicked (when the point is a fitted centre).
+    #[serde(default)]
+    pub picked: Option<P3>,
+    /// The hole's fit, when the centre was fitted.
+    #[serde(default)]
+    pub defect: Option<DefectFit>,
+    /// The scan point the click resolved to: scan, record number and cleanup revision.
+    #[serde(default)]
+    pub source: Option<PointSource>,
+    /// A photograph of the defect, from the evidence.
+    #[serde(default)]
+    pub photo: Option<PhotoRef>,
+}
+
+fn manual() -> String {
+    "manual".into()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PointSource {
+    pub scan: String,
+    pub index: u32,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhotoRef {
+    pub evidence_id: i64,
+    pub name: String,
+    /// Project-relative file and its SHA-256 (checked when the report is made).
+    pub file: String,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -431,9 +474,32 @@ pub struct FittedPlane {
     pub points: usize,
 }
 
+/// How angles are reported (a setting, stated in the report's method section).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Conventions {
+    /// Surface-relative angles: "level_perpendicular" (vertical up or down from level;
+    /// horizontal left or right of perpendicular to the surface, viewed facing the
+    /// surface) or "normal" (both measured from the surface's normal, in its own frame).
+    pub surface: String,
+    /// Scene-relative bearing: from a reference axis at `reference_deg` clockwise from
+    /// project +y, named `reference` (e.g. "project north (+y)", "true north").
+    pub reference: String,
+    pub reference_deg: f64,
+}
+
+impl Default for Conventions {
+    fn default() -> Self {
+        Conventions {
+            surface: "level_perpendicular".into(),
+            reference: "project north (+y)".into(),
+            reference_deg: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Parameters {
-    /// Half-angle of the cone drawn and used for shooter positions (degrees; default 5).
+    /// Half-angle of the examiner-defined zone for muzzle positions (degrees; default 5).
     pub cone_deg: f64,
     /// Rod play added to the direction's uncertainty (degrees; 0 for defects).
     pub rod_play_deg: f64,
@@ -442,6 +508,8 @@ pub struct Parameters {
     pub band: [f64; 2],
     pub floor_z: f64,
     pub max_range: f64,
+    #[serde(default)]
+    pub conventions: Conventions,
 }
 
 impl Default for Parameters {
@@ -452,8 +520,20 @@ impl Default for Parameters {
             band: [0.9, 1.8],
             floor_z: 0.0,
             max_range: 30.0,
+            conventions: Conventions::default(),
         }
     }
+}
+
+/// Angles as a firearms examiner measures them at the surface: the path's vertical angle
+/// from level (+ upward) and its horizontal angle from perpendicular to the surface, viewed
+/// facing the surface from the side the bullet came from (+ to the right). None for a
+/// surface that isn't near vertical (a floor or ceiling), where "perpendicular" has no
+/// horizontal meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LevelAngles {
+    pub vertical: Measured,
+    pub horizontal: Option<Measured>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -461,6 +541,23 @@ pub struct SurfaceResult {
     pub surface: String,
     pub angles: SurfaceAngles,
     pub plane_rms: f64,
+    #[serde(default)]
+    pub level: Option<LevelAngles>,
+}
+
+/// The ellipse of a fitted hole against the trajectory: two independent impact angles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrossCheck {
+    /// Index into the inputs.
+    pub input: usize,
+    pub surface: String,
+    pub kind: String,
+    /// Impact angle from the hole's ellipse, and from the fitted path at the hole's face.
+    pub ellipse: Measured,
+    pub trajectory: Measured,
+    /// Their difference, and whether it is within 1.96 × the combined σ (95 %).
+    pub difference: f64,
+    pub agrees: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -470,8 +567,17 @@ pub struct Run {
     pub parameters: Parameters,
     pub line: Line,
     pub surfaces: Vec<SurfaceResult>,
+    /// The examiner-defined zone (the stated cone) through the height band.
     pub band: ShooterBand,
-    /// Whether the fit's own 95 % cone is wider than the cone drawn.
+    /// The same for the computed 95 % cone (its larger half-angle).
+    #[serde(default)]
+    pub band_measurement: Option<ShooterBand>,
+    /// Bearing from the reference axis in `parameters.conventions` (1σ).
+    #[serde(default)]
+    pub scene_bearing: Option<Measured>,
+    #[serde(default)]
+    pub cross_checks: Vec<CrossCheck>,
+    /// Whether the fit's own 95 % cone is wider than the examiner-defined zone.
     pub cone_narrower_than_fit: bool,
     /// One line for the audit log and lists.
     pub summary: String,
@@ -481,20 +587,60 @@ pub struct Run {
 
 pub const ASSUMPTIONS: &[&str] = &[
     "The projectile travelled in a straight line between the first and last points used. Over the short distances between defects, gravity drop and deflection are taken as negligible.",
-    "Each defect centre was picked where the projectile passed through that face of the surface, and the points are given in the order the projectile travelled.",
-    "Each point's uncertainty is independent and the same in every direction (1σ as stated). The direction's uncertainty is propagated from these to first order, and inflated when the fit's residuals show more scatter than stated (χ² test).",
+    "Each defect's centre is where the projectile passed through that face of the surface, and the points are given in the order the projectile travelled.",
+    "A fitted hole centre is the centre of an ellipse fitted to the scan points around the hole's rim; a hole's shape is taken as an ellipse, and its rim as sampled by the scan.",
+    "Each point's uncertainty is independent and the same in every direction (1σ as stated or as fitted). The direction's uncertainty is propagated from these to first order, and inflated when the fit's residuals show more scatter than stated (χ² test).",
     "Angles to each surface use the plane fitted to the scan around its defect. The small uncertainty of that plane is not included.",
 ];
 
 pub const LIMITATIONS: &[&str] = &[
     "Deflection at a surface (by the surface or a harder layer behind it) changes the path. Points on either side of a deflection must not be fitted as one line.",
     "Entry and exit on one thin surface define the direction poorly: the cone shows how poorly. A probe rod in a thin surface can tilt within its hole; its play must be entered.",
-    "Traced back from the first defect, the path and its cone give where a muzzle could have been if the path continued straight. They don't say the shooter stood there: the height band is an assumption the examiner chooses.",
+    "An impact angle from a hole's ellipse is a cross-check, not a measurement of the path: exit holes, tears, spalling and deformed or tumbling bullets make holes that are not ellipses, and the scan's point spacing limits how well a small hole's shape is seen.",
+    "Traced back from the first defect, the path and its cones give where a muzzle could have been if the path continued straight. They don't say the shooter stood there: the height band and the examiner-defined zone are the examiner's judgment.",
     "The fitted line is the path through the points used. It says nothing about the order of shots or which shot made which defect.",
 ];
 
+/// Level/perpendicular angles at a surface (see [`LevelAngles`]).
+pub fn level_angles(line: &Line, s: &Surface) -> LevelAngles {
+    let d = line.direction;
+    let vertical = Measured {
+        value: line.elevation.value,
+        sigma: line.elevation.sigma,
+    };
+    let n = if dot(s.normal, d) > 0.0 {
+        scale(s.normal, -1.0)
+    } else {
+        s.normal
+    };
+    let nh = [n[0], n[1], 0.0];
+    if norm(nh) < 0.5 {
+        return LevelAngles {
+            vertical,
+            horizontal: None,
+        };
+    }
+    let nh = unit(nh);
+    // Facing the surface (looking along −n), the viewer's right is up × n.
+    // Looking along f = −n with z up, right is f × z = (−n_y, n_x, 0).
+    let right = [-nh[1], nh[0], 0.0];
+    let f = |x: P3| {
+        dot(x, right)
+            .atan2(-dot([x[0], x[1], 0.0], nh))
+            .to_degrees()
+    };
+    LevelAngles {
+        vertical,
+        horizontal: Some(Measured {
+            value: f(d),
+            sigma: sigma_of(d, &line.covariance, &f),
+        }),
+    }
+}
+
 /// Everything for one run: the fit, the angles to each surface with a fitted plane, the
-/// shooter band traced back from the first point, and the wording.
+/// cross-checks against fitted holes, both zones traced back from the first point, and the
+/// wording.
 pub fn run(inputs: Vec<InputPoint>, parameters: Parameters) -> Result<Run, TrajectoryError> {
     let pts: Vec<PathPoint> = inputs
         .iter()
@@ -509,28 +655,67 @@ pub fn run(inputs: Vec<InputPoint>, parameters: Parameters) -> Result<Run, Traje
     for i in &inputs {
         if let Some(pl) = i.plane {
             if surfaces.iter().all(|s| s.surface != i.surface) {
+                let s = Surface {
+                    point: pl.point,
+                    normal: pl.normal,
+                };
                 surfaces.push(SurfaceResult {
                     surface: i.surface.clone(),
-                    angles: surface_angles(
-                        &line,
-                        &Surface {
-                            point: pl.point,
-                            normal: pl.normal,
-                        },
-                    ),
+                    angles: surface_angles(&line, &s),
                     plane_rms: pl.rms,
+                    level: Some(level_angles(&line, &s)),
                 });
             }
         }
     }
+    // Each fitted hole's ellipse against the path at that hole's face.
+    let cross_checks = inputs
+        .iter()
+        .enumerate()
+        .filter_map(|(k, i)| {
+            let f = i.defect.as_ref()?;
+            let t = surface_angles(
+                &line,
+                &Surface {
+                    point: f.centre,
+                    normal: f.normal,
+                },
+            )
+            .impact;
+            let difference = f.impact.value - t.value;
+            let combined = (f.impact.sigma.powi(2) + t.sigma.powi(2)).sqrt();
+            Some(CrossCheck {
+                input: k,
+                surface: i.surface.clone(),
+                kind: i.kind.clone(),
+                ellipse: f.impact,
+                trajectory: t,
+                difference,
+                agrees: difference.abs() <= 1.96 * combined,
+            })
+        })
+        .collect();
+    let p = &parameters;
     let band = shooter_band(
         &line,
         inputs[0].point,
-        parameters.cone_deg,
-        parameters.floor_z,
-        parameters.band,
-        parameters.max_range,
+        p.cone_deg,
+        p.floor_z,
+        p.band,
+        p.max_range,
     );
+    let band_measurement = Some(shooter_band(
+        &line,
+        inputs[0].point,
+        line.cone.major_deg,
+        p.floor_z,
+        p.band,
+        p.max_range,
+    ));
+    let scene_bearing = Some(Measured {
+        value: (line.bearing.value - p.conventions.reference_deg).rem_euclid(360.0),
+        sigma: line.bearing.sigma,
+    });
     let summary = format!(
         "bearing {:.1}° ± {:.1}°, elevation {:+.1}° ± {:.1}° (1σ); 95 % cone {:.1}°",
         line.bearing.value,
@@ -547,6 +732,9 @@ pub fn run(inputs: Vec<InputPoint>, parameters: Parameters) -> Result<Run, Traje
         line,
         surfaces,
         band,
+        band_measurement,
+        scene_bearing,
+        cross_checks,
         summary,
         assumptions: ASSUMPTIONS.iter().map(|s| s.to_string()).collect(),
         limitations: LIMITATIONS.iter().map(|s| s.to_string()).collect(),
@@ -812,6 +1000,7 @@ mod tests {
                 rms: 0.001,
                 points: 50,
             }),
+            ..Default::default()
         })
         .collect();
         let r = run(inputs, Parameters::default()).unwrap();
@@ -821,6 +1010,122 @@ mod tests {
         // The record round-trips through JSON (it is stored and reported from JSON).
         let back: Run = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
         assert_eq!(back, r);
+    }
+
+    #[test]
+    fn level_and_perpendicular_angles_as_measured_at_a_wall() {
+        // Wall facing −y (the shooter at −y looks +y at it). Path 20° to the right of
+        // perpendicular (toward +x) and 10° downward.
+        let d = direction(20.0, -10.0);
+        let pts = [
+            PathPoint {
+                point: [0.0; 3],
+                sigma: 0.001,
+            },
+            PathPoint {
+                point: scale(d, 5.0),
+                sigma: 0.001,
+            },
+        ];
+        let l = fit_line(&pts, 0.0).unwrap();
+        let wall = Surface {
+            point: [0.0, 5.0, 0.0],
+            normal: [0.0, -1.0, 0.0],
+        };
+        let a = level_angles(&l, &wall);
+        assert!((a.vertical.value + 10.0).abs() < 1e-9);
+        assert!((a.horizontal.unwrap().value - 20.0).abs() < 1e-9);
+        // Seen from the other side (a wall facing +x, shooter at −x): travelling toward +y is
+        // to the viewer's left.
+        let d2 = direction(70.0, 0.0); // mostly +x, a little +y
+        let l2 = fit_line(
+            &[
+                PathPoint {
+                    point: [0.0; 3],
+                    sigma: 0.001,
+                },
+                PathPoint {
+                    point: scale(d2, 5.0),
+                    sigma: 0.001,
+                },
+            ],
+            0.0,
+        )
+        .unwrap();
+        let a2 = level_angles(
+            &l2,
+            &Surface {
+                point: [5.0, 0.0, 0.0],
+                normal: [-1.0, 0.0, 0.0],
+            },
+        );
+        assert!((a2.horizontal.unwrap().value + 20.0).abs() < 1e-9);
+        // A floor has no horizontal "perpendicular".
+        let floor = Surface {
+            point: [0.0; 3],
+            normal: [0.0, 0.0, 1.0],
+        };
+        assert!(level_angles(&l, &floor).horizontal.is_none());
+    }
+
+    #[test]
+    fn a_hole_ellipse_that_disagrees_is_flagged() {
+        let d = direction(0.0, 0.0);
+        let n = [0.0, -1.0, 0.0]; // square on: impact 90°
+        let fit = |impact: f64| DefectFit {
+            centre: [0.0, 1.0, 0.0],
+            centre_sigma: 0.0005,
+            normal: n,
+            semi_axes: [
+                Measured {
+                    value: 0.005,
+                    sigma: 0.0003,
+                },
+                Measured {
+                    value: 0.0045,
+                    sigma: 0.0003,
+                },
+            ],
+            long_axis: [1.0, 0.0, 0.0],
+            impact: Measured {
+                value: impact,
+                sigma: 3.0,
+            },
+            rim_points: 20,
+            spacing: 0.0015,
+            rms: 0.0003,
+        };
+        let input = |t: f64, impact: f64| InputPoint {
+            kind: "entry".into(),
+            surface: "wall".into(),
+            point: scale(d, t),
+            sigma: 0.001,
+            centre: "fitted".into(),
+            defect: Some(fit(impact)),
+            ..Default::default()
+        };
+        let r = run(
+            vec![input(1.0, 88.0), input(3.0, 40.0)],
+            Parameters::default(),
+        )
+        .unwrap();
+        assert_eq!(r.cross_checks.len(), 2);
+        assert!(r.cross_checks[0].agrees, "{:?}", r.cross_checks[0]);
+        assert!(!r.cross_checks[1].agrees, "{:?}", r.cross_checks[1]);
+        assert!((r.cross_checks[0].trajectory.value - 90.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn a_version_1_record_still_reads() {
+        let v1 = r#"{"kind":"entry","surface":"door","point":[1,2,3],"sigma":0.002,"plane":null}"#;
+        let p: InputPoint = serde_json::from_str(v1).unwrap();
+        assert_eq!(p.centre, "manual");
+        assert!(p.defect.is_none() && p.source.is_none());
+        let params: Parameters = serde_json::from_str(
+            r#"{"cone_deg":5,"rod_play_deg":0,"band":[0.9,1.8],"floor_z":0,"max_range":30}"#,
+        )
+        .unwrap();
+        assert_eq!(params.conventions, Conventions::default());
     }
 
     #[test]

@@ -69,7 +69,7 @@ impl Default for Options {
             scan_sigma: 0.001,
             calibre: 0.009,
             rod_diameter: 0.006,
-            spacing: 0.005,
+            spacing: 0.002,
         }
     }
 }

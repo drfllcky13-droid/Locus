@@ -123,3 +123,74 @@ fn a_probe_rod_is_within_its_play() {
         assert!(l.cone.major_deg >= t.rod.max_play_deg);
     }
 }
+
+/// Hole centres fitted from the generated panels' rims, and the whole run on them.
+#[test]
+fn fitted_hole_centres_and_their_ellipse_cross_check() {
+    use locus_analysis::defect::fit_defect;
+    use locus_analysis::trajectory::{run, FittedPlane, InputPoint, Parameters};
+    let t = gen::truth(&Options::default());
+    let pts: Vec<[f64; 3]> = gen::points(&t).iter().map(|p| p.xyz).collect();
+    let near = |c: [f64; 3], r: f64| -> Vec<[f64; 3]> {
+        pts.iter()
+            .copied()
+            .filter(|p| (0..3).map(|k| (p[k] - c[k]).powi(2)).sum::<f64>() < r * r)
+            .collect()
+    };
+    let mut inputs = vec![];
+    for p in &t.panels {
+        for (kind, centre, face) in [("entry", p.entry, 1.0), ("exit", p.exit, -1.0)] {
+            // Click on the rim: 5 mm to the side of the centre, on the face.
+            let side = {
+                let a = [p.normal[1], -p.normal[0], 0.0];
+                let n = (a[0] * a[0] + a[1] * a[1]).sqrt();
+                [a[0] / n, a[1] / n, 0.0]
+            };
+            let click = [0, 1, 2].map(|k| centre[k] + side[k] * 0.005 + p.normal[k] * face * 0.0);
+            let nb = near(click, 0.03);
+            let f = fit_defect(click, &nb).unwrap_or_else(|e| panic!("{} {kind}: {e}", p.name));
+            let err = (0..3)
+                .map(|k| (f.centre[k] - centre[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            eprintln!(
+                "{} {kind}: centre off {:.2} mm (σ {:.2} mm), ellipse impact {:.1}° ± {:.1}° (true {:.1}°)",
+                p.name,
+                err * 1000.0,
+                f.centre_sigma * 1000.0,
+                f.impact.value,
+                f.impact.sigma,
+                p.impact_deg
+            );
+            assert!(err < 0.0015, "{} {kind}: {err}", p.name);
+            inputs.push(InputPoint {
+                kind: kind.into(),
+                surface: p.name.clone(),
+                point: f.centre,
+                sigma: f.centre_sigma.max(0.0002),
+                plane: Some(FittedPlane {
+                    point: f.centre,
+                    normal: f.normal,
+                    rms: f.rms,
+                    points: f.rim_points,
+                }),
+                centre: "fitted".into(),
+                picked: Some(click),
+                defect: Some(f),
+                ..Default::default()
+            });
+        }
+    }
+    let r = run(inputs, Parameters::default()).unwrap();
+    let err = deg(r.line.direction, t.direction);
+    eprintln!(
+        "direction from fitted centres: {err:.3}°; cross-checks agreeing: {}/{}",
+        r.cross_checks.iter().filter(|c| c.agrees).count(),
+        r.cross_checks.len()
+    );
+    assert!(err < 0.5, "{err}");
+    // Entry holes are clean ellipses here, so their ellipse angles should agree.
+    for c in r.cross_checks.iter().filter(|c| c.kind == "entry") {
+        assert!(c.agrees, "{c:?}");
+    }
+}
