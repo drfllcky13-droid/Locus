@@ -173,7 +173,7 @@ Acceptance criteria:
 
 Plan status (2026-09-22): items 1–8 are built. The room and road builders store their parameters with the geometry built from them (`builders.ts`, tested: wall faces, openings, door swing, lane offsets, 3 m / 9 m broken lines, tangent-arc curves), and the printer draws that stored geometry. Underlays: an evidence image calibrated from two or more known points by a closed-form least-squares similarity, with residuals shown and the calibration audit-logged (two points are flagged as giving no check); a point-cloud slice binned on the project grid, written as a hashed PNG and audit-logged. Both are hash-checked whenever shown or printed. Checked in the app: a room with a door, a road, a calibrated aerial image (50.00 mm/px from two points) and a slice, printed to PDF. Method note: `docs/methods/diagrams.md`.
 
-### Phase 5: 3D scene builder and asset library
+### Phase 5: 3D scene builder and asset library (approved 2026-09-23)
 
 Plan (the scene model and extrusion first: the alignment criterion is about them):
 
@@ -191,6 +191,27 @@ Acceptance criteria:
 - [x] Models can be snapped to point cloud surfaces: a plane fitted to the cloud's points around the pick (tests: within 1 mm of the true plane and 0.5° of its normal, on a floor and a tilted plane). In the app, a car snapped onto the synthetic room's floor from a fit to 35 points (RMS 0.9 mm), stored with the model in the scene revision.
 
 Plan status (2026-09-23): items 1–8 are built. Scenes are stored as revisions (schema 5). The asset library (vehicles by class, posable people, furniture, generic weapons, evidence tents) is generated from dimensions and tested against them. Roofs: flat on any outline; shed, gable and hip on rectangles. The model gizmo moves and turns placed models. Materials use presets, and there can be several lights. The NOAA sun is tested against the NREL SPA example and casts shadows. Checked in the app: a diagram's room and road extruded, a roof added, and a car snapped to the cloud. Method note: `docs/methods/scene3d.md`.
+
+Known limitations (logged at approval, 2026-09-23):
+- **Pitched roofs need rectangular rooms.** Shed, gable and hip roofs are built only on four-cornered rooms square within 0.5°; any other outline gets a flat roof. Hip roofs on arbitrary outlines need a straight skeleton.
+- **Vehicle dimensions must be editable to real values before Phase 7.** Today a vehicle has length, width, height and wheelbase over a generic class profile. Crash reconstruction needs wheelbase, front and rear track, front and rear overhang, overall length and width that match a real vehicle's specification, with the model built from them (wheels placed by track and overhang, not by a class profile). To do at the start of Phase 7.
+
+### Phase 6: Crime analysis tools
+
+Plan (ground truth first, then the tools in order of complexity; the trajectory tool sets the analysis and report pattern the other two follow, and is reviewed before they are built):
+
+1. **Ground-truth generators.** Code in `locus-synth` (library, as the scan generator is), commands in `locus-validate`, each writing a truth file beside its data:
+   - `gen-trajectory`: a bullet path from a known line through several surfaces (panels of given thickness at chosen angles), with entry and exit defects, picking noise, an optional probe rod, and an E57 of the panels with the holes.
+   - `gen-bloodstain`: impacts from a known origin onto floor and walls, each stain's true impact and directional angles, and its measured ellipse with realistic noise on width, length and orientation; straight-line or gravity-affected (to show the straight-line method's bias); stain images at a known scale.
+   - `gen-camera`: images rendered from known cameras (pose, focal length, principal point, radial and tangential distortion) of a scene with known control points and standing people of known heights, plus the scene as a point cloud.
+2. **Analysis framework (with the trajectory tool).** Schema 6 stores each analysis run as an immutable record: tool, method version, inputs (picked points re-resolved from stored data), parameters, results with uncertainties, assumptions and limitations, and the run it revises. Every run is audit-logged. Each tool has a PDF report (Typst, as registration) with the same sections: inputs, method, results with uncertainty, assumptions, limitations.
+3. **Bullet trajectory (pure math in `locus-analysis`, tested against the generator).** A line from defect centres on one or more surfaces (least squares with per-point uncertainty) or from a probe rod; azimuth and elevation in the project frame and angles to each impacted surface; an uncertainty cone (the fit's 95 % cone, and a configurable default of ±5°); possible shooter positions where the cone passes through a height band. UI in the 3D view; method note `docs/methods/trajectory.md`.
+4. **Bloodstain area of origin.** Stain photos aligned to the cloud by three point pairs (or two plus the surface plane) with a transparency slider; ellipse fit from edge points and adjustable automatic edge detection; impact angle asin(width/length) and direction from the major axis and marked tail; least-squares point closest to all stain rays with per-stain residuals, excluded stains and a bootstrap 95 % ellipsoid; the straight-line warning and the upward-moving restriction (override logged with a reason). Method note `docs/methods/bloodstain.md`.
+5. **Camera matching, height and witness perspective.** Before height analysis: person models defined as floor to top of head, standing, without footwear, with proportions scaled from published anthropometric data, cited in `docs/methods`. Camera solve (PnP with distortion) from 6 or more image-to-scan pairs, with the photo overlaid on the scene; subject height by reverse projection with a posable person, with uncertainty from the camera solve; witness perspective at a stated eye height with line-of-sight tests. Method note `docs/methods/camera-height.md`.
+
+Acceptance criteria:
+- [ ] Synthetic multi-surface trajectory recovered within 0.5°.
+- [ ] All crime tools pass the `locus-validate` error bounds (bounds set with the generators, checked in Phase 13).
 
 ## Blocked
 
