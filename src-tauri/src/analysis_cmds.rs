@@ -295,6 +295,29 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
                     vec![],
                 )
             }
+            "camera" => {
+                let run: locus_analysis::camera::Run =
+                    serde_json::from_value(a.record.clone()).map_err(err)?;
+                // The photo, checked against the hash recorded in the run.
+                let images = locus_report::camera::photo_files(&run)
+                    .into_iter()
+                    .map(|(file, sha)| {
+                        Ok((
+                            file.clone(),
+                            crate::diagram_cmds::read_checked(p.root(), &file, &sha)?,
+                        ))
+                    })
+                    .collect::<CmdResult<Vec<_>>>()?;
+                (locus_report::camera::report(&meta(p, &a)?, &run), images)
+            }
+            "witness" => {
+                let run: locus_analysis::camera::WitnessRun =
+                    serde_json::from_value(a.record.clone()).map_err(err)?;
+                (
+                    locus_report::camera::witness_report(&meta(p, &a)?, &run),
+                    vec![],
+                )
+            }
             t => return Err(format!("No report for {t} analyses yet.")),
         };
         let (report, images) = report;

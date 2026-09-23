@@ -5,6 +5,7 @@
 
 mod analysis_cmds;
 mod bloodstain_cmds;
+mod camera_cmds;
 mod commands;
 mod diagram_cmds;
 mod register_cmds;
@@ -79,6 +80,10 @@ fn main() {
             bloodstain_cmds::bloodstain_stain,
             bloodstain_cmds::bloodstain_preview,
             bloodstain_cmds::bloodstain_save,
+            camera_cmds::camera_preview,
+            camera_cmds::camera_save,
+            camera_cmds::witness_preview,
+            camera_cmds::witness_save,
             analysis_cmds::analyses,
             analysis_cmds::analysis_withdraw,
             analysis_cmds::analysis_report,
