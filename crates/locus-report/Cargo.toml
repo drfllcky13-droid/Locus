@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+locus-analysis = { version = "0.1.0", path = "../locus-analysis" }
 locus-register = { version = "0.1.0", path = "../locus-register" }
 nalgebra = "0.35.0"
 serde = { version = "1.0.229", features = ["derive"] }

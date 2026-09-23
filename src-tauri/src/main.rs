@@ -3,6 +3,7 @@
 // The spike build swaps the app commands for its own.
 #![cfg_attr(feature = "spike", allow(dead_code))]
 
+mod analysis_cmds;
 mod commands;
 mod diagram_cmds;
 mod register_cmds;
@@ -70,6 +71,11 @@ fn main() {
             scene3d_cmds::diagram_revision,
             scene3d_cmds::surface_at,
             scene3d_cmds::sun_position,
+            analysis_cmds::trajectory_preview,
+            analysis_cmds::trajectory_save,
+            analysis_cmds::analyses,
+            analysis_cmds::analysis_withdraw,
+            analysis_cmds::analysis_report,
             diagram_cmds::underlay_images,
             diagram_cmds::underlay_bytes,
             diagram_cmds::underlay_slice,

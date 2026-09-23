@@ -405,6 +405,154 @@ fn hull(mut p: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
     h
 }
 
+// ---------- a complete run, as stored ----------
+
+/// Method identifier stored with every run: which formulas produced it.
+pub const METHOD: &str = "trajectory/1";
+
+/// One input point as the examiner gave it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InputPoint {
+    /// "entry" or "exit" (defects) or "rod" (probe rod ends).
+    pub kind: String,
+    /// The surface it is on, as the examiner named it (e.g. "vehicle door").
+    pub surface: String,
+    pub point: P3,
+    pub sigma: f64,
+    /// The plane fitted around a defect (for angles to the surface), with its residual.
+    pub plane: Option<FittedPlane>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FittedPlane {
+    pub point: P3,
+    pub normal: P3,
+    pub rms: f64,
+    pub points: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Parameters {
+    /// Half-angle of the cone drawn and used for shooter positions (degrees; default 5).
+    pub cone_deg: f64,
+    /// Rod play added to the direction's uncertainty (degrees; 0 for defects).
+    pub rod_play_deg: f64,
+    /// Height band above the floor where a muzzle could have been (m), the floor's
+    /// elevation, and how far back to look (m).
+    pub band: [f64; 2],
+    pub floor_z: f64,
+    pub max_range: f64,
+}
+
+impl Default for Parameters {
+    fn default() -> Self {
+        Parameters {
+            cone_deg: 5.0,
+            rod_play_deg: 0.0,
+            band: [0.9, 1.8],
+            floor_z: 0.0,
+            max_range: 30.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SurfaceResult {
+    pub surface: String,
+    pub angles: SurfaceAngles,
+    pub plane_rms: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Run {
+    pub method: String,
+    pub inputs: Vec<InputPoint>,
+    pub parameters: Parameters,
+    pub line: Line,
+    pub surfaces: Vec<SurfaceResult>,
+    pub band: ShooterBand,
+    /// Whether the fit's own 95 % cone is wider than the cone drawn.
+    pub cone_narrower_than_fit: bool,
+    /// One line for the audit log and lists.
+    pub summary: String,
+    pub assumptions: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
+pub const ASSUMPTIONS: &[&str] = &[
+    "The projectile travelled in a straight line between the first and last points used. Over the short distances between defects, gravity drop and deflection are taken as negligible.",
+    "Each defect centre was picked where the projectile passed through that face of the surface, and the points are given in the order the projectile travelled.",
+    "Each point's uncertainty is independent and the same in every direction (1σ as stated). The direction's uncertainty is propagated from these to first order, and inflated when the fit's residuals show more scatter than stated (χ² test).",
+    "Angles to each surface use the plane fitted to the scan around its defect. The small uncertainty of that plane is not included.",
+];
+
+pub const LIMITATIONS: &[&str] = &[
+    "Deflection at a surface (by the surface or a harder layer behind it) changes the path. Points on either side of a deflection must not be fitted as one line.",
+    "Entry and exit on one thin surface define the direction poorly: the cone shows how poorly. A probe rod in a thin surface can tilt within its hole; its play must be entered.",
+    "Traced back from the first defect, the path and its cone give where a muzzle could have been if the path continued straight. They don't say the shooter stood there: the height band is an assumption the examiner chooses.",
+    "The fitted line is the path through the points used. It says nothing about the order of shots or which shot made which defect.",
+];
+
+/// Everything for one run: the fit, the angles to each surface with a fitted plane, the
+/// shooter band traced back from the first point, and the wording.
+pub fn run(inputs: Vec<InputPoint>, parameters: Parameters) -> Result<Run, TrajectoryError> {
+    let pts: Vec<PathPoint> = inputs
+        .iter()
+        .map(|i| PathPoint {
+            point: i.point,
+            sigma: i.sigma,
+        })
+        .collect();
+    let line = fit_line(&pts, parameters.rod_play_deg)?;
+    // One result per named surface, from its first point with a fitted plane.
+    let mut surfaces: Vec<SurfaceResult> = vec![];
+    for i in &inputs {
+        if let Some(pl) = i.plane {
+            if surfaces.iter().all(|s| s.surface != i.surface) {
+                surfaces.push(SurfaceResult {
+                    surface: i.surface.clone(),
+                    angles: surface_angles(
+                        &line,
+                        &Surface {
+                            point: pl.point,
+                            normal: pl.normal,
+                        },
+                    ),
+                    plane_rms: pl.rms,
+                });
+            }
+        }
+    }
+    let band = shooter_band(
+        &line,
+        inputs[0].point,
+        parameters.cone_deg,
+        parameters.floor_z,
+        parameters.band,
+        parameters.max_range,
+    );
+    let summary = format!(
+        "bearing {:.1}° ± {:.1}°, elevation {:+.1}° ± {:.1}° (1σ); 95 % cone {:.1}°",
+        line.bearing.value,
+        line.bearing.sigma,
+        line.elevation.value,
+        line.elevation.sigma,
+        line.cone.major_deg
+    );
+    Ok(Run {
+        method: METHOD.into(),
+        cone_narrower_than_fit: line.cone.major_deg > parameters.cone_deg,
+        inputs,
+        parameters,
+        line,
+        surfaces,
+        band,
+        summary,
+        assumptions: ASSUMPTIONS.iter().map(|s| s.to_string()).collect(),
+        limitations: LIMITATIONS.iter().map(|s| s.to_string()).collect(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,6 +787,40 @@ mod tests {
         .unwrap();
         let b = shooter_band(&lvl, [0.0, 0.0, 1.5], 0.0, 0.0, [1.2, 1.8], 30.0);
         assert_eq!(b.centre.unwrap().0, [0.0, 30.0]);
+    }
+
+    #[test]
+    fn a_run_keeps_its_inputs_and_words_its_result() {
+        let d = direction(62.0, -4.0);
+        let n = [0.0, -1.0, 0.0];
+        let inputs: Vec<InputPoint> = [
+            (1.8, "door"),
+            (1.801, "door"),
+            (4.6, "wall"),
+            (4.613, "wall"),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, (t, s))| InputPoint {
+            kind: if i % 2 == 0 { "entry" } else { "exit" }.into(),
+            surface: (*s).into(),
+            point: add([0.0, 0.0, 1.3], scale(d, *t)),
+            sigma: 0.002,
+            plane: Some(FittedPlane {
+                point: [0.0; 3],
+                normal: n,
+                rms: 0.001,
+                points: 50,
+            }),
+        })
+        .collect();
+        let r = run(inputs, Parameters::default()).unwrap();
+        assert_eq!(r.method, METHOD);
+        assert_eq!(r.surfaces.len(), 2); // one per named surface
+        assert!(r.summary.starts_with("bearing 62.0°"));
+        // The record round-trips through JSON (it is stored and reported from JSON).
+        let back: Run = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
+        assert_eq!(back, r);
     }
 
     #[test]

@@ -6,8 +6,10 @@
 //! template, so the numbers in a report are exactly the strings computed in Rust, and
 //! [`Rendered::text`] lets tests check them against the laid-out document.
 
+pub mod analysis;
 pub mod diagram;
 pub mod registration;
+pub mod trajectory;
 
 use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime, Duration};

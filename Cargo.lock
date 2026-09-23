@@ -2910,6 +2910,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2981,6 +2982,7 @@ dependencies = [
 name = "locus-report"
 version = "0.1.0"
 dependencies = [
+ "locus-analysis",
  "locus-register",
  "nalgebra",
  "serde",
@@ -3005,6 +3007,7 @@ dependencies = [
 name = "locus-validate"
 version = "0.1.0"
 dependencies = [
+ "locus-analysis",
  "locus-core",
  "locus-io",
  "locus-octree",
