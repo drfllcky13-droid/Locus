@@ -139,7 +139,10 @@ impl Scene {
                     key,
                     name: info.name.clone(),
                     tree,
-                    pose: info.pose,
+                    // The applied registration's pose, else the one in the file.
+                    pose: project
+                        .scan_pose(key.evidence_id, key.scan_idx, info.pose)
+                        .map_err(core_err)?,
                     removed: RoaringBitmap::new(),
                     revision: 0,
                 },

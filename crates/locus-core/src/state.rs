@@ -95,7 +95,7 @@ pub struct CleanupRecord {
 }
 
 impl Project {
-    fn logged<T>(
+    pub(crate) fn logged<T>(
         &mut self,
         action: &str,
         change: impl FnOnce(&rusqlite::Transaction) -> Result<(T, Value)>,

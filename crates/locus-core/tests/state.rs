@@ -8,7 +8,7 @@ fn last_action(p: &Project) -> (String, String) {
 }
 
 #[test]
-fn schema_1_projects_are_migrated_and_the_migration_is_logged() {
+fn schema_1_projects_are_migrated_step_by_step_and_each_step_is_logged() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("old.locus");
     drop(Project::create(&root, "Old", "A").unwrap());
@@ -16,6 +16,7 @@ fn schema_1_projects_are_migrated_and_the_migration_is_logged() {
     let c = Connection::open(root.join("project.sqlite")).unwrap();
     c.execute_batch(
         "DROP TABLE settings; DROP TABLE octrees; DROP TABLE measurements; DROP TABLE cleanup_ops;
+         DROP TABLE registration_poses; DROP TABLE registrations;
          UPDATE meta SET value = '1' WHERE key = 'schema_version';",
     )
     .unwrap();
@@ -30,7 +31,12 @@ fn schema_1_projects_are_migrated_and_the_migration_is_logged() {
         .collect();
     assert_eq!(
         actions,
-        ["project.created", "project.migrated", "project.opened"]
+        [
+            "project.created",
+            "project.migrated",
+            "project.migrated",
+            "project.opened"
+        ]
     );
     assert!(p.measurements().unwrap().is_empty());
     drop(p);

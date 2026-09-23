@@ -45,7 +45,7 @@ pub enum Error {
 }
 
 const DB_FILE: &str = "project.sqlite";
-const SCHEMA_VERSION: &str = "2";
+const SCHEMA_VERSION: &str = "3";
 
 const SCHEMA: &str = "
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -170,6 +170,7 @@ impl Project {
         tx.execute_batch(SCHEMA)?;
         tx.execute_batch(audit::SCHEMA)?;
         tx.execute_batch(crate::state::SCHEMA_V2)?;
+        tx.execute_batch(crate::registration::SCHEMA_V3)?;
         let created_at = now();
         for (k, v) in [
             ("schema_version", SCHEMA_VERSION),
@@ -216,21 +217,26 @@ impl Project {
         }
         let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let version = meta_get(&conn, "schema_version")?.unwrap_or_default();
-        if version != "1" && version != SCHEMA_VERSION {
+        // Each later schema only adds tables: (from, to, what it adds).
+        let migrations = [
+            ("1", "2", crate::state::SCHEMA_V2),
+            ("2", "3", crate::registration::SCHEMA_V3),
+        ];
+        if version != SCHEMA_VERSION && !migrations.iter().any(|m| m.0 == version) {
             return Err(Error::SchemaVersion(version));
         }
         audit::verify(&conn)?;
-        if version == "1" {
-            // Schema 2 only adds tables; the migration is logged like any other change.
+        if let Some((from, to, add)) = migrations.iter().find(|m| m.0 == version) {
+            // Logged like any other change; repeated until the schema is current.
             let mut conn = conn;
             let tx = conn.transaction()?;
-            tx.execute_batch(crate::state::SCHEMA_V2)?;
-            meta_set(&tx, "schema_version", SCHEMA_VERSION)?;
+            tx.execute_batch(add)?;
+            meta_set(&tx, "schema_version", to)?;
             audit::append(
                 &tx,
                 examiner,
                 "project.migrated",
-                &json!({ "from": "1", "to": SCHEMA_VERSION }),
+                &json!({ "from": from, "to": to }),
             )?;
             tx.commit()?;
             return Self::open_with_progress(root, examiner, progress);
