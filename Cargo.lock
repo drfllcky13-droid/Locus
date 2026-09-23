@@ -2908,6 +2908,7 @@ dependencies = [
 name = "locus-analysis"
 version = "0.1.0"
 dependencies = [
+ "nalgebra",
  "proptest",
  "serde",
  "serde_json",
