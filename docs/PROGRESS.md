@@ -485,6 +485,37 @@ Acceptance (SPEC):
 - [x] The report is regenerated in CI on every release: the `validation` job on tags. It has run locally; it runs on CI at the first release tag.
 - [x] Physical validation protocol written. Who runs the studies is on Addison's list.
 
+### Phase 14: Polish, onboarding, licensing
+
+Plan (2026-09-24):
+
+1. **Licence tiers.**
+   - Diagram, Analyst and Analyst Plus (SPEC §1), from an offline licence file signed with Ed25519: the app holds only the public key, and a separate tool signs licences with the private key, which is kept outside the repository.
+   - Each tier's tools are hidden in the UI, and the backend commands that gate them refuse outside the tier.
+   - Help → About shows the licence. Without a licence file the app runs as an unlicensed evaluation with every tool, labelled as such. Whether that stays is Addison's call before a commercial release.
+2. **Crash reports that never upload case data.** A panic writes a local crash report: version, OS, the message and where it happened, a backtrace. There are no file paths from the case, no evidence names and no project data. On the next start the app offers to show it, so the user can copy it and send it themselves. Nothing is sent automatically.
+3. **Contextual help.** A "?" on each tool and panel opens its method note inside the app. The notes are bundled at build time, so they work offline.
+4. **Guided workflows.** A panel with step-by-step guides for an indoor crime scene, a fatal crash and a fire scene. Each step says what to do and why, opens the tool it needs, and ticks itself when the project shows the step done (evidence imported, a measurement made, a report printed…).
+5. **The sample case.** "Create the sample case" makes a new project folder with synthetic evidence to follow the indoor crime-scene guide with: a room scan with bloodstains, and the stains' photos. It is generated in the app from the validation generators, so nothing large ships.
+6. **Installer and auto-update.** A signed MSI with Tauri's bundler, and auto-update from signed release files. Configured in the repository, but not built or switched on until Addison provides:
+   - approval for the WiX toolset download;
+   - a code-signing certificate;
+   - the update-signing key (as a CI secret);
+   - the publisher domain.
+   These go on his list.
+7. **Acceptance.** The indoor guide is run through in the app on the sample case, scripted, with each step timed. The real "new user under 30 minutes" test needs a person, and goes on Addison's list.
+
+Acceptance criteria (SPEC):
+- [ ] A new user can complete the sample indoor crime-scene workflow in under 30 minutes following the in-app guide. *Needs a person: on Addison's list.*
+
+Results (2026-09-24), run in the built app (E:/Claude/scratch/locus/phase14_ui.mjs):
+- Without a licence file the side panel says "Unlicensed evaluation" and every tool is there.
+- A "?" opens its method note (the cleanup note, 17 blocks).
+- A view error given a message with an evidence path is saved as a crash report reading "failed reading <path>": the path is removed.
+- The indoor guide ticks "Make a project" and "Import the scan" on an open project and marks the next step; "Create the sample case" writes the room scan and 25 stain photos; a new project imports the scan and six photos in 0.2 s, and the guide state follows.
+- Installing a Diagram licence: the 3D view shows the tier message, `scene_create` is refused naming the licence, and a copy with its tier edited to Analyst Plus is refused as not genuine. The test licence was removed afterwards.
+- Installer: the bundle target is MSI; it isn't built or signed, and the updater isn't added, until Addison's items (WiX download approval, certificate, update key, publisher domain) are done.
+
 ## Blocked
 
 - **Physical print-scale check at 1:100** (2026-09-22): print a scaled diagram PDF at actual size and measure it (the 10 m line and the 100 mm calibration bar in the title block) with a ruler. The PDF geometry is proven by tests; the physical check must be done before release.

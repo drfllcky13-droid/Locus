@@ -17,4 +17,9 @@ Things only you can do. Nothing here blocks the next phases, but each is needed 
 - [ ] **GitHub Actions minutes:** whether to stay on the free plan (CI is trimmed to fit it).
 
 ## Before any commercial release
+- [ ] **New-user test:** someone who hasn't used Locus follows the in-app "Indoor crime scene" guide on the sample case (Guides → Create the sample case…), timed; the target is under 30 minutes. Note where they got stuck.
+- [ ] **Installer:** approve the WiX toolset download (Tauri fetches it to build the MSI), and get a code-signing certificate.
+- [ ] **Updates:** where releases will be published, and an update-signing key stored as a GitHub secret (I'll make the key; you keep the password).
+- [ ] **Evaluation mode:** whether Locus without a licence keeps every tool (as now), is time-limited, or is limited to Diagram.
+- [ ] **Licence private key:** move `E:\Claude\scratch\locus\license\locus-license-private-key.txt` somewhere safe and backed up (not the repository). Anyone with it can make licences.
 - [ ] **Legal review** of THIRD_PARTY_NOTICES.txt.

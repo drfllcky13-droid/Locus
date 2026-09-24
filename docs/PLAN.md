@@ -11,9 +11,9 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 
 ## Status
 
-*Updated 2026-09-23.*
+*Updated 2026-09-24.*
 
-- **Done.** Phases 0–11 and 13 are done. Phase 11's clean-machine check is under Open questions. Phase 7's textbook-case criterion is blocked (see Open questions).
+- **Done.** Phases 0–11, 13 and 14 are done. Phase 11's clean-machine check is under Open questions. Phase 7's textbook-case criterion is blocked (see Open questions).
 - **Phase 9 (animation), closed 2026-09-23.** It covers:
   - the motion model with provenance, time zero and plausibility checks;
   - the timeline UI;
@@ -23,7 +23,8 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 - **Phase 10 (reports and exports), closed 2026-09-24.** Reports are reproducible and traceable. There is a case report, and diagrams export as PNG, TIFF and DXF, point clouds as E57, LAS and LAZ, the scene as glTF, and measurements as CSV, all hashed and logged ([exports.md](methods/exports.md)).
 - **Phase 11 (portable case package), closed 2026-09-24.** A folder with the program itself as a read-only viewer, the case data, freshly printed reports and the renders, all hashed in a manifest whose hash is the package hash ([case-package.md](methods/case-package.md)).
 - **Phase 13 (validation), closed 2026-09-24.** `locus-validate run` prints the validation report for every release ([validation.md](methods/validation.md)), and the physical study protocol is written ([validation-protocol.md](methods/validation-protocol.md)). The full run found the hand-measured bloodstain region under-covering (81 %); bloodstain method version 2 corrects the bias (coverage now 97 %).
-- **Next:** Phase 14, polish.
+- **Phase 14 (polish), closed 2026-09-24.** Offline signed licences with Diagram, Analyst and Analyst Plus tiers, crash reports that stay on the machine with paths removed, a "?" beside each tool opening its method note, guides for indoor, crash and fire scenes that tick themselves, and a generated sample case ([licensing.md](methods/licensing.md)). The signed MSI, updates and the 30-minute new-user test wait on Addison.
+- **Next:** every planned phase is built. What remains is Addison's list and the Blocked items.
 - **Waiting on Addison:** his to-do list is [ADDISON-TODO.md](ADDISON-TODO.md) (also summarised under Open questions).
 
 ## 1. Goal and scope
