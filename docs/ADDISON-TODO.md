@@ -18,7 +18,7 @@ Things only you can do. Nothing here blocks the next phases, but each is needed 
 
 ## Releases and updates
 - [ ] **Add the update-signing secret:** GitHub → drfllcky13-droid/Locus → Settings → Secrets and variables → Actions → New repository secret. Name `TAURI_SIGNING_PRIVATE_KEY`, value: the whole contents of `E:\Claude\scratch\locus\license\updater\lotus-updater.key`. Then move that folder somewhere safe and backed up (with the licence key).
-- [ ] **Public releases (for auto-update):** the repository is private, so installed copies can't see updates. Choose: make the repository public, publish releases to a separate public repository, or install each new MSI by hand.
+- [x] **Public releases:** the repository is public (2026-09-24), with commit emails and names rewritten to drfllcky13-droid and the noreply address.
 
 ## Before any commercial release
 - [ ] **New-user test:** someone who hasn't used Locus follows the in-app "Indoor crime scene" guide on the sample case (Guides → Create the sample case…), timed; the target is under 30 minutes. Note where they got stuck.
