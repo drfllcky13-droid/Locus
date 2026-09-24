@@ -3,6 +3,7 @@
 // find its edge (automatically from a seed and threshold, or by clicking), and mark its
 // tail. The backend fits each ellipse and the origin from the stored data; the preview is
 // drawn over the scene, and a run is saved as an audit-logged analysis with a PDF report.
+import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -539,7 +540,9 @@ export function BloodstainPanel({
 
   return (
     <section className="panel-section bloodstain">
-      <h3>Bloodstain area of origin</h3>
+      <h3 className="with-help">
+        Bloodstain area of origin <HelpButton topic="bloodstain" />
+      </h3>
       {!open && (
         <button
           onClick={() => {

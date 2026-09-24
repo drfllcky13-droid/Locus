@@ -3,6 +3,8 @@
 // tolerance; the backend gives the value, the range method's extremes and a Monte Carlo
 // interval. Marks can be picked on the cloud (resolved again from stored data). Runs are saved
 // as audit-logged analyses with PDF reports.
+import { HelpButton } from "../../help/Help";
+import { useAllows } from "../../license";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import {
@@ -537,6 +539,7 @@ export function CrashPanel({
     }
   };
 
+  const crushVolume = useAllows("crush_volume");
   const titles: Record<Tool, string> = {
     skid: "Speed from skid marks",
     yaw: "Critical speed from a yaw mark",
@@ -547,22 +550,26 @@ export function CrashPanel({
   };
   return (
     <section className="panel-section crash">
-      <h3>Crash reconstruction</h3>
+      <h3 className="with-help">
+        Crash reconstruction <HelpButton topic="crash" />
+      </h3>
       {!tool && (
         <div className="buttons">
-          {(Object.keys(titles) as Tool[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => {
-                setTool(t);
-                const stored = t === "volume" ? "crush_volume" : t;
-                setName(`${titles[t]} ${crashes.filter((r) => r.tool === stored).length + 1}`);
-                setResult(null);
-              }}
-            >
-              {titles[t]}…
-            </button>
-          ))}
+          {(Object.keys(titles) as Tool[])
+            .filter((t) => t !== "volume" || crushVolume)
+            .map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setTool(t);
+                  const stored = t === "volume" ? "crush_volume" : t;
+                  setName(`${titles[t]} ${crashes.filter((r) => r.tool === stored).length + 1}`);
+                  setResult(null);
+                }}
+              >
+                {titles[t]}…
+              </button>
+            ))}
         </div>
       )}
       {tool && (

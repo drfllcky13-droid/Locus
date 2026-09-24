@@ -5,6 +5,7 @@
 // photo over the scene. For each subject, mark the point between the feet and the top of the
 // head: the height comes by reverse projection, with a person model of that height drawn over
 // the photo to match by eye. A run is saved as an audit-logged analysis with a PDF report.
+import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
@@ -371,7 +372,9 @@ export function CameraPanel({
   const fmt = (v: number, s: number, d = 3) => `${v.toFixed(d)} ± ${s.toFixed(d)}`;
   return (
     <section className="panel-section camera-match">
-      <h3>Camera matching and height</h3>
+      <h3 className="with-help">
+        Camera matching and height <HelpButton topic="camera-height" />
+      </h3>
       {!open && (
         <button
           onClick={() => {

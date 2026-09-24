@@ -3,6 +3,7 @@
 // timeline that plays the evaluated motion (locus-analysis animation) and marks assumed
 // segments and plausibility flags. Stored in the scene document, so saved and audit-logged
 // with it. See docs/methods/animation.md.
+import { HelpButton } from "../help/Help";
 import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -1043,7 +1044,9 @@ export function AnimationPanel({
   if (!a)
     return (
       <section className="panel-section anim">
-        <h3>Animation</h3>
+        <h3 className="with-help">
+          Animation <HelpButton topic="animation" />
+        </h3>
         <p className="muted">
           Move vehicles and people along paths picked on the cloud, from EDR records, other
           analyses, measurements or stated assumptions.
@@ -1059,7 +1062,9 @@ export function AnimationPanel({
 
   return (
     <section className="panel-section anim">
-      <h3>Animation</h3>
+      <h3 className="with-help">
+        Animation <HelpButton topic="animation" />
+      </h3>
       {readOnly ? (
         <p className="muted">
           Time zero: {a.time_zero.event || "not stated"} (known from{" "}

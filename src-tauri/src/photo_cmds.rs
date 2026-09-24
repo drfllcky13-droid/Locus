@@ -350,6 +350,7 @@ fn place(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// the end as "photo-done". Only one runs at a time.
 #[tauri::command]
 pub async fn photo_run(app: AppHandle, request: RunRequest) -> CmdResult<()> {
+    crate::license_cmds::require(locus_core::license::Feature::Photogrammetry)?;
     let st = app.state::<PhotoState>();
     if st.running.swap(true, Ordering::SeqCst) {
         return Err("A reconstruction is already running.".into());

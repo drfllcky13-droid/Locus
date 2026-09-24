@@ -646,6 +646,11 @@ pub async fn crash_save(
     request: CrashRequest,
     revises: Option<i64>,
 ) -> CmdResult<AnalysisRecord> {
+    crate::license_cmds::require(if matches!(request, CrashRequest::Volume { .. }) {
+        locus_core::license::Feature::CrushVolume
+    } else {
+        locus_core::license::Feature::Analysis
+    })?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;

@@ -1,5 +1,6 @@
 // The viewer's side panel in a case package: what the package is, whether every file still
 // matches its manifest, and its reports and videos to open.
+import { HelpButton } from "./help/Help";
 import { api } from "./api";
 import type { PackageInfo } from "./readOnly";
 
@@ -30,7 +31,9 @@ export function PackagePanel({
     );
   return (
     <section className="package">
-      <h2>Case package (read-only)</h2>
+      <h2 className="with-help">
+        Case package (read-only) <HelpButton topic="case-package" />
+      </h2>
       {pkg.check.problems.length === 0 ? (
         <p className="ok">All {pkg.check.checked} files match the package manifest.</p>
       ) : (

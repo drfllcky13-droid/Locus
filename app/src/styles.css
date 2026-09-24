@@ -994,3 +994,88 @@ input.anim-missing {
   flex: 1;
   margin-top: 0;
 }
+
+.license-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.tier-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.with-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.help-button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.help-dialog {
+  width: min(820px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.help-body {
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.help-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+.help-table th,
+.help-table td {
+  border: 1px solid var(--line);
+  padding: 4px 6px;
+  vertical-align: top;
+}
+
+.help-list {
+  padding-left: 18px;
+}
+
+.guide {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.guide-steps {
+  padding-left: 18px;
+  margin: 8px 0;
+}
+
+.guide-steps li {
+  margin-bottom: 8px;
+}
+
+.guide-steps li p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.guide-steps li.done {
+  color: var(--muted);
+}
+
+.guide-steps li.current {
+  border-left: 3px solid var(--accent);
+  padding-left: 6px;
+}

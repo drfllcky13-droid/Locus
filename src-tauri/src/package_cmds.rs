@@ -89,6 +89,7 @@ pub async fn package_export(
     name: String,
     include_evidence: bool,
 ) -> CmdResult<Made> {
+    crate::license_cmds::require(locus_core::license::Feature::CasePackage)?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;

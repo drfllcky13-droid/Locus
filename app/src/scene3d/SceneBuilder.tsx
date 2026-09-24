@@ -1,6 +1,7 @@
 // The 3D scene builder, in the 3D view's side panel: extrude diagrams, add roofs, models and
 // lights, set the sun, and snap models to the point cloud. The document is saved as a new
 // revision (audit-logged) once edits settle, like a diagram.
+import { HelpButton } from "../help/Help";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import { api, type DiagramRevision, type SceneRevision } from "../api";
@@ -237,7 +238,9 @@ export function SceneBuilder({
   if (readOnly)
     return rev === null ? null : (
       <section className="panel-section scene-builder">
-        <h3>3D scene</h3>
+        <h3 className="with-help">
+          3D scene <HelpButton topic="scene3d" />
+        </h3>
         <p className="muted">
           {rev.name}, revision {rev.number} (SHA-256 {rev.sha256.slice(0, 16)}…), as saved in the
           case.
@@ -257,7 +260,9 @@ export function SceneBuilder({
   if (rev === null)
     return (
       <section className="panel-section">
-        <h3>3D scene</h3>
+        <h3 className="with-help">
+          3D scene <HelpButton topic="scene3d" />
+        </h3>
         <p className="muted">
           Extrude diagrams, place models and lights, and set the sun. Everything shares the point
           cloud's coordinates.
@@ -358,7 +363,9 @@ export function SceneBuilder({
 
   return (
     <section className="panel-section scene-builder">
-      <h3>3D scene</h3>
+      <h3 className="with-help">
+        3D scene <HelpButton topic="scene3d" />
+      </h3>
       <div className="dg-objects">
         {doc.objects.map((o) => (
           <div key={o.id} className={`dg-object${o.id === selected ? " active" : ""}`}>

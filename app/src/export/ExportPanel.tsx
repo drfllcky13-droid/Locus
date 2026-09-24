@@ -1,6 +1,7 @@
 // Writing out of the project: the case report, measurements as CSV, point clouds as E57, LAS
 // or LAZ, and diagrams as PDF, PNG, TIFF or DXF. Every file is hashed and logged in the audit
 // log (src-tauri/src/export_cmds.rs). The 3D scene's glTF export is in the scene builder.
+import { HelpButton } from "../help/Help";
 import { useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { api, type DiagramRevision } from "../api";
@@ -54,7 +55,9 @@ export function ExportPanel({
 
   return (
     <section className="panel-section">
-      <h3>Export</h3>
+      <h3 className="with-help">
+        Export <HelpButton topic="exports" />
+      </h3>
       {!open && <button onClick={() => setOpen(true)}>Export files…</button>}
       {open && (
         <>

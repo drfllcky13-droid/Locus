@@ -1,3 +1,4 @@
+import { HelpButton } from "../help/Help";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
@@ -151,7 +152,9 @@ export function RegistrationDialog({
   return (
     <div className="overlay">
       <div className="dialog wide" role="dialog" aria-label="Register scans">
-        <h2>Register scans</h2>
+        <h2 className="with-help">
+          Register scans <HelpButton topic="registration" />
+        </h2>
         <div className="reg-form">
           <label className="inline">
             <input

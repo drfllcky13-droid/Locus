@@ -1,3 +1,4 @@
+import { HelpButton } from "../help/Help";
 import { useReadOnly } from "../readOnly";
 import { useState } from "react";
 import { api, type CleanupRecord, type CleanupRequest, type Region, type StateView } from "../api";
@@ -176,7 +177,9 @@ export function ScenePanel(props: {
 
       {!readOnly && (
         <>
-          <h2>Cleanup</h2>
+          <h2 className="with-help">
+            Cleanup <HelpButton topic="cleanup" />
+          </h2>
           <p className="muted">
             Cleanup never changes evidence. Each operation can be undone (Ctrl+Z) and is logged.
           </p>
@@ -276,7 +279,9 @@ export function ScenePanel(props: {
           ) : null}
         </>
       )}
-      <h2>Measurements</h2>
+      <h2 className="with-help">
+        Measurements <HelpButton topic="measurement" />
+      </h2>
       {readOnly ? (
         <p className="muted">
           Point uncertainty (1σ): {state ? (state.point_sigma_m * 1000).toFixed(1) : "…"} mm, as set

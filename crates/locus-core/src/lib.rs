@@ -8,6 +8,7 @@ pub mod audit;
 mod contents;
 mod document;
 pub mod hash;
+pub mod license;
 pub mod package;
 mod project;
 mod registration;

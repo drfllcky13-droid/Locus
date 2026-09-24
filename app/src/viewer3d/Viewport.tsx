@@ -1,3 +1,4 @@
+import { useAllows } from "../license";
 import { useReadOnly } from "../readOnly";
 import { ExportPanel } from "../export/ExportPanel";
 import { listen } from "@tauri-apps/api/event";
@@ -51,6 +52,7 @@ export function Viewport({
   const hostRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Engine | null>(null);
   const readOnly = useReadOnly();
+  const pointClouds = useAllows("point_clouds");
   const [scene, setScene] = useState<SceneData | null>(null);
   const [state, setState] = useState<StateView | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -332,6 +334,15 @@ export function Viewport({
           ? "Now click the point to measure."
           : `${TOOL_POINTS[tool].hint} ${picks.length ? `(${picks.length} picked)` : ""} Esc cancels.`;
 
+  if (!pointClouds)
+    return (
+      <div className="viewer tier-block">
+        <p className="muted">
+          3D scenes, point clouds and the analysis tools need the Analyst licence. Diagrams are in
+          the tabs above.
+        </p>
+      </div>
+    );
   return (
     <div className="viewer">
       <div

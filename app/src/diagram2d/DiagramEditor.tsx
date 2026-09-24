@@ -1,3 +1,4 @@
+import { HelpButton } from "../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
@@ -939,7 +940,9 @@ export function DiagramEditor({
               Renumber markers (reading order)
             </button>
           )}
-          <h3>Layers</h3>
+          <h3 className="with-help">
+            Layers <HelpButton topic="diagrams" />
+          </h3>
           {doc.layers.map((l) => (
             <div key={l.id} className={`dg-layer${l.id === activeLayer ? " active" : ""}`}>
               <input

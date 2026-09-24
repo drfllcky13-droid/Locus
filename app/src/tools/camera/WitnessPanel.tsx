@@ -2,6 +2,7 @@
 // floor point, looking toward a picked point, with lines of sight to picked targets tested
 // against the scan (clear in green, blocked in red, drawn in the 3D view). The view can be
 // set to the eye. A run is saved as an audit-logged analysis with a PDF report.
+import { HelpButton } from "../../help/Help";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import {
@@ -138,7 +139,9 @@ export function WitnessPanel({
 
   return (
     <section className="panel-section witness">
-      <h3>Witness perspective</h3>
+      <h3 className="with-help">
+        Witness perspective <HelpButton topic="camera-height" />
+      </h3>
       {!open && (
         <button
           onClick={() => {

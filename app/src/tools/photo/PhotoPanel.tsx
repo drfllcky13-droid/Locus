@@ -2,6 +2,7 @@
 // runs it and records its version and hash), a reconstruction from the project's photos or a
 // video, then scaling (known distances or control points clicked in the photos, or the photos'
 // GPS) and import of the scaled point cloud as evidence, with the run stored as an analysis.
+import { HelpButton } from "../../help/Help";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
@@ -284,7 +285,9 @@ export function PhotoPanel({
 
   return (
     <section className="panel-section photo">
-      <h3>Photogrammetry</h3>
+      <h3 className="with-help">
+        Photogrammetry <HelpButton topic="photogrammetry" />
+      </h3>
       <details open={!f}>
         <summary>
           COLMAP:{" "}

@@ -96,6 +96,7 @@ pub async fn camera_save(
     request: CameraRequest,
     revises: Option<i64>,
 ) -> CmdResult<AnalysisRecord> {
+    crate::license_cmds::require(locus_core::license::Feature::Analysis)?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
@@ -220,6 +221,7 @@ pub async fn witness_save(
     request: WitnessRequest,
     revises: Option<i64>,
 ) -> CmdResult<AnalysisRecord> {
+    crate::license_cmds::require(locus_core::license::Feature::Analysis)?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;

@@ -8,8 +8,11 @@ mod bloodstain_cmds;
 mod camera_cmds;
 mod commands;
 mod crash_cmds;
+mod crash_report;
 mod diagram_cmds;
 mod export_cmds;
+mod guide_cmds;
+mod license_cmds;
 mod package_cmds;
 mod photo_cmds;
 mod register_cmds;
@@ -83,6 +86,13 @@ fn main() {
             scene3d_cmds::animation_evaluate,
             scene3d_cmds::animation_save,
             export_cmds::case_report,
+            license_cmds::license_info,
+            guide_cmds::guide_state,
+            guide_cmds::sample_create,
+            crash_report::crash_reports,
+            crash_report::crash_reports_clear,
+            crash_report::crash_report_view,
+            license_cmds::license_install,
             package_cmds::package_export,
             package_cmds::package_open,
             package_cmds::package_file_open,
@@ -141,6 +151,8 @@ fn main() {
             use tauri::Manager;
             app.manage(scene_cmds::Builder::start(app.handle().clone()));
             app.manage(photo_cmds::PhotoState::default());
+            license_cmds::load(app.handle());
+            crash_report::install(app.handle());
             Ok(())
         });
 

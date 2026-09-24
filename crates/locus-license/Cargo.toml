@@ -1,0 +1,12 @@
+[package]
+name = "locus-license"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+locus-core = { version = "0.1.0", path = "../locus-core" }
+getrandom = "0.3.4"
+hex = "0.4.3"
+serde_json = "1.0.151"

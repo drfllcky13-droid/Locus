@@ -166,6 +166,10 @@ pub async fn import_commit(
             .clone()
             .filter(|p| p.sha256 == sha256)
             .ok_or("This file was not previewed; preview it again before importing.")?;
+        // Scans and 3D models are Analyst; photos (for diagram underlays) every tier.
+        if !pv.contents.scans.is_empty() || !pv.contents.meshes.is_empty() {
+            crate::license_cmds::require(locus_core::license::Feature::PointClouds)?;
+        }
         let mut guard = s.project.lock().unwrap();
         let project = guard.as_mut().ok_or("Open or create a project first.")?;
         let rec = locus_io::commit(project, &pv, unit, &mut |p| {

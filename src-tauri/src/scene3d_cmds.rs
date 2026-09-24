@@ -23,6 +23,7 @@ pub async fn scenes(app: AppHandle) -> CmdResult<Vec<Revision>> {
 
 #[tauri::command]
 pub async fn scene_create(app: AppHandle, name: String, document: Value) -> CmdResult<Revision> {
+    crate::license_cmds::require(locus_core::license::Feature::PointClouds)?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
@@ -154,6 +155,7 @@ pub async fn animation_save(
     name: String,
     request: locus_analysis::tds::TdsRequest,
 ) -> CmdResult<locus_core::AnalysisRecord> {
+    crate::license_cmds::require(locus_core::license::Feature::Animation)?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;

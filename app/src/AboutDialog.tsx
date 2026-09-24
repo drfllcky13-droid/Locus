@@ -1,3 +1,5 @@
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import type { LicenseInfo } from "./license";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
@@ -40,11 +42,16 @@ async function webgpu(): Promise<string> {
 export function AboutDialog({
   onClose,
   packageHash,
+  license,
+  onLicense,
 }: {
   onClose: () => void;
   /** Opened from a case package: its hash (the SHA-256 of its manifest). */
   packageHash?: string;
+  license?: LicenseInfo | null;
+  onLicense?: (l: LicenseInfo) => void;
 }) {
+  const [licenseError, setLicenseError] = useState<string | null>(null);
   const [app, setApp] = useState<{ version: string; webview: string } | null>(null);
   const [gpu] = useState(webglGpu);
   const [gpuWeb, setGpuWeb] = useState("checking…");
@@ -64,6 +71,12 @@ export function AboutDialog({
         <h2>Locus {app?.version}</h2>
         <p className="muted">Forensic scene reconstruction.</p>
         <dl className="facts">
+          <dt>Licence</dt>
+          <dd>
+            {license?.license
+              ? `${license.tier_name}, ${license.license.licensee} (${license.license.id}${license.license.expires ? `, until ${license.license.expires}` : ""})`
+              : (license?.tier_name ?? "…")}
+          </dd>
           {packageHash && (
             <>
               <dt>Case package hash</dt>
@@ -83,6 +96,7 @@ export function AboutDialog({
           On laptops with two GPUs, Locus asks for the dedicated one. If this shows integrated
           graphics, set Locus to &quot;High performance&quot; in Windows graphics settings.
         </p>
+        {licenseError && <p className="error">{licenseError}</p>}
         {notices !== null && (
           <pre className="notices" aria-label="Third-party notices">
             {notices}
@@ -96,6 +110,25 @@ export function AboutDialog({
           >
             {notices === null ? "Third-party notices" : "Hide notices"}
           </button>
+          {onLicense && (
+            <button
+              onClick={async () => {
+                const path = await openDialog({
+                  title: "Install a licence",
+                  filters: [{ name: "Locus licence", extensions: ["locus-license"] }],
+                });
+                if (typeof path !== "string") return;
+                try {
+                  onLicense(await api.licenseInstall(path));
+                  setLicenseError(null);
+                } catch (e) {
+                  setLicenseError(String(e));
+                }
+              }}
+            >
+              Install a licence…
+            </button>
+          )}
           <button onClick={onClose}>Close</button>
         </div>
       </div>

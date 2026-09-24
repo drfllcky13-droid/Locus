@@ -181,6 +181,7 @@ pub async fn registration_run(
     app: AppHandle,
     params: RunParams,
 ) -> CmdResult<Vec<RegistrationView>> {
+    crate::license_cmds::require(locus_core::license::Feature::Registration)?;
     let emitter = app.clone();
     blocking(app, move |s| {
         let progress = |stage: &str| {

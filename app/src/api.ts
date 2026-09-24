@@ -1,5 +1,7 @@
 // Typed wrappers over the Tauri commands in src-tauri/src/commands.rs and scene_cmds.rs.
 // Types mirror the Rust crates' serde output.
+import type { GuideState } from "./guide/guides";
+import type { LicenseInfo } from "./license";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { PickHit, SceneData } from "./viewer3d/pointcloud";
 import type { MeasurementRecord } from "./viewer3d/measureFormat";
@@ -458,6 +460,14 @@ export const api = {
   analysisReport: (id: number, path: string) => invoke<string>("analysis_report", { id, path }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
     invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
+  crashReports: () => invoke<{ name: string; text: string }[]>("crash_reports"),
+  crashReportsClear: () => invoke<void>("crash_reports_clear"),
+  crashReportView: (message: string, stack: string) =>
+    invoke<void>("crash_report_view", { message, stack }),
+  guideState: () => invoke<GuideState>("guide_state"),
+  sampleCreate: (parent: string) => invoke<string>("sample_create", { parent }),
+  licenseInfo: () => invoke<LicenseInfo>("license_info"),
+  licenseInstall: (path: string) => invoke<LicenseInfo>("license_install", { path }),
   startup: () =>
     invoke<{ open: string | null; examiner: string | null; package: string | null }>("startup"),
   packageOpen: (onProgress: (bytes: number) => void) =>

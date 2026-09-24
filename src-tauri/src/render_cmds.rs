@@ -57,6 +57,7 @@ fn abandon(mut j: Job) {
 /// Check the request against the saved scene and start the writer.
 #[tauri::command]
 pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<RenderPlan> {
+    crate::license_cmds::require(locus_core::license::Feature::Animation)?;
     if !cfg!(windows) {
         return Err(
             "Rendering video uses Windows Media Foundation and isn't available on this system yet."

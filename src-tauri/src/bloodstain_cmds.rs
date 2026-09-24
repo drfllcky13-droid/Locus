@@ -243,6 +243,7 @@ pub async fn bloodstain_save(
     request: BloodstainRequest,
     revises: Option<i64>,
 ) -> CmdResult<AnalysisRecord> {
+    crate::license_cmds::require(locus_core::license::Feature::Analysis)?;
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
