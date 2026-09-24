@@ -781,6 +781,20 @@
       "licence": "LicenseRef-US-Government-Works",
       "attribution": "Source: National Highway Traffic Safety Administration, US Department of Transportation, Vehicle Crash Test Database (https://nrd.api.nhtsa.dot.gov/), retrieved 2026-09-23. A work of the US Government, not subject to copyright in the United States (17 U.S.C. 105); listed on data.gov under the USA.gov Public Domain License 1.0.",
       "verified": true
+    },
+    {
+      "id": "rustls-pki-types-alg-ids",
+      "title": "rustls-pki-types algorithm identifiers",
+      "kind": "data",
+      "crate": "rustls-pki-types",
+      "version": "1.15.1",
+      "files": [
+        "src/data/*.der"
+      ],
+      "what": "DER encodings of X.509 signature-algorithm identifiers (a few bytes each), embedded by rustls-pki-types, which the updater's HTTPS client (reqwest) uses for certificate types.",
+      "licence": "MIT",
+      "attribution": "Copyright (c) the rustls project contributors. rustls-pki-types is dual-licensed MIT OR Apache-2.0; MIT is taken here.",
+      "verified": "The crate's src/data/README.md says the files are the DER values of ASN.1 AlgorithmIdentifiers (RFC 5280), encoded with der-ascii; they are part of the crate, licensed MIT OR Apache-2.0 in its Cargo.toml."
     }
   ],
   "first_party": [

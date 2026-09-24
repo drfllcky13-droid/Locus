@@ -107,7 +107,8 @@ def scan(pkg):
         return os.path.relpath(os.path.normpath(path), root).replace(os.sep, '/')
 
     def outside_src(path):
-        return not os.path.normpath(path).startswith(src_dir + os.sep)
+        p = os.path.normpath(path)  # src itself counts as inside (#[path = "."] in src/lib.rs)
+        return not (p == os.path.normpath(src_dir) or p.startswith(src_dir + os.sep))
 
     hits, macros = set(), {}
     for dp, text in files:

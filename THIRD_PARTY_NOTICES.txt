@@ -4400,6 +4400,43 @@ Attribution:
   listed on data.gov under the USA.gov Public Domain License 1.0.
 
 ==============================================================================
+[rustls-pki-types-alg-ids] rustls-pki-types algorithm identifiers
+==============================================================================
+Crate:   rustls-pki-types 1.15.1
+Licence: MIT
+What:
+  DER encodings of X.509 signature-algorithm identifiers (a few bytes each),
+  embedded by rustls-pki-types, which the updater's HTTPS client (reqwest)
+  uses for certificate types.
+Files:
+  src/data/alg-ecdsa-p256.der
+  src/data/alg-ecdsa-p256k1.der
+  src/data/alg-ecdsa-p384.der
+  src/data/alg-ecdsa-p521.der
+  src/data/alg-ecdsa-sha256.der
+  src/data/alg-ecdsa-sha384.der
+  src/data/alg-ecdsa-sha512.der
+  src/data/alg-ed25519.der
+  src/data/alg-ed448.der
+  src/data/alg-ml-dsa-44.der
+  src/data/alg-ml-dsa-65.der
+  src/data/alg-ml-dsa-87.der
+  src/data/alg-rsa-encryption.der
+  src/data/alg-rsa-pkcs1-sha256.der
+  src/data/alg-rsa-pkcs1-sha384.der
+  src/data/alg-rsa-pkcs1-sha512.der
+  src/data/alg-rsa-pss-sha256.der
+  src/data/alg-rsa-pss-sha384.der
+  src/data/alg-rsa-pss-sha512.der
+Attribution:
+  Copyright (c) the rustls project contributors. rustls-pki-types is dual-
+  licensed MIT OR Apache-2.0; MIT is taken here.
+Verification:
+  The crate's src/data/README.md says the files are the DER values of ASN.1
+  AlgorithmIdentifiers (RFC 5280), encoded with der-ascii; they are part of
+  the crate, licensed MIT OR Apache-2.0 in its Cargo.toml.
+
+==============================================================================
 Licence texts
 ==============================================================================
 

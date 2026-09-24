@@ -20,8 +20,8 @@ function run(cmd, args) {
  * browser arguments. Returns
  * `{ cdp, child, project, close() }`; `close` kills the app and removes the temp folder.
  */
-export async function launchApp({ scans = 2, points = 300_000, port = 9223, webviewArgs = "", genArgs = [], extra = [], room = true } = {}) {
-  const app = resolve(`target/release/locus${exe}`);
+export async function launchApp({ scans = 2, points = 300_000, port = 9223, webviewArgs = "", genArgs = [], extra = [], room = true, appPath } = {}) {
+  const app = resolve(appPath ?? `target/release/locus${exe}`);
   const validate = resolve(`target/release/locus-validate${exe}`);
   const work = mkdtempSync(join(tmpdir(), "locus-smoke-"));
   const scene = join(work, "room.e57");

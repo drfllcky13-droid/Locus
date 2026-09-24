@@ -36,6 +36,9 @@ This is the spec's "crash reporting that never uploads case data", taken to the 
 
 ## Installer and updates
 
-- **The installer:** a Windows MSI from Tauri's bundler (WiX), signed with the publisher's code-signing certificate. Tauri's bundler downloads the WiX toolset on first use, which needs approval. The certificate, the approval and the publisher domain (for the app's identifier) are on docs/ADDISON-TODO.md. Until then, releases are unsigned builds.
-- **Updates:** Tauri's updater, from signed update files published with each release. An update is only installed if its signature matches the key built into the app. Updates contain only the program: no case data goes anywhere, and nothing is sent but the version check.
-- **Not yet switched on.** The updater needs the update-signing key (a CI secret) and the place releases are published, which are the publisher's to set up.
+- **The installer** is a Windows MSI built by Tauri's bundler (WiX). It installs Lotus for every user of the PC under Program Files, with a Start-menu entry. It isn't code-signed (in-house use), so Windows SmartScreen may warn on first run.
+- **Releases.** Pushing a tag `vX.Y.Z` runs the release job in CI: it runs the full validation report, builds the MSI, and publishes a GitHub release with the MSI, its update signature, `latest.json` and the validation report.
+- **Updates** come from those releases. Lotus checks at start (quietly; offline is fine) and under Help → About → Check for updates. When one is found the side panel offers "Install and restart". An update installs only if its signature matches the update key built into Lotus. Updates contain only the program: no case data goes anywhere, and nothing is sent but the version check.
+- **The update-signing key** is outside the repository (`E:\Claude\scratch\locus\license\updater\lotus-updater.key`, no password); its public half is in `src-tauri/tauri.conf.json`. CI reads it from the repository secret `TAURI_SIGNING_PRIVATE_KEY`. Losing it means installed copies can't be updated; they'd need the next MSI installed by hand.
+- **The repository is private**, so installed copies can't read its releases and the update check fails quietly. Updates work once the releases are public (the repository made public, or releases published to a public repository).
+- The updater uses Windows' own TLS (schannel) rather than rustls, whose `ring` dependency is ISC-licensed, outside CLAUDE.md rule 7.

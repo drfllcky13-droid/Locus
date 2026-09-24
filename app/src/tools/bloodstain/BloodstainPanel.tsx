@@ -55,7 +55,7 @@ const DEFAULT_PARAMS: BloodstainParameters = {
   include_not_upward: null,
   reference: "project north (+y)",
   reference_deg: 0,
-  floor_convergence: false,
+  floor_convergence: true,
 };
 
 const fmt = (m: Measured, digits = 1) =>

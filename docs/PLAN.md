@@ -24,6 +24,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 - **Phase 11 (portable case package), closed 2026-09-24.** A folder with the program itself as a read-only viewer, the case data, freshly printed reports and the renders, all hashed in a manifest whose hash is the package hash ([case-package.md](methods/case-package.md)).
 - **Phase 13 (validation), closed 2026-09-24.** `locus-validate run` prints the validation report for every release ([validation.md](methods/validation.md)), and the physical study protocol is written ([validation-protocol.md](methods/validation-protocol.md)). The full run found the hand-measured bloodstain region under-covering (81 %); bloodstain method version 2 corrects the bias (coverage now 97 %).
 - **Phase 14 (polish), closed 2026-09-24.** Offline signed licences with Diagram, Analyst and Analyst Plus tiers, crash reports that stay on the machine with paths removed, a "?" beside each tool opening its method note, guides for indoor, crash and fire scenes that tick themselves, and a generated sample case ([licensing.md](methods/licensing.md)). The signed MSI, updates and the 30-minute new-user test wait on Addison.
+- **Installer and updates, 2026-09-24:** MSI built and checked; a `v*` tag publishes a release with the MSI, update files and validation report; the in-app updater is in, waiting on the signing secret and public releases.
 - **Next:** every planned phase is built. What remains is Addison's list and the Blocked items.
 - **Waiting on Addison:** his to-do list is [ADDISON-TODO.md](ADDISON-TODO.md) (also summarised under Open questions).
 
@@ -121,7 +122,7 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 **Bloodstain** ([bloodstain.md](methods/bloodstain.md))
 - The fit in angle space is the primary origin, with the conventional ray-distance point alongside (validation coverage 8/8 against 0/8).
 - Wall stains need a clearly upward direction (beyond 2σ).
-- Floor stains give a separate, optional 2D convergence.
+- Floor stains give a separate 2D convergence in plan, on by default (the lab uses it; Addison, 2026-09-24).
 - Four-point perspective correction warns when the correction is large.
 - Near-round stains are flagged when they dominate.
 
@@ -185,15 +186,11 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 
 ## 5. Open questions for Addison
 
-- **Textbook worked examples** for skid, yaw and momentum: which text (Fricke/Northwestern; Daily et al./IPTM; Brach & Brach/SAE), and the inputs and published answers for 3–5 examples.
+Answered 2026-09-24 (DECISIONS): no licence needed, in-house use, name Lotus, identifier `io.github.drfllcky13-droid.lotus`, releases on GitHub Releases, WiX approved, no angle convention (both printed), floor convergence used (on by default), no Evidence.com, CI stays free, his unit runs the validation studies. Still open, on [ADDISON-TODO.md](ADDISON-TODO.md):
+- **Textbook worked examples** from Fricke (Northwestern): the inputs and published answers for 3–5 skid, yaw and momentum examples.
 - **The physical print check:** measure a 1:100 print with a ruler.
-- **A case package on a clean machine:** open a package on a Windows PC that has never had Lotus, as a standard user, from a USB drive.
+- **A case package on a clean machine,** as a standard user, from a USB drive.
 - **A mid-range GPU run,** for example on an RTX 3060 or a GTX 1660.
-- **The publisher domain** for the bundle identifier, needed before the first signed release.
-- **The lab's trajectory angle convention,** and whether the plan-view convergence of floor stains is used.
-- **GitHub Actions minutes and billing.**
-- **Legal review** of THIRD_PARTY_NOTICES before any commercial release.
-- **The final product name** ("Lotus" is a working name) and commercial intent.
-- **Physical validation studies:** who runs them, and when.
-- **Evidence.com integration:** whether to pursue it.
+- **The new-user test:** the indoor guide on the sample case in under 30 minutes.
+- **Physical validation studies:** when.
 - **A recorded conflict, resolved by the repo.** The handover prompt described the heavy tests as running per push on Linux. The CI (2026-09-23) runs them only on release tags and on runs by hand, to save minutes. The repo's newer record stands; say if you want them per push.
