@@ -1,3 +1,4 @@
+import { useReadOnly } from "../readOnly";
 import { ExportPanel } from "../export/ExportPanel";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -49,6 +50,7 @@ export function Viewport({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Engine | null>(null);
+  const readOnly = useReadOnly();
   const [scene, setScene] = useState<SceneData | null>(null);
   const [state, setState] = useState<StateView | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -424,72 +426,76 @@ export function Viewport({
             }}
             onNotice={onNotice}
           />
-          <ExportPanel
-            key={`x${project.root}`}
-            scans={shownScene?.scans ?? []}
-            diagrams={diagrams}
-            onNotice={onNotice}
-          />
-          <TrajectoryPanel
-            key={`t${project.root}`}
-            engine={getEngine}
-            photos={project.evidence.filter((e) => e.contents.images.length > 0)}
-            origin={shownScene?.origin.join() ?? ""}
-            requestPick={(hint, then) => {
-              setTool("orbit");
-              setPickRequest({ hint, then });
-            }}
-            onNotice={onNotice}
-          />
-          <BloodstainPanel
-            key={`b${project.root}`}
-            engine={getEngine}
-            origin={shownScene?.origin.join() ?? ""}
-            requestPick={(hint, then) => {
-              setTool("orbit");
-              setPickRequest({ hint, then });
-            }}
-            onNotice={onNotice}
-          />
-          <CameraPanel
-            key={`c${project.root}`}
-            engine={getEngine}
-            origin={shownScene?.origin.join() ?? ""}
-            requestPick={(hint, then) => {
-              setTool("orbit");
-              setPickRequest({ hint, then });
-            }}
-            onNotice={onNotice}
-          />
-          <WitnessPanel
-            key={`w${project.root}`}
-            engine={getEngine}
-            origin={shownScene?.origin.join() ?? ""}
-            requestPick={(hint, then) => {
-              setTool("orbit");
-              setPickRequest({ hint, then });
-            }}
-            onNotice={onNotice}
-          />
-          <PhotoPanel
-            key={`p${project.root}`}
-            requestPick={(hint, then) => {
-              setTool("orbit");
-              setPickRequest({ hint, then });
-            }}
-            onNotice={onNotice}
-          />
-          <CrashPanel
-            key={`x${project.root}`}
-            engine={getEngine}
-            origin={shownScene?.origin.join() ?? ""}
-            scans={shownScene?.scans ?? []}
-            requestPick={(hint, then) => {
-              setTool("orbit");
-              setPickRequest({ hint, then });
-            }}
-            onNotice={onNotice}
-          />
+          {!readOnly && (
+            <>
+              <ExportPanel
+                key={`x${project.root}`}
+                scans={shownScene?.scans ?? []}
+                diagrams={diagrams}
+                onNotice={onNotice}
+              />
+              <TrajectoryPanel
+                key={`t${project.root}`}
+                engine={getEngine}
+                photos={project.evidence.filter((e) => e.contents.images.length > 0)}
+                origin={shownScene?.origin.join() ?? ""}
+                requestPick={(hint, then) => {
+                  setTool("orbit");
+                  setPickRequest({ hint, then });
+                }}
+                onNotice={onNotice}
+              />
+              <BloodstainPanel
+                key={`b${project.root}`}
+                engine={getEngine}
+                origin={shownScene?.origin.join() ?? ""}
+                requestPick={(hint, then) => {
+                  setTool("orbit");
+                  setPickRequest({ hint, then });
+                }}
+                onNotice={onNotice}
+              />
+              <CameraPanel
+                key={`c${project.root}`}
+                engine={getEngine}
+                origin={shownScene?.origin.join() ?? ""}
+                requestPick={(hint, then) => {
+                  setTool("orbit");
+                  setPickRequest({ hint, then });
+                }}
+                onNotice={onNotice}
+              />
+              <WitnessPanel
+                key={`w${project.root}`}
+                engine={getEngine}
+                origin={shownScene?.origin.join() ?? ""}
+                requestPick={(hint, then) => {
+                  setTool("orbit");
+                  setPickRequest({ hint, then });
+                }}
+                onNotice={onNotice}
+              />
+              <PhotoPanel
+                key={`p${project.root}`}
+                requestPick={(hint, then) => {
+                  setTool("orbit");
+                  setPickRequest({ hint, then });
+                }}
+                onNotice={onNotice}
+              />
+              <CrashPanel
+                key={`x${project.root}`}
+                engine={getEngine}
+                origin={shownScene?.origin.join() ?? ""}
+                scans={shownScene?.scans ?? []}
+                requestPick={(hint, then) => {
+                  setTool("orbit");
+                  setPickRequest({ hint, then });
+                }}
+                onNotice={onNotice}
+              />
+            </>
+          )}
         </ScenePanel>
       )}
     </div>

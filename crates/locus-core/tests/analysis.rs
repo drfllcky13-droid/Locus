@@ -87,3 +87,34 @@ fn printing_doesnt_move_the_state_head_and_a_record_traces_to_its_entry() {
         .unwrap();
     assert_ne!(p.state_head().unwrap().unwrap().hash, head.hash);
 }
+
+#[test]
+fn a_read_only_copy_refuses_every_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut p = Project::create(&dir.path().join("a.locus"), "A", "Examiner").unwrap();
+    let rec = json!({ "summary": "x" });
+    p.add_analysis("trajectory", "trajectory/1", "Shot 1", &rec, None)
+        .unwrap();
+    let copy = dir.path().join("pkg");
+    std::fs::create_dir_all(&copy).unwrap();
+    p.copy_database(&copy.join("project.sqlite")).unwrap();
+    let mut r = Project::open_read_only(&copy).unwrap();
+    assert!(r.read_only());
+    assert_eq!(r.analyses().unwrap().len(), 1);
+    let before = std::fs::read(copy.join("project.sqlite")).unwrap();
+    let e = r
+        .add_analysis("trajectory", "trajectory/1", "Shot 2", &rec, None)
+        .unwrap_err();
+    assert!(e.to_string().contains("read-only"), "{e}");
+    assert!(r.record_export("x", "p", "h", 1, json!({})).is_err());
+    // Even straight SQL can't write: the connection itself is read-only.
+    assert!(Connection::open_with_flags(
+        copy.join("project.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+    )
+    .unwrap()
+    .execute("DELETE FROM analyses", [])
+    .is_err());
+    drop(r);
+    assert_eq!(std::fs::read(copy.join("project.sqlite")).unwrap(), before);
+}

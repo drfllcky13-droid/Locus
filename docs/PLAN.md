@@ -13,7 +13,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 
 *Updated 2026-09-23.*
 
-- **Done.** Phases 0–10 are done. Phase 7's textbook-case criterion is blocked (see Open questions).
+- **Done.** Phases 0–11 are done. Phase 11's clean-machine check is under Open questions. Phase 7's textbook-case criterion is blocked (see Open questions).
 - **Phase 9 (animation), closed 2026-09-23.** It covers:
   - the motion model with provenance, time zero and plausibility checks;
   - the timeline UI;
@@ -21,7 +21,8 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
   - the time–distance–speed report;
   - MP4 render with read-back checks.
 - **Phase 10 (reports and exports), closed 2026-09-24.** Reports are reproducible and traceable. There is a case report, and diagrams export as PNG, TIFF and DXF, point clouds as E57, LAS and LAZ, the scene as glTF, and measurements as CSV, all hashed and logged ([exports.md](methods/exports.md)).
-- **Next:** Phase 11, the portable case package.
+- **Phase 11 (portable case package), closed 2026-09-24.** A folder with the program itself as a read-only viewer, the case data, freshly printed reports and the renders, all hashed in a manifest whose hash is the package hash ([case-package.md](methods/case-package.md)).
+- **Next:** Phase 13, validation.
 - **Waiting on Addison:** see Open questions.
 
 ## 1. Goal and scope
@@ -162,11 +163,10 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 
 ## 4. Remaining work, in recommended order
 
-1. **Phase 11, the portable case package.** Read-only, runs from a USB drive with no install or admin rights, and shows the package hash.
-2. **Phase 13, validation.**
+1. **Phase 13, validation.**
    - Consolidate the per-tool validation into one `locus-validate` run and PDF, regenerated for every release.
    - Write `docs/methods/validation-protocol.md` for physical studies (staged scenes, several blind examiners), since synthetic tests alone won't satisfy a court.
-3. **Phase 14, polish.**
+2. **Phase 14, polish.**
    - Guided workflows (indoor crime scene, fatal crash, fire scene), contextual help and a sample project.
    - Tier licensing.
    - A signed MSI installer, auto-update, and crash reporting that never uploads case data.
@@ -185,6 +185,7 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 
 - **Textbook worked examples** for skid, yaw and momentum: which text (Fricke/Northwestern; Daily et al./IPTM; Brach & Brach/SAE), and the inputs and published answers for 3–5 examples.
 - **The physical print check:** measure a 1:100 print with a ruler.
+- **A case package on a clean machine:** open a package on a Windows PC that has never had Locus, as a standard user, from a USB drive.
 - **A mid-range GPU run,** for example on an RTX 3060 or a GTX 1660.
 - **The publisher domain** for the bundle identifier, needed before the first signed release.
 - **The lab's trajectory angle convention,** and whether the plan-view convergence of floor stains is used.

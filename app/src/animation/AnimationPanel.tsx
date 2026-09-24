@@ -40,6 +40,7 @@ import {
 } from "./model";
 import { RenderSection } from "./RenderSection";
 import { showAt } from "./show";
+import { useReadOnly } from "../readOnly";
 
 type Model = Extract<SceneObject, { kind: "model" }>;
 type P3 = [number, number, number];
@@ -921,6 +922,7 @@ export function AnimationPanel({
     );
     return { ...a, movers, views };
   }, [a]);
+  const readOnly = useReadOnly();
   const [through, setThrough] = useState<string>("");
   // Bumped after a render, which leaves the view at its last frame.
   const [redraw, setRedraw] = useState(0);
@@ -1037,6 +1039,7 @@ export function AnimationPanel({
     [engine],
   );
 
+  if (!a && readOnly) return null;
   if (!a)
     return (
       <section className="panel-section anim">
@@ -1057,38 +1060,48 @@ export function AnimationPanel({
   return (
     <section className="panel-section anim">
       <h3>Animation</h3>
-      <label>
-        Time zero is
-        <input
-          placeholder="The event, e.g. EDR trigger, impact"
-          value={a.time_zero.event}
-          className={a.time_zero.event.trim() ? "" : "anim-missing"}
-          onChange={(e) => set({ ...a, time_zero: { ...a.time_zero, event: e.target.value } })}
-        />
-      </label>
-      <label>
-        Known from
-        <input
-          placeholder="How it is known, e.g. the EDR record"
-          value={a.time_zero.basis}
-          className={a.time_zero.basis.trim() ? "" : "anim-missing"}
-          onChange={(e) => set({ ...a, time_zero: { ...a.time_zero, basis: e.target.value } })}
-        />
-      </label>
-      <div className="row">
-        {num("From (s)", a.from, (from) => from < a.to && set({ ...a, from }))}
-        {num("To (s)", a.to, (to) => to > a.from && set({ ...a, to }))}
-      </div>
-      <label>
-        Lighting
-        <select
-          value={a.lighting}
-          onChange={(e) => set({ ...a, lighting: e.target.value as Animation["lighting"] })}
-        >
-          <option value="daylight">Daylight</option>
-          <option value="low_light">Low light (dusk, dawn, night, artificial only)</option>
-        </select>
-      </label>
+      {readOnly ? (
+        <p className="muted">
+          Time zero: {a.time_zero.event || "not stated"} (known from{" "}
+          {a.time_zero.basis || "not stated"}). Timeline {a.from.toFixed(2)} to {a.to.toFixed(2)} s;{" "}
+          {a.lighting === "low_light" ? "low light" : "daylight"}.
+        </p>
+      ) : (
+        <>
+          <label>
+            Time zero is
+            <input
+              placeholder="The event, e.g. EDR trigger, impact"
+              value={a.time_zero.event}
+              className={a.time_zero.event.trim() ? "" : "anim-missing"}
+              onChange={(e) => set({ ...a, time_zero: { ...a.time_zero, event: e.target.value } })}
+            />
+          </label>
+          <label>
+            Known from
+            <input
+              placeholder="How it is known, e.g. the EDR record"
+              value={a.time_zero.basis}
+              className={a.time_zero.basis.trim() ? "" : "anim-missing"}
+              onChange={(e) => set({ ...a, time_zero: { ...a.time_zero, basis: e.target.value } })}
+            />
+          </label>
+          <div className="row">
+            {num("From (s)", a.from, (from) => from < a.to && set({ ...a, from }))}
+            {num("To (s)", a.to, (to) => to > a.from && set({ ...a, to }))}
+          </div>
+          <label>
+            Lighting
+            <select
+              value={a.lighting}
+              onChange={(e) => set({ ...a, lighting: e.target.value as Animation["lighting"] })}
+            >
+              <option value="daylight">Daylight</option>
+              <option value="low_light">Low light (dusk, dawn, night, artificial only)</option>
+            </select>
+          </label>
+        </>
+      )}
 
       <div className="row">
         <button className="primary" disabled={!ev} onClick={() => setPlaying((p) => !p)}>
@@ -1150,64 +1163,71 @@ export function AnimationPanel({
         </p>
       )}
 
-      <h4>Movers</h4>
-      {a.movers.map((m) => (
-        <button
-          key={m.id}
-          className={m.id === editing ? "primary" : ""}
-          onClick={() => setEditing(m.id === editing ? null : m.id)}
-        >
-          {m.name}
-        </button>
-      ))}
-      <button
-        onClick={() => {
-          const id = crypto.randomUUID();
-          const n = a.movers.length + 1;
-          set({
-            ...a,
-            movers: [
-              ...a.movers,
-              {
-                id,
-                name: `Mover ${n}`,
-                object: null,
-                kind: { kind: "vehicle", wheelbase: 2.7 },
-                path: [],
-                shape: "smooth",
-                path_source: assumption(),
-                start: a.from,
-                offset: 0,
-                segments: [],
-                friction: null,
-              },
-            ],
-          });
-          setEditing(id);
-        }}
-      >
-        Add a mover
-      </button>
-      {sel && (
-        <MoverEdit
-          mover={sel}
-          onChange={upd}
-          onRemove={() => {
-            set({ ...a, movers: a.movers.filter((x) => x.id !== sel.id) });
-            setEditing(null);
-          }}
-          models={models}
-          analyses={analyses}
-          evidence={evidence}
-          requestPick={requestPick}
-          onNotice={onNotice}
-          setPath={(path) =>
-            setAnimation(
-              (x) =>
-                x && { ...x, movers: x.movers.map((y) => (y.id === sel.id ? { ...y, path } : y)) },
-            )
-          }
-        />
+      {!readOnly && (
+        <>
+          <h4>Movers</h4>
+          {a.movers.map((m) => (
+            <button
+              key={m.id}
+              className={m.id === editing ? "primary" : ""}
+              onClick={() => setEditing(m.id === editing ? null : m.id)}
+            >
+              {m.name}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              const id = crypto.randomUUID();
+              const n = a.movers.length + 1;
+              set({
+                ...a,
+                movers: [
+                  ...a.movers,
+                  {
+                    id,
+                    name: `Mover ${n}`,
+                    object: null,
+                    kind: { kind: "vehicle", wheelbase: 2.7 },
+                    path: [],
+                    shape: "smooth",
+                    path_source: assumption(),
+                    start: a.from,
+                    offset: 0,
+                    segments: [],
+                    friction: null,
+                  },
+                ],
+              });
+              setEditing(id);
+            }}
+          >
+            Add a mover
+          </button>
+          {sel && (
+            <MoverEdit
+              mover={sel}
+              onChange={upd}
+              onRemove={() => {
+                set({ ...a, movers: a.movers.filter((x) => x.id !== sel.id) });
+                setEditing(null);
+              }}
+              models={models}
+              analyses={analyses}
+              evidence={evidence}
+              requestPick={requestPick}
+              onNotice={onNotice}
+              setPath={(path) =>
+                setAnimation(
+                  (x) =>
+                    x && {
+                      ...x,
+                      movers: x.movers.map((y) => (y.id === sel.id ? { ...y, path } : y)),
+                    },
+                )
+              }
+            />
+          )}
+        </>
       )}
       <h4>Views</h4>
       <label>
@@ -1223,300 +1243,314 @@ export function AnimationPanel({
             ))}
         </select>
       </label>
-      {a.views.map((v) => (
-        <button
-          key={v.id}
-          className={v.id === editingView ? "primary" : ""}
-          onClick={() => setEditingView(v.id === editingView ? null : v.id)}
-        >
-          {v.name}
-        </button>
-      ))}
-      <label>
-        Add a view
-        <select
-          value=""
-          onChange={(e) => {
-            const kind = e.target.value;
-            const id = crypto.randomUUID();
-            const cam = engine()?.cameraProject();
-            const here = (cam?.target ?? [0, 0, 0]) as P3;
-            const vehicle = a.movers.find((m) => m.kind.kind === "vehicle");
-            const first = a.movers[0];
-            const n = a.views.length + 1;
-            let v: View | null = null;
-            if (kind === "driver" && vehicle && vehicle.kind.kind === "vehicle") {
-              const eye = defaultDriverEye(vehicle.kind.wheelbase);
-              v = {
-                id,
-                name: `Driver of ${vehicle.name}`,
-                kind: { kind: "driver", mover: vehicle.id, eye },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption(
-                  `default eye position (${eye.map((x) => x.toFixed(2)).join(", ")} m forward, left, up from the rear axle): a typical driver's seat, not measured`,
-                ),
-              };
-            } else if (kind === "witness")
-              v = {
-                id,
-                name: `Witness ${n}`,
-                kind: {
-                  kind: "witness",
-                  floor: here,
-                  eye_height: 1.6,
-                  target: here,
-                  target_mover: first?.id ?? null,
-                },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption("default eye height 1.6 m, not measured"),
-              };
-            else if (kind === "orbit")
-              v = {
-                id,
-                name: `Orbit ${n}`,
-                kind: { kind: "orbit", centre: here, radius: 20, height: 10, period: 20 },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption("presentation camera"),
-              };
-            else if (kind === "follow" && first)
-              v = {
-                id,
-                name: `Following ${first.name}`,
-                kind: { kind: "follow", mover: first.id, offset: [-8, 0, 3], look_ahead: 5 },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption("presentation camera"),
-              };
-            else if (kind === "fly_through")
-              v = {
-                id,
-                name: `Fly-through ${n}`,
-                kind: {
-                  kind: "fly_through",
-                  points: [],
-                  shape: "smooth",
-                  speed: 3,
-                  start: a.from,
-                  look_ahead: 5,
-                  target: null,
-                },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption("presentation camera"),
-              };
-            else if (kind.startsWith("mirror") && vehicle && vehicle.kind.kind === "vehicle") {
-              const eye = defaultDriverEye(vehicle.kind.wheelbase);
-              const side = kind === "mirror_left" ? 1 : -1;
-              const mirror: P3 = [eye[0] + 0.7, side * 1.0, 1.05];
-              v = {
-                id,
-                name: `${side > 0 ? "Left" : "Right"} mirror of ${vehicle.name}`,
-                kind: {
-                  kind: "mirror",
-                  mover: vehicle.id,
-                  eye,
-                  mirror,
-                  normal: mirrorNormal(eye, mirror, 10),
-                  width: 0.18,
-                },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption(
-                  "default eye and mirror positions (a typical seat; mirror 0.7 m ahead of the eye, 1.0 m out, 0.18 m wide), not measured",
-                ),
-              };
-            } else if (kind === "panorama")
-              v = {
-                id,
-                name: `360° ${n}`,
-                kind: {
-                  kind: "panorama",
-                  at: [here[0], here[1], here[2] + 1.6],
-                  mover: null,
-                  eye: [1.2, 0.35, 1.2],
-                },
-                hfov_deg: HUMAN_HFOV_DEG,
-                source: assumption("presentation camera"),
-              };
-            if (!v) return onNotice("Add a mover (a vehicle, for a driver or mirror view) first.");
-            set({ ...a, views: [...a.views, v] });
-            setEditingView(id);
-          }}
-        >
-          <option value="">Choose…</option>
-          <option value="driver">Driver (from a vehicle)</option>
-          <option value="witness">Witness (standing at a point)</option>
-          <option value="orbit">Orbit (presentation)</option>
-          <option value="follow">Follow a mover (presentation)</option>
-          <option value="fly_through">Fly-through (presentation)</option>
-          <option value="mirror_left">Left mirror (from a vehicle)</option>
-          <option value="mirror_right">Right mirror (from a vehicle)</option>
-          <option value="panorama">360° (for a 360° viewer)</option>
-        </select>
-      </label>
-      {(() => {
-        const v = a.views.find((x) => x.id === editingView);
-        return (
-          v && (
-            <ViewEdit
-              view={v}
-              movers={a.movers}
-              onChange={(nv) => set({ ...a, views: a.views.map((x) => (x.id === nv.id ? nv : x)) })}
-              onRemove={() => {
-                set({ ...a, views: a.views.filter((x) => x.id !== v.id) });
-                setEditingView(null);
-                if (through === v.id) setThrough("");
+      {!readOnly && (
+        <>
+          {a.views.map((v) => (
+            <button
+              key={v.id}
+              className={v.id === editingView ? "primary" : ""}
+              onClick={() => setEditingView(v.id === editingView ? null : v.id)}
+            >
+              {v.name}
+            </button>
+          ))}
+          <label>
+            Add a view
+            <select
+              value=""
+              onChange={(e) => {
+                const kind = e.target.value;
+                const id = crypto.randomUUID();
+                const cam = engine()?.cameraProject();
+                const here = (cam?.target ?? [0, 0, 0]) as P3;
+                const vehicle = a.movers.find((m) => m.kind.kind === "vehicle");
+                const first = a.movers[0];
+                const n = a.views.length + 1;
+                let v: View | null = null;
+                if (kind === "driver" && vehicle && vehicle.kind.kind === "vehicle") {
+                  const eye = defaultDriverEye(vehicle.kind.wheelbase);
+                  v = {
+                    id,
+                    name: `Driver of ${vehicle.name}`,
+                    kind: { kind: "driver", mover: vehicle.id, eye },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption(
+                      `default eye position (${eye.map((x) => x.toFixed(2)).join(", ")} m forward, left, up from the rear axle): a typical driver's seat, not measured`,
+                    ),
+                  };
+                } else if (kind === "witness")
+                  v = {
+                    id,
+                    name: `Witness ${n}`,
+                    kind: {
+                      kind: "witness",
+                      floor: here,
+                      eye_height: 1.6,
+                      target: here,
+                      target_mover: first?.id ?? null,
+                    },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption("default eye height 1.6 m, not measured"),
+                  };
+                else if (kind === "orbit")
+                  v = {
+                    id,
+                    name: `Orbit ${n}`,
+                    kind: { kind: "orbit", centre: here, radius: 20, height: 10, period: 20 },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption("presentation camera"),
+                  };
+                else if (kind === "follow" && first)
+                  v = {
+                    id,
+                    name: `Following ${first.name}`,
+                    kind: { kind: "follow", mover: first.id, offset: [-8, 0, 3], look_ahead: 5 },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption("presentation camera"),
+                  };
+                else if (kind === "fly_through")
+                  v = {
+                    id,
+                    name: `Fly-through ${n}`,
+                    kind: {
+                      kind: "fly_through",
+                      points: [],
+                      shape: "smooth",
+                      speed: 3,
+                      start: a.from,
+                      look_ahead: 5,
+                      target: null,
+                    },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption("presentation camera"),
+                  };
+                else if (kind.startsWith("mirror") && vehicle && vehicle.kind.kind === "vehicle") {
+                  const eye = defaultDriverEye(vehicle.kind.wheelbase);
+                  const side = kind === "mirror_left" ? 1 : -1;
+                  const mirror: P3 = [eye[0] + 0.7, side * 1.0, 1.05];
+                  v = {
+                    id,
+                    name: `${side > 0 ? "Left" : "Right"} mirror of ${vehicle.name}`,
+                    kind: {
+                      kind: "mirror",
+                      mover: vehicle.id,
+                      eye,
+                      mirror,
+                      normal: mirrorNormal(eye, mirror, 10),
+                      width: 0.18,
+                    },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption(
+                      "default eye and mirror positions (a typical seat; mirror 0.7 m ahead of the eye, 1.0 m out, 0.18 m wide), not measured",
+                    ),
+                  };
+                } else if (kind === "panorama")
+                  v = {
+                    id,
+                    name: `360° ${n}`,
+                    kind: {
+                      kind: "panorama",
+                      at: [here[0], here[1], here[2] + 1.6],
+                      mover: null,
+                      eye: [1.2, 0.35, 1.2],
+                    },
+                    hfov_deg: HUMAN_HFOV_DEG,
+                    source: assumption("presentation camera"),
+                  };
+                if (!v)
+                  return onNotice("Add a mover (a vehicle, for a driver or mirror view) first.");
+                set({ ...a, views: [...a.views, v] });
+                setEditingView(id);
               }}
-              analyses={analyses}
-              evidence={evidence}
-              pickPoint={(hint, then) =>
-                requestPick(hint, (hit) =>
-                  api.pickResolve(hit).then(
-                    (r) => then(r.project),
-                    (e) => onNotice(String(e)),
-                  ),
-                )
-              }
+            >
+              <option value="">Choose…</option>
+              <option value="driver">Driver (from a vehicle)</option>
+              <option value="witness">Witness (standing at a point)</option>
+              <option value="orbit">Orbit (presentation)</option>
+              <option value="follow">Follow a mover (presentation)</option>
+              <option value="fly_through">Fly-through (presentation)</option>
+              <option value="mirror_left">Left mirror (from a vehicle)</option>
+              <option value="mirror_right">Right mirror (from a vehicle)</option>
+              <option value="panorama">360° (for a 360° viewer)</option>
+            </select>
+          </label>
+          {(() => {
+            const v = a.views.find((x) => x.id === editingView);
+            return (
+              v && (
+                <ViewEdit
+                  view={v}
+                  movers={a.movers}
+                  onChange={(nv) =>
+                    set({ ...a, views: a.views.map((x) => (x.id === nv.id ? nv : x)) })
+                  }
+                  onRemove={() => {
+                    set({ ...a, views: a.views.filter((x) => x.id !== v.id) });
+                    setEditingView(null);
+                    if (through === v.id) setThrough("");
+                  }}
+                  analyses={analyses}
+                  evidence={evidence}
+                  pickPoint={(hint, then) =>
+                    requestPick(hint, (hit) =>
+                      api.pickResolve(hit).then(
+                        (r) => then(r.project),
+                        (e) => onNotice(String(e)),
+                      ),
+                    )
+                  }
+                />
+              )
+            );
+          })()}
+          <h4>Time, distance and speed report</h4>
+          {num("Every (s)", tds.step, (step) => step >= 0.01 && setTds({ ...tds, step }), 0.1)}
+          <div className="row">
+            {[0, 1].map((i) => (
+              <select
+                key={i}
+                value={pair[i]}
+                onChange={(e) =>
+                  setPair(i === 0 ? [e.target.value, pair[1]] : [pair[0], e.target.value])
+                }
+              >
+                <option value="">Mover…</option>
+                {a.movers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <button
+              disabled={!pair[0] || !pair[1] || pair[0] === pair[1]}
+              onClick={() => {
+                setTds({ ...tds, pairs: [...tds.pairs, pair] });
+                setPair(["", ""]);
+              }}
+            >
+              Add pair
+            </button>
+          </div>
+          {tds.pairs.map(([x, y], i) => (
+            <p key={i} className="muted">
+              Distance {a.movers.find((m) => m.id === x)?.name} to{" "}
+              {a.movers.find((m) => m.id === y)?.name}{" "}
+              <button
+                onClick={() => setTds({ ...tds, pairs: tds.pairs.filter((_, j) => j !== i) })}
+              >
+                Remove
+              </button>
+            </p>
+          ))}
+          <label className="inline">
+            <input
+              type="checkbox"
+              checked={tds.closing}
+              onChange={(e) => setTds({ ...tds, closing: e.target.checked })}
             />
-          )
-        );
-      })()}
-      <h4>Time, distance and speed report</h4>
-      {num("Every (s)", tds.step, (step) => step >= 0.01 && setTds({ ...tds, step }), 0.1)}
-      <div className="row">
-        {[0, 1].map((i) => (
-          <select
-            key={i}
-            value={pair[i]}
-            onChange={(e) =>
-              setPair(i === 0 ? [e.target.value, pair[1]] : [pair[0], e.target.value])
+            With closing speed
+          </label>
+          <button
+            onClick={() =>
+              requestPick("Click the point (a conflict point, a stop line).", (hit) =>
+                api.pickResolve(hit).then(
+                  (r) =>
+                    setTds((x) => ({
+                      ...x,
+                      points: [
+                        ...x.points,
+                        {
+                          name: `Point ${x.points.length + 1}`,
+                          position: r.project,
+                          source: assumption(),
+                        },
+                      ],
+                    })),
+                  (e) => onNotice(String(e)),
+                ),
+              )
             }
           >
-            <option value="">Mover…</option>
-            {a.movers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        ))}
-        <button
-          disabled={!pair[0] || !pair[1] || pair[0] === pair[1]}
-          onClick={() => {
-            setTds({ ...tds, pairs: [...tds.pairs, pair] });
-            setPair(["", ""]);
-          }}
-        >
-          Add pair
-        </button>
-      </div>
-      {tds.pairs.map(([x, y], i) => (
-        <p key={i} className="muted">
-          Distance {a.movers.find((m) => m.id === x)?.name} to{" "}
-          {a.movers.find((m) => m.id === y)?.name}{" "}
-          <button onClick={() => setTds({ ...tds, pairs: tds.pairs.filter((_, j) => j !== i) })}>
-            Remove
+            Add a point (time and distance to it)
           </button>
-        </p>
-      ))}
-      <label className="inline">
-        <input
-          type="checkbox"
-          checked={tds.closing}
-          onChange={(e) => setTds({ ...tds, closing: e.target.checked })}
-        />
-        With closing speed
-      </label>
-      <button
-        onClick={() =>
-          requestPick("Click the point (a conflict point, a stop line).", (hit) =>
-            api.pickResolve(hit).then(
-              (r) =>
-                setTds((x) => ({
-                  ...x,
-                  points: [
-                    ...x.points,
-                    {
-                      name: `Point ${x.points.length + 1}`,
-                      position: r.project,
-                      source: assumption(),
-                    },
-                  ],
-                })),
-              (e) => onNotice(String(e)),
-            ),
-          )
-        }
-      >
-        Add a point (time and distance to it)
-      </button>
-      {tds.points.map((p, i) => (
-        <div key={i} className="dg-built">
-          <label>
-            Point name
-            <input
-              value={p.name}
-              onChange={(e) =>
-                setTds({
-                  ...tds,
-                  points: tds.points.map((q, j) => (j === i ? { ...q, name: e.target.value } : q)),
-                })
+          {tds.points.map((p, i) => (
+            <div key={i} className="dg-built">
+              <label>
+                Point name
+                <input
+                  value={p.name}
+                  onChange={(e) =>
+                    setTds({
+                      ...tds,
+                      points: tds.points.map((q, j) =>
+                        j === i ? { ...q, name: e.target.value } : q,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <SourceEdit
+                label="Why this point"
+                value={p.source}
+                onChange={(source) =>
+                  setTds({
+                    ...tds,
+                    points: tds.points.map((q, j) => (j === i ? { ...q, source } : q)),
+                  })
+                }
+                analyses={analyses}
+                evidence={evidence}
+              />
+              <button
+                onClick={() => setTds({ ...tds, points: tds.points.filter((_, j) => j !== i) })}
+              >
+                Remove point
+              </button>
+            </div>
+          ))}
+          <button
+            className="primary"
+            disabled={saving || !ev || !!error}
+            title={saving ? "Waiting for the scene to save" : undefined}
+            onClick={async () => {
+              const name = window.prompt(
+                "Name the report:",
+                `Time, distance and speed ${reports.length + 1}`,
+              );
+              if (!name) return;
+              try {
+                const r = await api.animationSave(sceneId, name, tds);
+                setReports((x) => [...x, r]);
+                const path = await saveDialog({
+                  defaultPath: `${name}.pdf`,
+                  filters: [{ name: "PDF", extensions: ["pdf"] }],
+                });
+                if (!path)
+                  return onNotice(`Saved as analysis ${r.id} (recorded in the audit log).`);
+                const sha = await api.analysisReport(r.id, path);
+                onNotice(
+                  `Saved as analysis ${r.id}; report ${path} (SHA-256 ${sha}; recorded in the audit log).`,
+                );
+              } catch (e) {
+                onNotice(String(e));
               }
-            />
-          </label>
-          <SourceEdit
-            label="Why this point"
-            value={p.source}
-            onChange={(source) =>
-              setTds({
-                ...tds,
-                points: tds.points.map((q, j) => (j === i ? { ...q, source } : q)),
-              })
-            }
-            analyses={analyses}
-            evidence={evidence}
-          />
-          <button onClick={() => setTds({ ...tds, points: tds.points.filter((_, j) => j !== i) })}>
-            Remove point
+            }}
+          >
+            Save and print the report…
           </button>
-        </div>
-      ))}
-      <button
-        className="primary"
-        disabled={saving || !ev || !!error}
-        title={saving ? "Waiting for the scene to save" : undefined}
-        onClick={async () => {
-          const name = window.prompt(
-            "Name the report:",
-            `Time, distance and speed ${reports.length + 1}`,
-          );
-          if (!name) return;
-          try {
-            const r = await api.animationSave(sceneId, name, tds);
-            setReports((x) => [...x, r]);
-            const path = await saveDialog({
-              defaultPath: `${name}.pdf`,
-              filters: [{ name: "PDF", extensions: ["pdf"] }],
-            });
-            if (!path) return onNotice(`Saved as analysis ${r.id} (recorded in the audit log).`);
-            const sha = await api.analysisReport(r.id, path);
-            onNotice(
-              `Saved as analysis ${r.id}; report ${path} (SHA-256 ${sha}; recorded in the audit log).`,
-            );
-          } catch (e) {
-            onNotice(String(e));
-          }
-        }}
-      >
-        Save and print the report…
-      </button>
-      {ready && (
-        <RenderSection
-          engine={engine}
-          a={ready}
-          models={models}
-          sceneId={sceneId}
-          saving={saving}
-          onNotice={onNotice}
-          onDone={() => setRedraw((x) => x + 1)}
-        />
+          {ready && (
+            <RenderSection
+              engine={engine}
+              a={ready}
+              models={models}
+              sceneId={sceneId}
+              saving={saving}
+              onNotice={onNotice}
+              onDone={() => setRedraw((x) => x + 1)}
+            />
+          )}
+        </>
       )}
       {ev?.limitations.map((l, i) => (
         <p key={i} className="muted">

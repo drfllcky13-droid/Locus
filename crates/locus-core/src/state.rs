@@ -124,6 +124,9 @@ impl Project {
         action: &str,
         change: impl FnOnce(&rusqlite::Transaction) -> Result<(T, Value)>,
     ) -> Result<T> {
+        if self.read_only {
+            return Err(crate::Error::ReadOnly);
+        }
         let tx = self.conn.transaction()?;
         let (out, details) = change(&tx)?;
         audit::append(&tx, &self.examiner, action, &details)?;

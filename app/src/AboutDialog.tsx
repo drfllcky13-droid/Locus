@@ -37,7 +37,14 @@ async function webgpu(): Promise<string> {
   return ["available", i.vendor, i.architecture, i.description].filter(Boolean).join(", ");
 }
 
-export function AboutDialog({ onClose }: { onClose: () => void }) {
+export function AboutDialog({
+  onClose,
+  packageHash,
+}: {
+  onClose: () => void;
+  /** Opened from a case package: its hash (the SHA-256 of its manifest). */
+  packageHash?: string;
+}) {
   const [app, setApp] = useState<{ version: string; webview: string } | null>(null);
   const [gpu] = useState(webglGpu);
   const [gpuWeb, setGpuWeb] = useState("checking…");
@@ -57,6 +64,12 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         <h2>Locus {app?.version}</h2>
         <p className="muted">Forensic scene reconstruction.</p>
         <dl className="facts">
+          {packageHash && (
+            <>
+              <dt>Case package hash</dt>
+              <dd className="hash">{packageHash}</dd>
+            </>
+          )}
           <dt>Rendering GPU</dt>
           <dd>{gpu.webgl}</dd>
           <dt>WebGL</dt>

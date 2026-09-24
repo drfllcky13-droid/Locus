@@ -10,6 +10,7 @@ mod commands;
 mod crash_cmds;
 mod diagram_cmds;
 mod export_cmds;
+mod package_cmds;
 mod photo_cmds;
 mod register_cmds;
 mod render_cmds;
@@ -82,6 +83,9 @@ fn main() {
             scene3d_cmds::animation_evaluate,
             scene3d_cmds::animation_save,
             export_cmds::case_report,
+            package_cmds::package_export,
+            package_cmds::package_open,
+            package_cmds::package_file_open,
             export_cmds::measurements_csv,
             export_cmds::pointcloud_export,
             export_cmds::export_begin,

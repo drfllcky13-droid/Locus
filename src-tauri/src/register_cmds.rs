@@ -432,98 +432,104 @@ pub async fn registration_report(app: AppHandle, id: i64, path: String) -> CmdRe
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
-        let rec = p
-            .registrations()
-            .map_err(err)?
-            .into_iter()
-            .find(|r| r.id == id)
-            .ok_or(format!("No registration {id}."))?;
-        let r = &rec.result;
-        let links: Vec<Link> = serde_json::from_value(r["links"].clone()).map_err(err)?;
-        let tests: Vec<LinkReport> = serde_json::from_value(r["reports"].clone()).map_err(err)?;
-        let verified: Vec<bool> = serde_json::from_value(r["verified"].clone()).map_err(err)?;
-        let overlap: Vec<Option<f64>> =
-            serde_json::from_value(r["extra"]["overlap"].clone()).unwrap_or_default();
-        let scans = r["scans"]
-            .as_array()
-            .ok_or("stored registration has no scans")?;
-        // Project-frame poses, in the registration's scan order. Residuals don't depend on the
-        // frame (without control the whole solution moves rigidly with the first scan).
-        let poses: Vec<Isometry3<f64>> = scans
-            .iter()
-            .map(|v| {
-                rec.poses
-                    .iter()
-                    .find(|q| {
-                        Some(q.evidence_id) == v["evidence_id"].as_i64()
-                            && Some(q.scan_idx as u64) == v["scan_idx"].as_u64()
-                    })
-                    .map(|q| from_row_major(&q.pose))
-                    .ok_or("a scan's pose is missing")
-            })
-            .collect::<Result<_, _>>()?;
-        let report = locus_register::report::build(&links, &poses, &tests, &overlap, &verified);
-        let has_control = links.iter().any(|l| l.b.is_none());
-        let audit_head = p
-            .state_head()
-            .map_err(err)?
-            .map(|e| e.hash)
-            .unwrap_or_default();
-        let record_entry = p
-            .audit_entry_for("registration.run", "id", &serde_json::json!(rec.id))
-            .map_err(err)?
-            .map_or("(not found)".into(), |e| format!("#{}, {}", e.seq, e.hash));
-        // A re-solve's settings are its edits; show the original run's settings too.
-        let mut settings_rows = settings(&rec.params);
-        if rec.params.get("edits").is_some() {
-            let mut parent = rec.parent;
-            let all = p.registrations().map_err(err)?;
-            while let Some(pid) = parent {
-                let Some(pr) = all.iter().find(|x| x.id == pid) else {
-                    break;
-                };
-                if pr.params.get("edits").is_none() {
-                    settings_rows.extend(settings(&pr.params));
-                    break;
-                }
-                parent = pr.parent;
-            }
-        }
-        let meta = locus_report::registration::Meta {
-            project: p.name().map_err(err)?,
-            registration_id: rec.id,
-            parent: rec.parent,
-            applied: rec.applied,
-            created_at: rec.created_at.clone(),
-            created_by: rec.created_by.clone(),
-            printed_by: p.examiner().to_string(),
-            printed_at: locus_core::timestamp(),
-            app_version: env!("CARGO_PKG_VERSION").into(),
-            audit_head,
-            record_entry,
-            frame: if has_control {
-                "survey control".into()
-            } else {
-                "the first scan's file pose".into()
-            },
-            settings: settings_rows,
-            scan_names: scans
-                .iter()
-                .map(|v| v["name"].as_str().unwrap_or_default().to_string())
-                .collect(),
-            scan_points: scans
-                .iter()
-                .map(|v| v["points_used"].as_u64().unwrap_or_default() as usize)
-                .collect(),
-            iterations: r["iterations"].as_u64().unwrap_or_default() as usize,
-        };
-        let out = locus_report::registration::pdf(&meta, &report)?;
-        std::fs::write(&path, &out.pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
+        let pdf = registration_pdf(p, id)?;
+        std::fs::write(&path, &pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
         let (sha256, bytes) =
-            locus_core::hash::sha256_reader(out.pdf.as_slice(), &mut |_| {}).map_err(err)?;
+            locus_core::hash::sha256_reader(pdf.as_slice(), &mut |_| {}).map_err(err)?;
         p.record_report_export(id, &path, &sha256, bytes)
             .map_err(err)?;
         Ok(sha256)
     })
     .await
+}
+
+/// A registration's PDF report, built from its stored run.
+pub(crate) fn registration_pdf(p: &locus_core::Project, id: i64) -> CmdResult<Vec<u8>> {
+    let rec = p
+        .registrations()
+        .map_err(err)?
+        .into_iter()
+        .find(|r| r.id == id)
+        .ok_or(format!("No registration {id}."))?;
+    let r = &rec.result;
+    let links: Vec<Link> = serde_json::from_value(r["links"].clone()).map_err(err)?;
+    let tests: Vec<LinkReport> = serde_json::from_value(r["reports"].clone()).map_err(err)?;
+    let verified: Vec<bool> = serde_json::from_value(r["verified"].clone()).map_err(err)?;
+    let overlap: Vec<Option<f64>> =
+        serde_json::from_value(r["extra"]["overlap"].clone()).unwrap_or_default();
+    let scans = r["scans"]
+        .as_array()
+        .ok_or("stored registration has no scans")?;
+    // Project-frame poses, in the registration's scan order. Residuals don't depend on the
+    // frame (without control the whole solution moves rigidly with the first scan).
+    let poses: Vec<Isometry3<f64>> = scans
+        .iter()
+        .map(|v| {
+            rec.poses
+                .iter()
+                .find(|q| {
+                    Some(q.evidence_id) == v["evidence_id"].as_i64()
+                        && Some(q.scan_idx as u64) == v["scan_idx"].as_u64()
+                })
+                .map(|q| from_row_major(&q.pose))
+                .ok_or("a scan's pose is missing")
+        })
+        .collect::<Result<_, _>>()?;
+    let report = locus_register::report::build(&links, &poses, &tests, &overlap, &verified);
+    let has_control = links.iter().any(|l| l.b.is_none());
+    let audit_head = p
+        .state_head()
+        .map_err(err)?
+        .map(|e| e.hash)
+        .unwrap_or_default();
+    let record_entry = p
+        .audit_entry_for("registration.run", "id", &serde_json::json!(rec.id))
+        .map_err(err)?
+        .map_or("(not found)".into(), |e| format!("#{}, {}", e.seq, e.hash));
+    // A re-solve's settings are its edits; show the original run's settings too.
+    let mut settings_rows = settings(&rec.params);
+    if rec.params.get("edits").is_some() {
+        let mut parent = rec.parent;
+        let all = p.registrations().map_err(err)?;
+        while let Some(pid) = parent {
+            let Some(pr) = all.iter().find(|x| x.id == pid) else {
+                break;
+            };
+            if pr.params.get("edits").is_none() {
+                settings_rows.extend(settings(&pr.params));
+                break;
+            }
+            parent = pr.parent;
+        }
+    }
+    let meta = locus_report::registration::Meta {
+        project: p.name().map_err(err)?,
+        registration_id: rec.id,
+        parent: rec.parent,
+        applied: rec.applied,
+        created_at: rec.created_at.clone(),
+        created_by: rec.created_by.clone(),
+        printed_by: p.examiner().to_string(),
+        printed_at: locus_core::timestamp(),
+        app_version: env!("CARGO_PKG_VERSION").into(),
+        audit_head,
+        record_entry,
+        frame: if has_control {
+            "survey control".into()
+        } else {
+            "the first scan's file pose".into()
+        },
+        settings: settings_rows,
+        scan_names: scans
+            .iter()
+            .map(|v| v["name"].as_str().unwrap_or_default().to_string())
+            .collect(),
+        scan_points: scans
+            .iter()
+            .map(|v| v["points_used"].as_u64().unwrap_or_default() as usize)
+            .collect(),
+        iterations: r["iterations"].as_u64().unwrap_or_default() as usize,
+    };
+    let out = locus_report::registration::pdf(&meta, &report)?;
+    Ok(out.pdf)
 }

@@ -42,10 +42,4 @@ Claude Code plans and builds. `docs/PLAN.md` is the single, living plan: goal an
 - Keep PLAN.md current: update it when a decision is made, a phase closes or the order changes. Log each decision in `docs/DECISIONS.md` as before, and summarise it in PLAN.md.
 - Decide routine matters yourself. Ask Addison only about PLAN.md's open questions or what is genuinely his call (licensing, legal, lab practice, spending, hardware), and batch the questions.
 - Before closing a phase, check every acceptance criterion, run it in the app, and ask how opposing counsel would attack each result.
-- End every reply with:
-
-PROJECT: <name>
-BATON → CODE / ME / IDLE
-Carry: <the single next action and who does it>
-Status: <phase + what's done, one line>
-Blocked on: <what needs the user, or "nothing">
+- Replies: work without chat commentary. The only message to Addison is a short note when a phase is done and you're ready for the next one, or a question only he can answer.

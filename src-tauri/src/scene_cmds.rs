@@ -233,6 +233,10 @@ pub struct StateView {
     point_sigma_m: f64,
 }
 
+/// Measurements made in a read-only case package: shown for the session, never saved.
+static SESSION: std::sync::Mutex<Vec<locus_core::MeasurementRecord>> =
+    std::sync::Mutex::new(Vec::new());
+
 fn state_view(s: &AppState) -> CmdResult<StateView> {
     let guard = s.project.lock().unwrap();
     let p = guard.as_ref().ok_or("Open or create a project first.")?;
@@ -244,7 +248,13 @@ fn state_view(s: &AppState) -> CmdResult<StateView> {
             .map(|(k, c)| (k.to_string(), c.revision))
             .collect(),
         octrees: p.octrees().map_err(err)?,
-        measurements: p.measurements().map_err(err)?,
+        measurements: {
+            let mut m = p.measurements().map_err(err)?;
+            if p.read_only() {
+                m.extend(SESSION.lock().unwrap().iter().cloned());
+            }
+            m
+        },
         cleanups: p.cleanups().map_err(err)?,
         point_sigma_m: p.point_sigma().map_err(err)?,
     })
@@ -391,7 +401,21 @@ pub async fn measure(app: AppHandle, kind: String, picks: Vec<Pick>) -> CmdResul
                 .iter()
                 .map(|r| json!({ "scan": r.scan.to_string(), "index": r.index, "project": r.project }))
                 .collect::<Vec<_>>());
-            p.add_measurement(&kind, points, result).map_err(err)?;
+            if p.read_only() {
+                // A viewer's measurement lives for the session only (negative ids).
+                let mut m = SESSION.lock().unwrap();
+                let id = -(m.len() as i64) - 1;
+                m.push(locus_core::MeasurementRecord {
+                    id,
+                    kind: kind.clone(),
+                    points,
+                    result,
+                    created_at: locus_core::timestamp(),
+                    created_by: "viewer (not saved)".into(),
+                });
+            } else {
+                p.add_measurement(&kind, points, result).map_err(err)?;
+            }
         }
         state_view(s)
     })
@@ -401,6 +425,10 @@ pub async fn measure(app: AppHandle, kind: String, picks: Vec<Pick>) -> CmdResul
 #[tauri::command]
 pub async fn measurement_delete(app: AppHandle, id: i64) -> CmdResult<StateView> {
     blocking(app, move |s| {
+        if id < 0 {
+            SESSION.lock().unwrap().retain(|m| m.id != id);
+            return state_view(s);
+        }
         s.project
             .lock()
             .unwrap()
@@ -591,12 +619,15 @@ pub async fn cleanup_set_active(app: AppHandle, id: i64, active: bool) -> CmdRes
 pub struct Startup {
     open: Option<String>,
     examiner: Option<String>,
+    /// The case package this program was started from, if any: it then opens read-only.
+    package: Option<String>,
 }
 
 #[tauri::command]
 pub fn startup() -> Startup {
     Startup {
         open: std::env::var("LOCUS_OPEN").ok(),
+        package: crate::package_cmds::package_dir().map(|d| d.to_string_lossy().into_owned()),
         examiner: std::env::var("LOCUS_EXAMINER").ok(),
     }
 }

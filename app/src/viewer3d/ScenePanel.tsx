@@ -1,3 +1,4 @@
+import { useReadOnly } from "../readOnly";
 import { useState } from "react";
 import { api, type CleanupRecord, type CleanupRequest, type Region, type StateView } from "../api";
 import { formatCount } from "../format";
@@ -44,6 +45,7 @@ export function ScenePanel(props: {
   children?: React.ReactNode;
 }) {
   const { scene, state, settings, setSettings } = props;
+  const readOnly = useReadOnly();
   const [k, setK] = useState(8);
   const [stdMult, setStdMult] = useState(2);
   const [voxel, setVoxel] = useState(0.01);
@@ -79,7 +81,7 @@ export function ScenePanel(props: {
 
       <h2>Tools</h2>
       <div className="toolbar">
-        {TOOLS.map((t) => (
+        {TOOLS.filter((t) => !readOnly || t.id !== "lasso").map((t) => (
           <button
             key={t.id}
             className={props.tool === t.id ? "primary" : ""}
@@ -172,132 +174,142 @@ export function ScenePanel(props: {
         </label>
       </label>
 
-      <h2>Cleanup</h2>
-      <p className="muted">
-        Cleanup never changes evidence. Each operation can be undone (Ctrl+Z) and is logged.
-      </p>
-      <div className="toolbar">
-        <button
-          disabled={settings.clip === "off"}
-          title="Turn on the clip box first"
-          onClick={() => {
-            const region = props.region();
-            if (region) void props.runCleanup({ kind: "box_delete", region });
-          }}
-        >
-          Delete inside box
-        </button>
-      </div>
-      <label className="inline">
-        Outliers: {k} neighbours, beyond
-        <input
-          type="number"
-          min={1}
-          max={64}
-          value={k}
-          aria-label="Neighbours"
-          onChange={(e) => setK(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min={0.5}
-          step={0.5}
-          value={stdMult}
-          aria-label="Standard deviations"
-          onChange={(e) => setStdMult(Number(e.target.value))}
-        />
-        σ
-        <button
-          onClick={() =>
-            void props.runCleanup({
-              kind: "outliers",
-              k,
-              std_mult: stdMult,
-              region: props.region(),
-            })
-          }
-        >
-          Remove
-        </button>
-      </label>
-      <label className="inline">
-        Voxel downsample
-        <input
-          type="number"
-          min={0.001}
-          step={0.005}
-          value={voxel}
-          aria-label="Voxel size in meters"
-          onChange={(e) => setVoxel(Number(e.target.value))}
-        />
-        m
-        <button
-          onClick={() =>
-            void props.runCleanup({ kind: "voxel", size: voxel, region: props.region() })
-          }
-        >
-          Apply
-        </button>
-      </label>
-      <p className="muted">
-        Outlier removal and downsampling work inside the clip box when it is on, otherwise on
-        everything.
-      </p>
-      {state?.cleanups.length ? (
-        <ul className="cleanups">
-          {state.cleanups.map((c) => (
-            <li key={c.id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={c.active}
-                  onChange={async (e) => {
-                    try {
-                      props.setState(await api.cleanupSetActive(c.id, e.target.checked));
-                    } catch (err) {
-                      props.onNotice(String(err));
-                    }
-                  }}
-                />
-                #{c.id} {CLEANUP_LABEL[c.kind]}:{" "}
-                {formatCount(
-                  c.scans.reduce((n, s) => n + s.removed, 0),
-                  "point",
-                )}
-                {c.active ? "" : " (undone)"}
-              </label>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
+      {!readOnly && (
+        <>
+          <h2>Cleanup</h2>
+          <p className="muted">
+            Cleanup never changes evidence. Each operation can be undone (Ctrl+Z) and is logged.
+          </p>
+          <div className="toolbar">
+            <button
+              disabled={settings.clip === "off"}
+              title="Turn on the clip box first"
+              onClick={() => {
+                const region = props.region();
+                if (region) void props.runCleanup({ kind: "box_delete", region });
+              }}
+            >
+              Delete inside box
+            </button>
+          </div>
+          <label className="inline">
+            Outliers: {k} neighbours, beyond
+            <input
+              type="number"
+              min={1}
+              max={64}
+              value={k}
+              aria-label="Neighbours"
+              onChange={(e) => setK(Number(e.target.value))}
+            />
+            <input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={stdMult}
+              aria-label="Standard deviations"
+              onChange={(e) => setStdMult(Number(e.target.value))}
+            />
+            σ
+            <button
+              onClick={() =>
+                void props.runCleanup({
+                  kind: "outliers",
+                  k,
+                  std_mult: stdMult,
+                  region: props.region(),
+                })
+              }
+            >
+              Remove
+            </button>
+          </label>
+          <label className="inline">
+            Voxel downsample
+            <input
+              type="number"
+              min={0.001}
+              step={0.005}
+              value={voxel}
+              aria-label="Voxel size in meters"
+              onChange={(e) => setVoxel(Number(e.target.value))}
+            />
+            m
+            <button
+              onClick={() =>
+                void props.runCleanup({ kind: "voxel", size: voxel, region: props.region() })
+              }
+            >
+              Apply
+            </button>
+          </label>
+          <p className="muted">
+            Outlier removal and downsampling work inside the clip box when it is on, otherwise on
+            everything.
+          </p>
+          {state?.cleanups.length ? (
+            <ul className="cleanups">
+              {state.cleanups.map((c) => (
+                <li key={c.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={c.active}
+                      onChange={async (e) => {
+                        try {
+                          props.setState(await api.cleanupSetActive(c.id, e.target.checked));
+                        } catch (err) {
+                          props.onNotice(String(err));
+                        }
+                      }}
+                    />
+                    #{c.id} {CLEANUP_LABEL[c.kind]}:{" "}
+                    {formatCount(
+                      c.scans.reduce((n, s) => n + s.removed, 0),
+                      "point",
+                    )}
+                    {c.active ? "" : " (undone)"}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
       <h2>Measurements</h2>
-      <label className="inline">
-        Point uncertainty (1σ)
-        <input
-          type="number"
-          min={0.1}
-          step={0.1}
-          placeholder={state ? (state.point_sigma_m * 1000).toFixed(1) : ""}
-          value={sigmaMm}
-          aria-label="Point uncertainty in millimetres"
-          onChange={(e) => setSigmaMm(e.target.value)}
-        />
-        mm
-        <button
-          disabled={!sigmaMm}
-          onClick={async () => {
-            try {
-              props.setState(await api.setPointSigma(Number(sigmaMm) / 1000));
-              setSigmaMm("");
-            } catch (e) {
-              props.onNotice(String(e));
-            }
-          }}
-        >
-          Set
-        </button>
-      </label>
+      {readOnly ? (
+        <p className="muted">
+          Point uncertainty (1σ): {state ? (state.point_sigma_m * 1000).toFixed(1) : "…"} mm, as set
+          in the case.
+        </p>
+      ) : (
+        <label className="inline">
+          Point uncertainty (1σ)
+          <input
+            type="number"
+            min={0.1}
+            step={0.1}
+            placeholder={state ? (state.point_sigma_m * 1000).toFixed(1) : ""}
+            value={sigmaMm}
+            aria-label="Point uncertainty in millimetres"
+            onChange={(e) => setSigmaMm(e.target.value)}
+          />
+          mm
+          <button
+            disabled={!sigmaMm}
+            onClick={async () => {
+              try {
+                props.setState(await api.setPointSigma(Number(sigmaMm) / 1000));
+                setSigmaMm("");
+              } catch (e) {
+                props.onNotice(String(e));
+              }
+            }}
+          >
+            Set
+          </button>
+        </label>
+      )}
       {state?.measurements.length ? (
         <ul className="measurements">
           {state.measurements.map((m) => {

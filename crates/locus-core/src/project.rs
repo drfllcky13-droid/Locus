@@ -27,6 +27,8 @@ pub enum Error {
     Db(#[from] rusqlite::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error("this is a read-only case package: nothing in it can be changed")]
+    ReadOnly,
     #[error("not a Locus project (no project.sqlite): {0}")]
     NotAProject(PathBuf),
     #[error("the folder for a new project must be empty: {0}")]
@@ -167,6 +169,8 @@ pub struct Project {
     pub(crate) conn: Connection,
     pub(crate) examiner: String,
     integrity_on_open: IntegrityReport,
+    /// Opened from a case package: the database is open read-only and every change is refused.
+    pub(crate) read_only: bool,
 }
 
 impl Project {
@@ -209,7 +213,48 @@ impl Project {
             conn,
             examiner: examiner.into(),
             integrity_on_open: IntegrityReport::default(),
+            read_only: false,
         })
+    }
+
+    /// Open a project read-only (a case package): the database is opened with SQLite's
+    /// read-only flag, so nothing can write to it, and every change is refused with
+    /// [`Error::ReadOnly`] before it gets that far. The audit log is verified; evidence isn't
+    /// re-hashed here (a package checks its own files against its manifest) and nothing is
+    /// logged.
+    pub fn open_read_only(root: &Path) -> Result<Self> {
+        let db = root.join(DB_FILE);
+        if !db.is_file() {
+            return Err(Error::NotAProject(root.into()));
+        }
+        let conn = Connection::open_with_flags(
+            &db,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        let version = meta_get(&conn, "schema_version")?.unwrap_or_default();
+        if version != SCHEMA_VERSION {
+            return Err(Error::SchemaVersion(version));
+        }
+        audit::verify(&conn)?;
+        Ok(Self {
+            root: root.into(),
+            conn,
+            examiner: "viewer".into(),
+            integrity_on_open: IntegrityReport::default(),
+            read_only: true,
+        })
+    }
+
+    pub fn read_only(&self) -> bool {
+        self.read_only
+    }
+
+    /// A consistent copy of the database at `dest` (SQLite's `VACUUM INTO`), for a case
+    /// package. `dest` must not exist.
+    pub fn copy_database(&self, dest: &Path) -> Result<()> {
+        self.conn
+            .execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
+        Ok(())
     }
 
     /// Open an existing project. See [`Project::open_with_progress`].
@@ -265,6 +310,7 @@ impl Project {
             conn,
             examiner: examiner.into(),
             integrity_on_open: IntegrityReport::default(),
+            read_only: false,
         };
         let report = project.check_evidence(progress)?;
         project.log("project.opened", json!({ "evidence": report.to_json() }))?;
@@ -278,6 +324,9 @@ impl Project {
     }
 
     fn log(&mut self, action: &str, details: serde_json::Value) -> Result<AuditEntry> {
+        if self.read_only {
+            return Err(Error::ReadOnly);
+        }
         let tx = self.conn.transaction()?;
         let entry = audit::append(&tx, &self.examiner, action, &details)?;
         tx.commit()?;

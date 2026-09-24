@@ -111,14 +111,14 @@ pub fn hand_solve(
 
 /// A diagram's newest saved revision, its print options and its underlay images (each checked
 /// against the hash the diagram recorded).
-type Printable = (
+pub(crate) type Printable = (
     locus_core::Revision,
     locus_report::diagram::Diagram,
     locus_report::diagram::PrintOptions,
     Vec<(String, Vec<u8>)>,
 );
 
-fn printable(
+pub(crate) fn printable(
     p: &locus_core::Project,
     diagram_id: i64,
     scale: f64,

@@ -10,6 +10,8 @@ import { RegistrationDialog } from "./registration/RegistrationDialog";
 import { DiagramEditor } from "./diagram2d/DiagramEditor";
 import { emptyDiagram } from "./diagram2d/model";
 import { Viewport } from "./viewer3d/Viewport";
+import { PackagePanel } from "./PackagePanel";
+import { ReadOnly, type PackageInfo } from "./readOnly";
 
 const IMPORT_EXTENSIONS = [
   "e57",
@@ -40,6 +42,8 @@ type Dialog =
 
 export function App() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  // Started from a case package: the case opens read-only.
+  const [pkg, setPkg] = useState<PackageInfo | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // What the main area shows: the 3D scene, or a diagram by id. The diagram list is kept with
@@ -105,6 +109,16 @@ export function App() {
 
   useEffect(() => {
     void api.startup().then(async (s) => {
+      if (s.package) {
+        try {
+          const o = await api.packageOpen(() => {});
+          setPkg({ folder: o.folder, check: o.check });
+          setProject(o.project);
+        } catch (e) {
+          setNotice(String(e));
+        }
+        return;
+      }
       if (!s.open || !s.examiner) return;
       try {
         setProject(await api.projectOpen(s.open, s.examiner, () => {}));
@@ -122,6 +136,8 @@ export function App() {
 
   useEffect(() => {
     const unlisten = listen<string>("menu", ({ payload }) => {
+      // A case package can't be changed or swapped for another project.
+      if (pkg && payload !== "about") return;
       if (payload === "new_project") setDialog({ kind: "new" });
       else if (payload === "open_project") setDialog({ kind: "open" });
       else if (payload === "import") void startImport();
@@ -132,106 +148,115 @@ export function App() {
     return () => {
       void unlisten.then((f) => f());
     };
-  }, [startImport, verify]);
+  }, [startImport, verify, pkg]);
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        {project ? (
-          <ProjectPanel
-            project={project}
-            onImport={startImport}
-            onVerify={verify}
-            verifying={verifying}
+    <ReadOnly.Provider value={!!pkg}>
+      <div className="app">
+        <aside className="sidebar">
+          {pkg && <PackagePanel pkg={pkg} onNotice={setNotice} />}
+          {project ? (
+            <ProjectPanel
+              project={project}
+              onImport={startImport}
+              onVerify={verify}
+              verifying={verifying}
+              readOnly={!!pkg}
+            />
+          ) : (
+            <div className="welcome">
+              <h1>Locus</h1>
+              <p className="muted">Create a project, or open an existing .locus folder.</p>
+              <button className="primary" onClick={() => setDialog({ kind: "new" })}>
+                New project…
+              </button>
+              <button onClick={() => setDialog({ kind: "open" })}>Open project…</button>
+            </div>
+          )}
+        </aside>
+        <main className="main">
+          {project && (
+            <nav className="tabs" aria-label="Views">
+              <button
+                className={shown === "scene" ? "tab active" : "tab"}
+                onClick={() => setTab("scene")}
+              >
+                3D scene
+              </button>
+              {!pkg &&
+                diagrams.map((d) => (
+                  <button
+                    key={d.document_id}
+                    className={shown === d.document_id ? "tab active" : "tab"}
+                    onClick={() => setTab(d.document_id)}
+                  >
+                    {d.name}
+                  </button>
+                ))}
+              {!pkg && (
+                <button className="tab" onClick={() => void newDiagram()}>
+                  + New diagram
+                </button>
+              )}
+            </nav>
+          )}
+          {/* The 3D view stays mounted, so its point clouds don't reload on every switch. */}
+          <div className="main-view" style={{ display: shown === "scene" ? undefined : "none" }}>
+            <Viewport project={project} diagrams={diagrams} onNotice={setNotice} />
+          </div>
+          {shown !== "scene" &&
+            diagrams
+              .filter((d) => d.document_id === shown)
+              .map((d) => (
+                <DiagramEditor
+                  key={d.document_id}
+                  initial={d}
+                  onNotice={setNotice}
+                  onSaved={(r) =>
+                    setDiagrams((ds) => ds.map((x) => (x.document_id === r.document_id ? r : x)))
+                  }
+                />
+              ))}
+        </main>
+
+        {(dialog?.kind === "new" || dialog?.kind === "open") && (
+          <ProjectDialog
+            mode={dialog.kind}
+            onClose={() => setDialog(null)}
+            onOpened={(p) => {
+              setProject(p);
+              setDialog(null);
+              setNotice(null);
+            }}
           />
-        ) : (
-          <div className="welcome">
-            <h1>Locus</h1>
-            <p className="muted">Create a project, or open an existing .locus folder.</p>
-            <button className="primary" onClick={() => setDialog({ kind: "new" })}>
-              New project…
+        )}
+        {dialog?.kind === "import" && (
+          <ImportDialog
+            path={dialog.path}
+            onClose={() => setDialog(null)}
+            onImported={(p, warning) => {
+              setProject(p);
+              setDialog(null);
+              setNotice(warning);
+            }}
+          />
+        )}
+        {dialog?.kind === "about" && (
+          <AboutDialog onClose={() => setDialog(null)} packageHash={pkg?.check.hash} />
+        )}
+        {dialog?.kind === "register" && project && (
+          <RegistrationDialog onClose={() => setDialog(null)} onNotice={setNotice} />
+        )}
+        {notice && (
+          <div className="notice" role="status">
+            <span>{notice}</span>
+            <button onClick={() => setNotice(null)} aria-label="Dismiss">
+              ×
             </button>
-            <button onClick={() => setDialog({ kind: "open" })}>Open project…</button>
           </div>
         )}
-      </aside>
-      <main className="main">
-        {project && (
-          <nav className="tabs" aria-label="Views">
-            <button
-              className={shown === "scene" ? "tab active" : "tab"}
-              onClick={() => setTab("scene")}
-            >
-              3D scene
-            </button>
-            {diagrams.map((d) => (
-              <button
-                key={d.document_id}
-                className={shown === d.document_id ? "tab active" : "tab"}
-                onClick={() => setTab(d.document_id)}
-              >
-                {d.name}
-              </button>
-            ))}
-            <button className="tab" onClick={() => void newDiagram()}>
-              + New diagram
-            </button>
-          </nav>
-        )}
-        {/* The 3D view stays mounted, so its point clouds don't reload on every switch. */}
-        <div className="main-view" style={{ display: shown === "scene" ? undefined : "none" }}>
-          <Viewport project={project} diagrams={diagrams} onNotice={setNotice} />
-        </div>
-        {shown !== "scene" &&
-          diagrams
-            .filter((d) => d.document_id === shown)
-            .map((d) => (
-              <DiagramEditor
-                key={d.document_id}
-                initial={d}
-                onNotice={setNotice}
-                onSaved={(r) =>
-                  setDiagrams((ds) => ds.map((x) => (x.document_id === r.document_id ? r : x)))
-                }
-              />
-            ))}
-      </main>
-
-      {(dialog?.kind === "new" || dialog?.kind === "open") && (
-        <ProjectDialog
-          mode={dialog.kind}
-          onClose={() => setDialog(null)}
-          onOpened={(p) => {
-            setProject(p);
-            setDialog(null);
-            setNotice(null);
-          }}
-        />
-      )}
-      {dialog?.kind === "import" && (
-        <ImportDialog
-          path={dialog.path}
-          onClose={() => setDialog(null)}
-          onImported={(p, warning) => {
-            setProject(p);
-            setDialog(null);
-            setNotice(warning);
-          }}
-        />
-      )}
-      {dialog?.kind === "about" && <AboutDialog onClose={() => setDialog(null)} />}
-      {dialog?.kind === "register" && project && (
-        <RegistrationDialog onClose={() => setDialog(null)} onNotice={setNotice} />
-      )}
-      {notice && (
-        <div className="notice" role="status">
-          <span>{notice}</span>
-          <button onClick={() => setNotice(null)} aria-label="Dismiss">
-            ×
-          </button>
-        </div>
-      )}
-    </div>
+      </div>
+    </ReadOnly.Provider>
   );
 }
 
@@ -240,11 +265,13 @@ function ProjectPanel({
   onImport,
   onVerify,
   verifying,
+  readOnly,
 }: {
   project: ProjectInfo;
   onImport: () => void;
   onVerify: () => void;
   verifying: boolean;
+  readOnly: boolean;
 }) {
   return (
     <>
@@ -255,14 +282,16 @@ function ProjectPanel({
           Audit log: {formatCount(project.audit_entries, "entry", "entries")}, head{" "}
           <code>{project.audit_head.slice(0, 12)}</code>
         </p>
-        <div className="row">
-          <button className="primary" onClick={onImport}>
-            Import evidence…
-          </button>
-          <button onClick={onVerify} disabled={verifying || project.evidence.length === 0}>
-            {verifying ? "Verifying…" : "Verify evidence"}
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="row">
+            <button className="primary" onClick={onImport}>
+              Import evidence…
+            </button>
+            <button onClick={onVerify} disabled={verifying || project.evidence.length === 0}>
+              {verifying ? "Verifying…" : "Verify evidence"}
+            </button>
+          </div>
+        )}
       </header>
       {project.integrity && <IntegrityWarning problems={integrityProblems(project.integrity)} />}
       <h2>Evidence</h2>

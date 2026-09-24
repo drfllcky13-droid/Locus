@@ -422,6 +422,36 @@ Acceptance criteria (SPEC):
 - [ ] A report generated twice from the same project is byte-identical apart from the timestamp.
 - [ ] Every number in a report traces to an audit log entry.
 
+### Phase 11: Portable case package (done 2026-09-24, apart from the clean-machine check under Blocked)
+
+Plan (2026-09-24):
+
+1. **Export case package** writes one folder (for a USB drive) that nothing needs installing to open:
+   - `Locus Viewer.exe`, a copy of the app itself. It opens as the read-only viewer when it finds the package's manifest beside it, so there is one program to build, sign and validate.
+   - `case/`: a consistent copy of the project database (`VACUUM INTO`) and its derived data (octrees, cleanup bitmaps). The original evidence files are included only if chosen; their hashes are always listed.
+   - `reports/`: freshly printed, namely the case report, every analysis report (withdrawn records are not reprinted, but the case report lists them), each diagram at the largest standard scale that fits on A3, and the applied registration's report.
+   - `videos/`: the renders, each checked against its logged SHA-256 before it is copied.
+   - `manifest.json`: every file with its SHA-256 and size, the project, case number, who made the package and when, the source project's state head, and the app version. The **package hash** is the SHA-256 of `manifest.json`.
+   - `README.txt`, and the third-party notices.
+   - All files are marked read-only. The package's hash is logged in the source project.
+2. **The viewer** (the same exe, in package mode):
+   - on opening, it re-hashes every file against the manifest and shows the result, and the package hash on its About screen;
+   - it opens the database read-only at the SQLite level (`SQLITE_OPEN_READ_ONLY`), and the project refuses every change with a clear message, so no bug can write to the case;
+   - navigate, measure (session-only measurements, marked as not saved), the built 3D scene, animation playback with its views, and opening the reports and videos;
+   - editing tools, imports, cleanup and new analyses are absent.
+3. **Tests:** a read-only project refuses writes. The package's manifest detects a changed file. In the app: make a package, open it from its folder, navigate and measure, play an animation, open a report, then check that every file in the package still has its manifest hash.
+
+Built as planned (2026-09-24); see `docs/methods/case-package.md`. Checked in the app:
+- a package made from the Export section (10 files);
+- its viewer started from the package folder, reporting all 10 files matching and showing the package hash on its panel and in About;
+- four kinds of change refused by the backend;
+- a session-only measurement, and the animation played;
+- afterwards every file still matched its manifest, none had been added, and all were still read-only.
+
+Acceptance criteria (SPEC):
+- [ ] The package opens on a clean Windows machine without admin rights. It ran from its own folder as the normal user with nothing installed beyond WebView2, which is part of Windows 11. A run on a clean machine is still to do (Blocked).
+- [x] The viewer cannot modify data, and shows the package hash on its About screen.
+
 ## Blocked
 
 - **Physical print-scale check at 1:100** (2026-09-22): print a scaled diagram PDF at actual size and measure it (the 10 m line and the 100 mm calibration bar in the title block) with a ruler. The PDF geometry is proven by tests; the physical check must be done before release.
@@ -431,5 +461,7 @@ Acceptance criteria (SPEC):
 - **Textbook cases for skid, yaw and momentum** (2026-09-23): Addison will supply worked examples (inputs and published answers) from a reconstruction textbook, to be cited, not copied; until then the tests use hand-worked examples. Crush energy is already checked against the NHTSA CRASH3 manual's sample run.
 
 - **Video import on macOS and Linux** (2026-09-23): frames are sampled with Windows Media Foundation; on other systems video import is refused with a message. Needs a permissive decoder (the OS's own: AVFoundation on macOS; on Linux, nothing permissive and complete; ffmpeg is LGPL/GPL) before Phase 14's other platforms.
+
+- **Case package on a clean machine** (2026-09-24): open a case package on a Windows machine that has never had Locus, as a standard user (no admin), from a USB drive, and confirm it opens, verifies, and shows its hash. Needs a spare PC or a VM (Windows Sandbox isn't available on Windows Home).
 
 - **Bundle identifier** (2026-09-22): `app.locus.desktop` is a placeholder. Addison will supply the real publisher domain before Phase 14; it must change before the first signed release.

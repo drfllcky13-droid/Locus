@@ -2,7 +2,7 @@
 // or LAZ, and diagrams as PDF, PNG, TIFF or DXF. Every file is hashed and logged in the audit
 // log (src-tauri/src/export_cmds.rs). The 3D scene's glTF export is in the scene builder.
 import { useState } from "react";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { api, type DiagramRevision } from "../api";
 import type { ScanData } from "../viewer3d/pointcloud";
 
@@ -37,6 +37,7 @@ export function ExportPanel({
   const [format, setFormat] = useState<"pdf" | "png" | "tiff" | "dxf">("pdf");
   const [dpi, setDpi] = useState(300);
   const [busy, setBusy] = useState(false);
+  const [withEvidence, setWithEvidence] = useState(false);
 
   const run = async (label: string, f: () => Promise<string | null>) => {
     setBusy(true);
@@ -84,6 +85,45 @@ export function ExportPanel({
               Measurements CSV…
             </button>
           </div>
+
+          <h4>Case package</h4>
+          <p className="muted">
+            A folder for a USB drive: a read-only viewer, the case&apos;s point clouds, 3D scene and
+            animation, every report printed now, and the renders, all listed with their SHA-256.
+          </p>
+          <label className="inline">
+            <input
+              type="checkbox"
+              checked={withEvidence}
+              onChange={(e) => setWithEvidence(e.target.checked)}
+            />
+            Include the original evidence files
+          </label>
+          <button
+            disabled={busy}
+            onClick={() =>
+              run("Case package", async () => {
+                const scripted = (globalThis as { __locusTestPackageDir?: string })
+                  .__locusTestPackageDir;
+                const dir =
+                  scripted ??
+                  ((await openDialog({ directory: true, title: "Where to make the package" })) as
+                    string | null);
+                if (!dir) return null;
+                const made = await api.packageExport(dir, "", withEvidence);
+                onNotice(
+                  `Case package made in ${made.path}: ${made.files} files, package hash ${made.hash}` +
+                    (made.not_included.length
+                      ? `. Not included: ${made.not_included.join("; ")}`
+                      : "") +
+                    ".",
+                );
+                return null;
+              })
+            }
+          >
+            Make a case package…
+          </button>
 
           <h4>Point clouds</h4>
           <label>

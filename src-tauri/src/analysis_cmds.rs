@@ -268,136 +268,139 @@ pub async fn analysis_report(app: AppHandle, id: i64, path: String) -> CmdResult
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
-        let a = p
-            .analysis(id)
-            .map_err(err)?
-            .ok_or(format!("No analysis {id}."))?;
-        let report = match a.tool.as_str() {
-            "trajectory" => {
-                let run: Run = serde_json::from_value(a.record.clone()).map_err(err)?;
-                // Defect photos, each checked against the hash recorded in the run.
-                let images = locus_report::trajectory::photo_files(&run)
-                    .into_iter()
-                    .map(|(file, sha)| {
-                        Ok((
-                            file.clone(),
-                            crate::diagram_cmds::read_checked(p.root(), &file, &sha)?,
-                        ))
-                    })
-                    .collect::<CmdResult<Vec<_>>>()?;
-                (
-                    locus_report::trajectory::report(&meta(p, &a)?, &run),
-                    images,
-                )
-            }
-            "bloodstain" => {
-                let run: locus_analysis::bloodstain::Run =
-                    serde_json::from_value(a.record.clone()).map_err(err)?;
-                (
-                    locus_report::bloodstain::report(&meta(p, &a)?, &run),
-                    vec![],
-                )
-            }
-            "camera" => {
-                let run: locus_analysis::camera::Run =
-                    serde_json::from_value(a.record.clone()).map_err(err)?;
-                // The photo, checked against the hash recorded in the run.
-                let images = locus_report::camera::photo_files(&run)
-                    .into_iter()
-                    .map(|(file, sha)| {
-                        Ok((
-                            file.clone(),
-                            crate::diagram_cmds::read_checked(p.root(), &file, &sha)?,
-                        ))
-                    })
-                    .collect::<CmdResult<Vec<_>>>()?;
-                (locus_report::camera::report(&meta(p, &a)?, &run), images)
-            }
-            "witness" => {
-                let run: locus_analysis::camera::WitnessRun =
-                    serde_json::from_value(a.record.clone()).map_err(err)?;
-                (
-                    locus_report::camera::witness_report(&meta(p, &a)?, &run),
-                    vec![],
-                )
-            }
-            "skid" | "yaw" | "momentum" | "crush" => {
-                let m = meta(p, &a)?;
-                let r = &a.record;
-                let doc = match a.tool.as_str() {
-                    "skid" => locus_report::crash::skid(
-                        &m,
-                        &serde_json::from_value(r.clone()).map_err(err)?,
-                    ),
-                    "yaw" => locus_report::crash::yaw(
-                        &m,
-                        &serde_json::from_value(r.clone()).map_err(err)?,
-                    ),
-                    "momentum" => locus_report::crash::momentum(
-                        &m,
-                        &serde_json::from_value(r.clone()).map_err(err)?,
-                    ),
-                    _ => locus_report::crash::crush(
-                        &m,
-                        &serde_json::from_value(r.clone()).map_err(err)?,
-                    ),
-                };
-                (doc, vec![])
-            }
-            "edr" => (
-                locus_report::crash::edr(
-                    &meta(p, &a)?,
-                    &serde_json::from_value(a.record.clone()).map_err(err)?,
-                ),
-                vec![],
-            ),
-            "photogrammetry" => (
-                locus_report::photo::report(
-                    &meta(p, &a)?,
-                    &serde_json::from_value(a.record.clone()).map_err(err)?,
-                ),
-                vec![],
-            ),
-            "crush_volume" => (
-                locus_report::crash::volume(
-                    &meta(p, &a)?,
-                    &serde_json::from_value(a.record.clone()).map_err(err)?,
-                ),
-                vec![],
-            ),
-            "animation" => {
-                let run: locus_analysis::tds::TdsRun =
-                    serde_json::from_value(a.record.clone()).map_err(err)?;
-                // The scene's renders, listed with it.
-                let renders = p
-                    .analyses()
-                    .map_err(err)?
-                    .into_iter()
-                    .filter(|x| x.tool == "render" && x.withdrawn.is_none())
-                    .filter_map(|x| {
-                        serde_json::from_value::<locus_analysis::animation::RenderRecord>(x.record)
-                            .ok()
-                            .filter(|r| r.scene_id == run.scene_id)
-                            .map(|r| (x.id, r))
-                    })
-                    .collect::<Vec<_>>();
-                (
-                    locus_report::animation::report(&meta(p, &a)?, &run, &renders),
-                    vec![],
-                )
-            }
-            t => return Err(format!("No report for {t} analyses yet.")),
-        };
-        let (report, images) = report;
-        let out = locus_report::analysis::pdf(&report, images)?;
-        std::fs::write(&path, &out.pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
+        let pdf = analysis_pdf(p, id)?;
+        std::fs::write(&path, &pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
         let (sha256, bytes) =
-            locus_core::hash::sha256_reader(out.pdf.as_slice(), &mut |_| {}).map_err(err)?;
+            locus_core::hash::sha256_reader(pdf.as_slice(), &mut |_| {}).map_err(err)?;
         p.record_analysis_report(id, &path, &sha256, bytes)
             .map_err(err)?;
         Ok(sha256)
     })
     .await
+}
+
+/// An analysis's PDF report, built from its stored record.
+pub(crate) fn analysis_pdf(p: &Project, id: i64) -> CmdResult<Vec<u8>> {
+    let a = p
+        .analysis(id)
+        .map_err(err)?
+        .ok_or(format!("No analysis {id}."))?;
+    let report = match a.tool.as_str() {
+        "trajectory" => {
+            let run: Run = serde_json::from_value(a.record.clone()).map_err(err)?;
+            // Defect photos, each checked against the hash recorded in the run.
+            let images = locus_report::trajectory::photo_files(&run)
+                .into_iter()
+                .map(|(file, sha)| {
+                    Ok((
+                        file.clone(),
+                        crate::diagram_cmds::read_checked(p.root(), &file, &sha)?,
+                    ))
+                })
+                .collect::<CmdResult<Vec<_>>>()?;
+            (
+                locus_report::trajectory::report(&meta(p, &a)?, &run),
+                images,
+            )
+        }
+        "bloodstain" => {
+            let run: locus_analysis::bloodstain::Run =
+                serde_json::from_value(a.record.clone()).map_err(err)?;
+            (
+                locus_report::bloodstain::report(&meta(p, &a)?, &run),
+                vec![],
+            )
+        }
+        "camera" => {
+            let run: locus_analysis::camera::Run =
+                serde_json::from_value(a.record.clone()).map_err(err)?;
+            // The photo, checked against the hash recorded in the run.
+            let images = locus_report::camera::photo_files(&run)
+                .into_iter()
+                .map(|(file, sha)| {
+                    Ok((
+                        file.clone(),
+                        crate::diagram_cmds::read_checked(p.root(), &file, &sha)?,
+                    ))
+                })
+                .collect::<CmdResult<Vec<_>>>()?;
+            (locus_report::camera::report(&meta(p, &a)?, &run), images)
+        }
+        "witness" => {
+            let run: locus_analysis::camera::WitnessRun =
+                serde_json::from_value(a.record.clone()).map_err(err)?;
+            (
+                locus_report::camera::witness_report(&meta(p, &a)?, &run),
+                vec![],
+            )
+        }
+        "skid" | "yaw" | "momentum" | "crush" => {
+            let m = meta(p, &a)?;
+            let r = &a.record;
+            let doc = match a.tool.as_str() {
+                "skid" => {
+                    locus_report::crash::skid(&m, &serde_json::from_value(r.clone()).map_err(err)?)
+                }
+                "yaw" => {
+                    locus_report::crash::yaw(&m, &serde_json::from_value(r.clone()).map_err(err)?)
+                }
+                "momentum" => locus_report::crash::momentum(
+                    &m,
+                    &serde_json::from_value(r.clone()).map_err(err)?,
+                ),
+                _ => {
+                    locus_report::crash::crush(&m, &serde_json::from_value(r.clone()).map_err(err)?)
+                }
+            };
+            (doc, vec![])
+        }
+        "edr" => (
+            locus_report::crash::edr(
+                &meta(p, &a)?,
+                &serde_json::from_value(a.record.clone()).map_err(err)?,
+            ),
+            vec![],
+        ),
+        "photogrammetry" => (
+            locus_report::photo::report(
+                &meta(p, &a)?,
+                &serde_json::from_value(a.record.clone()).map_err(err)?,
+            ),
+            vec![],
+        ),
+        "crush_volume" => (
+            locus_report::crash::volume(
+                &meta(p, &a)?,
+                &serde_json::from_value(a.record.clone()).map_err(err)?,
+            ),
+            vec![],
+        ),
+        "animation" => {
+            let run: locus_analysis::tds::TdsRun =
+                serde_json::from_value(a.record.clone()).map_err(err)?;
+            // The scene's renders, listed with it.
+            let renders = p
+                .analyses()
+                .map_err(err)?
+                .into_iter()
+                .filter(|x| x.tool == "render" && x.withdrawn.is_none())
+                .filter_map(|x| {
+                    serde_json::from_value::<locus_analysis::animation::RenderRecord>(x.record)
+                        .ok()
+                        .filter(|r| r.scene_id == run.scene_id)
+                        .map(|r| (x.id, r))
+                })
+                .collect::<Vec<_>>();
+            (
+                locus_report::animation::report(&meta(p, &a)?, &run, &renders),
+                vec![],
+            )
+        }
+        t => return Err(format!("No report for {t} analyses yet.")),
+    };
+    let (report, images) = report;
+    let out = locus_report::analysis::pdf(&report, images)?;
+    Ok(out.pdf)
 }
 
 /// The project's case number (printed on every report), if set.

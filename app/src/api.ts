@@ -6,6 +6,7 @@ import type { MeasurementRecord } from "./viewer3d/measureFormat";
 import type { Diagram } from "./diagram2d/model";
 import type { SceneDoc } from "./scene3d/model";
 import type { Animation, Evaluation, TdsRequest } from "./animation/model";
+import type { PackageInfo } from "./readOnly";
 
 export type LinearUnit = "meter" | "centimeter" | "millimeter" | "foot" | "us_survey_foot" | "inch";
 
@@ -457,7 +458,18 @@ export const api = {
   analysisReport: (id: number, path: string) => invoke<string>("analysis_report", { id, path }),
   handSolve: (request: HandRequest, knownSigma: number, tapeFixed: number, tapePerMetre: number) =>
     invoke<HandSolved>("hand_solve", { request, knownSigma, tapeFixed, tapePerMetre }),
-  startup: () => invoke<{ open: string | null; examiner: string | null }>("startup"),
+  startup: () =>
+    invoke<{ open: string | null; examiner: string | null; package: string | null }>("startup"),
+  packageOpen: (onProgress: (bytes: number) => void) =>
+    invoke<{ project: ProjectInfo } & PackageInfo>("package_open", {
+      onProgress: channel(onProgress),
+    }),
+  packageFileOpen: (file: string) => invoke<void>("package_file_open", { file }),
+  packageExport: (parent: string, name: string, includeEvidence: boolean) =>
+    invoke<{ path: string; hash: string; files: number; not_included: string[] }>(
+      "package_export",
+      { parent, name, includeEvidence },
+    ),
   registrations: () => invoke<RegistrationRecord[]>("registrations"),
   registrationRun: (params: RegistrationParams) =>
     invoke<RegistrationRecord[]>("registration_run", { params }),

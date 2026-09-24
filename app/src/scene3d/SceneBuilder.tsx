@@ -35,6 +35,7 @@ import { buildScene, type Diagrams } from "./render";
 import { DEFAULT_ROOF, rectangle, type RoofType } from "./roof";
 import { walls } from "../diagram2d/builders";
 import { AnimationPanel } from "../animation/AnimationPanel";
+import { useReadOnly } from "../readOnly";
 import { savePath } from "../export/ExportPanel";
 import { sceneGlb } from "./gltf";
 import type { EvidenceRecord } from "../api";
@@ -133,6 +134,7 @@ export function SceneBuilder({
   requestPick: (hint: string, then: (hit: PickHit) => void) => void;
   onNotice: (m: string | null) => void;
 }) {
+  const readOnly = useReadOnly();
   const [rev, setRev] = useState<SceneRevision | null | undefined>(undefined);
   const [doc, setDoc] = useState<SceneDoc>(EMPTY_SCENE);
   /** The document as last saved; it differs from `doc` while edits wait to be saved. */
@@ -231,6 +233,27 @@ export function SceneBuilder({
   }, [dirty, doc, revId, revName, onNotice]);
 
   if (rev === undefined) return null;
+  // In a case package: the scene as built, and its animation to play; nothing to edit.
+  if (readOnly)
+    return rev === null ? null : (
+      <section className="panel-section scene-builder">
+        <h3>3D scene</h3>
+        <p className="muted">
+          {rev.name}, revision {rev.number} (SHA-256 {rev.sha256.slice(0, 16)}…), as saved in the
+          case.
+        </p>
+        <AnimationPanel
+          engine={engine}
+          sceneId={rev.document_id}
+          saving={false}
+          doc={doc}
+          setAnimation={() => {}}
+          evidence={evidence}
+          requestPick={requestPick}
+          onNotice={onNotice}
+        />
+      </section>
+    );
   if (rev === null)
     return (
       <section className="panel-section">

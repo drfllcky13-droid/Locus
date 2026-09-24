@@ -37,7 +37,7 @@ impl Entries {
     }
 }
 
-fn case_data(p: &Project) -> CmdResult<CaseData> {
+pub(crate) fn case_data(p: &Project) -> CmdResult<CaseData> {
     let log = p.audit_log().map_err(err)?;
     let entries = Entries::new(&log);
     let head = p.state_head().map_err(err)?;
