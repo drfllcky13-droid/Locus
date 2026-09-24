@@ -370,5 +370,14 @@
   "images": [],
   "videos": []
  },
- "photo_job": null
+ "photo_job": null,
+ "crash_reports": [],
+ "license_info": {
+  "tier": "analyst_plus",
+  "tier_name": "All tools (no licence needed)",
+  "status": "evaluation",
+  "license": null,
+  "problem": null
+ },
+ "plugin:updater|check": null
 }
