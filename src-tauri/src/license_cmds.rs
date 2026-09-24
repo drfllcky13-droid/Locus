@@ -27,12 +27,12 @@ pub struct LicenseInfo {
 
 static STATE: RwLock<Option<LicenseInfo>> = RwLock::new(None);
 
-/// Without a licence the app runs as an unlicensed evaluation with every tool, labelled as
-/// such (whether that stays for a commercial release is the publisher's decision).
+/// No licence is needed: without one every tool works (Addison's decision, 2026-09-24; the
+/// tiers stay for a later sale).
 fn evaluation(problem: Option<String>) -> LicenseInfo {
     LicenseInfo {
         tier: Tier::AnalystPlus,
-        tier_name: "Evaluation (unlicensed)",
+        tier_name: "All tools (no licence needed)",
         status: if problem.is_some() {
             "invalid"
         } else {

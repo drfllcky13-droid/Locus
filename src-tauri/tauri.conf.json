@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Locus",
+  "productName": "Lotus",
   "version": "0.1.0",
-  "identifier": "app.locus.desktop",
+  "identifier": "io.github.drfllcky13-droid.lotus",
   "build": {
     "beforeDevCommand": "pnpm -C app dev",
     "beforeBuildCommand": "pnpm -C app build",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Locus",
+        "title": "Lotus",
         "width": 1400,
         "height": 900,
         "minWidth": 800,

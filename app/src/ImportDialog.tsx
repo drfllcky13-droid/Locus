@@ -102,9 +102,9 @@ export function ImportDialog({
           </Review>
         )}
         <p className="help">
-          Files are opened read-only. Locus copies them into the project, checks the copy against
+          Files are opened read-only. Lotus copies them into the project, checks the copy against
           the hash above, and never changes the original. Native scanner project files use
-          proprietary formats that Locus does not read: export the scans to E57 from the
+          proprietary formats that Lotus does not read: export the scans to E57 from the
           scanner&apos;s own software, then import the E57.
         </p>
       </div>

@@ -319,7 +319,7 @@ pub async fn pointcloud_export(
             "e57" => locus_io::stream_e57(
                 out,
                 &format!("locus-export-{}", locus_core::timestamp()),
-                "Locus export (project frame)",
+                "Lotus export (project frame)",
                 true,
                 true,
                 &mut feed,

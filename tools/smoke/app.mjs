@@ -1,4 +1,4 @@
-// Launch the built Locus app on a fresh synthetic project with remote debugging on.
+// Launch the built Lotus app on a fresh synthetic project with remote debugging on.
 // Shared by app-smoke.mjs (full-app check) and capture.mjs (records the viewer fixture).
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";

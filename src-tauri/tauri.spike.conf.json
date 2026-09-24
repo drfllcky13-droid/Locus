@@ -2,7 +2,7 @@
   "app": {
     "windows": [
       {
-        "title": "Locus rendering spike",
+        "title": "Lotus rendering spike",
         "url": "spike.html",
         "maximized": true,
         "width": 1400,

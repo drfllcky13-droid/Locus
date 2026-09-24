@@ -65,10 +65,10 @@ export function AboutDialog({
       <div
         className="dialog"
         role="dialog"
-        aria-label="About Locus"
+        aria-label="About Lotus"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>Locus {app?.version}</h2>
+        <h2>Lotus {app?.version}</h2>
         <p className="muted">Forensic scene reconstruction.</p>
         <dl className="facts">
           <dt>Licence</dt>
@@ -93,8 +93,8 @@ export function AboutDialog({
           <dd>{app?.webview}</dd>
         </dl>
         <p className="muted">
-          On laptops with two GPUs, Locus asks for the dedicated one. If this shows integrated
-          graphics, set Locus to &quot;High performance&quot; in Windows graphics settings.
+          On laptops with two GPUs, Lotus asks for the dedicated one. If this shows integrated
+          graphics, set Lotus to &quot;High performance&quot; in Windows graphics settings.
         </p>
         {licenseError && <p className="error">{licenseError}</p>}
         {notices !== null && (
@@ -115,7 +115,7 @@ export function AboutDialog({
               onClick={async () => {
                 const path = await openDialog({
                   title: "Install a licence",
-                  filters: [{ name: "Locus licence", extensions: ["locus-license"] }],
+                  filters: [{ name: "Lotus licence", extensions: ["locus-license"] }],
                 });
                 if (typeof path !== "string") return;
                 try {

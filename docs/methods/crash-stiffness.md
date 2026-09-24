@@ -1,6 +1,6 @@
 # CRASH3 stiffness coefficients from NHTSA crash tests
 
-The crush-energy tool needs a vehicle's frontal stiffness coefficients A (N/m) and B (N/m²). Locus bundles a table derived from public NHTSA barrier tests. An examiner can use it, or override it with values entered with their source.
+The crush-energy tool needs a vehicle's frontal stiffness coefficients A (N/m) and B (N/m²). Lotus bundles a table derived from public NHTSA barrier tests. An examiner can use it, or override it with values entered with their source.
 
 - Code: `crates/locus-analysis/src/stiffness.rs` (derivation, tested).
 - Data: `crates/locus-analysis/data/nhtsa-frontal-barrier.csv`.

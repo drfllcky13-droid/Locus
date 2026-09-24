@@ -187,11 +187,9 @@ export function App() {
         <div className="app">
           <aside className="sidebar">
             {pkg && <PackagePanel pkg={pkg} onNotice={setNotice} />}
-            {license && license.status !== "licensed" && !pkg && (
-              <p className="muted license-note" title={license.problem ?? undefined}>
-                {license.status === "invalid"
-                  ? `Licence not valid (${license.problem}): running as an unlicensed evaluation.`
-                  : "Unlicensed evaluation: every tool is on. Install a licence under Help → About."}
+            {license?.status === "invalid" && !pkg && (
+              <p className="muted license-note">
+                Licence not valid ({license.problem}): every tool is on without it.
               </p>
             )}
             {project ? (
@@ -204,7 +202,7 @@ export function App() {
               />
             ) : (
               <div className="welcome">
-                <h1>Locus</h1>
+                <h1>Lotus</h1>
                 <p className="muted">Create a project, or open an existing .locus folder.</p>
                 <button className="primary" onClick={() => setDialog({ kind: "new" })}>
                   New project…
@@ -295,7 +293,7 @@ export function App() {
           {crashes.length > 0 && !showCrashes && (
             <div className="notice" role="status">
               <span>
-                Locus stopped unexpectedly before. A crash report was saved on this computer (no
+                Lotus stopped unexpectedly before. A crash report was saved on this computer (no
                 case data, nothing sent).
               </span>
               <button onClick={() => setShowCrashes(true)}>View</button>

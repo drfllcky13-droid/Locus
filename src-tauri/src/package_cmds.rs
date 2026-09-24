@@ -10,14 +10,14 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 pub const VIEWER_EXE: &str = if cfg!(windows) {
-    "Locus Viewer.exe"
+    "Lotus Viewer.exe"
 } else {
-    "Locus Viewer"
+    "Lotus Viewer"
 };
 
-const README: &str = "Locus case package\r\n\
+const README: &str = "Lotus case package\r\n\
 \r\n\
-Open \"Locus Viewer\" in this folder to view the case. Nothing needs installing and no \r\n\
+Open \"Lotus Viewer\" in this folder to view the case. Nothing needs installing and no \r\n\
 administrator rights are needed. On Windows it uses Microsoft Edge WebView2, which is part \r\n\
 of Windows 11 and of up-to-date Windows 10.\r\n\
 \r\n\

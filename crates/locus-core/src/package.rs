@@ -174,10 +174,10 @@ mod tests {
         std::fs::create_dir_all(root.join("case/derived")).unwrap();
         std::fs::write(root.join("case/project.sqlite"), b"db").unwrap();
         std::fs::write(root.join("case/derived/n.bin"), b"points").unwrap();
-        std::fs::write(root.join("Locus Viewer.exe"), b"exe").unwrap();
-        let hash = write_manifest(root, manifest(), &["Locus Viewer.exe"]).unwrap();
+        std::fs::write(root.join("Lotus Viewer.exe"), b"exe").unwrap();
+        let hash = write_manifest(root, manifest(), &["Lotus Viewer.exe"]).unwrap();
         assert!(is_package(root));
-        let c = verify(root, &["Locus Viewer.exe"], &mut |_| {}).unwrap();
+        let c = verify(root, &["Lotus Viewer.exe"], &mut |_| {}).unwrap();
         assert_eq!(
             (c.hash.as_str(), c.checked, c.problems.len()),
             (hash.as_str(), 2, 0)
@@ -186,7 +186,7 @@ mod tests {
         std::fs::write(root.join("case/derived/n.bin"), b"pointZ").unwrap();
         std::fs::remove_file(root.join("case/project.sqlite")).unwrap();
         std::fs::write(root.join("case/extra.txt"), b"x").unwrap();
-        let c = verify(root, &["Locus Viewer.exe"], &mut |_| {}).unwrap();
+        let c = verify(root, &["Lotus Viewer.exe"], &mut |_| {}).unwrap();
         assert_eq!(c.problems.len(), 3, "{:?}", c.problems);
         assert!(c
             .problems

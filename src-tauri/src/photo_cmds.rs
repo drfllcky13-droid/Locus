@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
-/// The oldest COLMAP Locus is written for.
+/// The oldest COLMAP Lotus is written for.
 const OLDEST: (u32, u32, u32) = colmap::MIN_VERSION;
 pub const RELEASES: &str = "https://github.com/colmap/colmap/releases";
 
@@ -388,7 +388,7 @@ fn run_job(app: &AppHandle, req: RunRequest) -> CmdResult<Job> {
     let found = examine(&exe)?;
     if !found.supported {
         return Err(format!(
-            "{} is older than COLMAP {}.{}.{}, the oldest Locus runs.",
+            "{} is older than COLMAP {}.{}.{}, the oldest Lotus runs.",
             found.banner, OLDEST.0, OLDEST.1, OLDEST.2
         ));
     }

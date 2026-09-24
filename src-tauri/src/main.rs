@@ -22,7 +22,7 @@ mod scene_cmds;
 #[cfg(feature = "spike")]
 mod spike;
 
-/// Ask hybrid-graphics laptops to run Locus on the dedicated GPU (NVIDIA Optimus and AMD
+/// Ask hybrid-graphics laptops to run Lotus on the dedicated GPU (NVIDIA Optimus and AMD
 /// PowerXpress read these exported symbols; build.rs exports them). WebGL draws in
 /// WebView2's own GPU process, which these don't reach, so tauri.conf.json also passes
 /// `--force_high_performance_gpu` to WebView2. Help > About shows the GPU actually used.
@@ -214,7 +214,7 @@ fn main() {
                         app,
                         "Help",
                         true,
-                        &[&item("about", "About Locus", None)?],
+                        &[&item("about", "About Lotus", None)?],
                     )?,
                 ],
             )
@@ -224,5 +224,5 @@ fn main() {
             let _ = app.emit("menu", event.id().0.as_str());
         })
         .run(tauri::generate_context!())
-        .expect("failed to start Locus");
+        .expect("failed to start Lotus");
 }

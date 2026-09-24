@@ -106,7 +106,7 @@ pub fn fit(from: &[Point3<f64>], to: &[Point3<f64>]) -> Result<RigidFit, FitErro
     })
 }
 
-/// Row-major 4 × 4 matrix, the layout scan poses use elsewhere in Locus.
+/// Row-major 4 × 4 matrix, the layout scan poses use elsewhere in Lotus.
 pub fn to_row_major(t: &Isometry3<f64>) -> [f64; 16] {
     let m = t.to_homogeneous();
     std::array::from_fn(|i| m[(i / 4, i % 4)])

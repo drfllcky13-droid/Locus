@@ -1,4 +1,4 @@
-// Print console messages and exceptions buffered in the Locus webview.
+// Print console messages and exceptions buffered in the Lotus webview.
 //   node tools/smoke/cdplog.mjs [port]
 import { connect } from "./cdp.mjs";
 

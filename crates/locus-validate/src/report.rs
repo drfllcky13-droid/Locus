@@ -136,12 +136,12 @@ pub fn report(r: &Run, results: &[ToolResult]) -> Report {
         }],
     });
     Report {
-        title: format!("Validation report: Locus {}", r.version),
-        header: format!("Locus {} · validation", r.version),
+        title: format!("Validation report: Lotus {}", r.version),
+        header: format!("Lotus {} · validation", r.version),
         details: vec![
             [
                 "Software".into(),
-                format!("Locus {} (commit {})", r.version, r.commit),
+                format!("Lotus {} (commit {})", r.version, r.commit),
             ],
             ["Run".into(), format!("{}, {}", r.made_at, r.machine)],
             [

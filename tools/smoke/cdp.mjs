@@ -1,4 +1,4 @@
-// Minimal Chrome DevTools Protocol client for the Locus webview (WebView2 started with
+// Minimal Chrome DevTools Protocol client for the Lotus webview (WebView2 started with
 // --remote-debugging-port). Used by smoke.mjs; also runnable by hand:
 //   node tools/smoke/cdp.mjs "<expression>" [port]      evaluate and print the result
 export async function connect(port = 9222, timeoutMs = 60_000) {

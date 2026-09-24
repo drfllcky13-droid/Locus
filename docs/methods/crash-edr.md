@@ -1,6 +1,6 @@
 # EDR pre-crash data
 
-Locus doesn't read EDR retrieval tools' files. Those formats are proprietary and are not reverse engineered (SPEC). The examiner brings the pre-crash data table in one of two ways:
+Lotus doesn't read EDR retrieval tools' files. Those formats are proprietary and are not reverse engineered (SPEC). The examiner brings the pre-crash data table in one of two ways:
 - as a CSV exported or transcribed from the retrieval report;
 - typed into a form laid out like that table: 5 s before the trigger at 2 samples a second, with rows added or removed as needed.
 

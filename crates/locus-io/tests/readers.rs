@@ -393,7 +393,7 @@ fn jpeg_dimensions_and_exif() {
     let make = Field {
         tag: Tag::Make,
         ifd_num: In::PRIMARY,
-        value: Value::Ascii(vec![b"Locus Test Camera".to_vec()]),
+        value: Value::Ascii(vec![b"Lotus Test Camera".to_vec()]),
     };
     let taken = Field {
         tag: Tag::DateTimeOriginal,
@@ -424,7 +424,7 @@ fn jpeg_dimensions_and_exif() {
             .find(|f| f.tag == t)
             .map(|f| f.value.clone())
     };
-    assert_eq!(get("Make").as_deref(), Some("\"Locus Test Camera\""));
+    assert_eq!(get("Make").as_deref(), Some("\"Lotus Test Camera\""));
     assert_eq!(
         get("DateTimeOriginal").as_deref(),
         Some("2026-09-22 10:30:00")

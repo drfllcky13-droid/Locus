@@ -1,4 +1,4 @@
-// The diagram symbol library (assets/symbols: original, drawn for Locus), the legend built
+// The diagram symbol library (assets/symbols: original, drawn for Lotus), the legend built
 // from what a diagram uses, and evidence-marker numbering.
 import index from "../../../assets/symbols/index.json";
 import type { Diagram, Entity } from "./model";

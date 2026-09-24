@@ -13,7 +13,7 @@ export async function sceneGlb(
 ): Promise<ArrayBuffer> {
   const built = buildScene(doc, diagrams, origin);
   const root = new THREE.Group();
-  root.name = "Locus scene";
+  root.name = "Lotus scene";
   root.rotation.x = -Math.PI / 2;
   root.userData = {
     locus: {

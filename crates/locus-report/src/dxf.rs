@@ -115,7 +115,7 @@ pub fn dxf(d: &Diagram, symbols: &[SymbolDef]) -> String {
     let mut o = Out(String::new());
     o.pair(
         999,
-        "Locus diagram. Units: metres, project frame (x east, y north).",
+        "Lotus diagram. Units: metres, project frame (x east, y north).",
     );
     o.pair(0, "SECTION");
     o.pair(2, "HEADER");

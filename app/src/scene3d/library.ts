@@ -1,4 +1,4 @@
-// The asset library: every model is generated here from its dimensions, drawn for Locus.
+// The asset library: every model is generated here from its dimensions, drawn for Lotus.
 // Nothing is imported or copied, and nothing is branded. Pure.
 //
 // Model coordinates: metres, origin on the ground at the model's centre, +x forward, +y left,

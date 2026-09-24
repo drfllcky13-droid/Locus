@@ -1,12 +1,12 @@
 # Case package
 
-A case package is a folder, for a USB drive, that lets someone without Locus view a case: a prosecutor, defence counsel, a court. Nothing needs installing and no administrator rights are needed. It can't change the case, and it proves it hasn't been changed.
+A case package is a folder, for a USB drive, that lets someone without Lotus view a case: a prosecutor, defence counsel, a court. Nothing needs installing and no administrator rights are needed. It can't change the case, and it proves it hasn't been changed.
 
 ## What's in it
 
 | Path | What |
 |---|---|
-| `Locus Viewer.exe` | The Locus program itself. It opens as the read-only viewer when it finds the package's manifest beside it, so the viewer is exactly the validated program. |
+| `Lotus Viewer.exe` | The Lotus program itself. It opens as the read-only viewer when it finds the package's manifest beside it, so the viewer is exactly the validated program. |
 | `case/project.sqlite` | A consistent copy of the case's database (SQLite `VACUUM INTO`): evidence records and hashes, registrations, diagrams, 3D scenes and animations, analyses, measurements, the audit log. |
 | `case/derived/` | The point clouds (octrees) and cleanup bitmaps the viewer draws. |
 | `case/evidence/` | The original evidence files, only if chosen when making the package. Their hashes are always in the database and the case report. |

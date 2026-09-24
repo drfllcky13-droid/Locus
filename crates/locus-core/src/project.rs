@@ -29,11 +29,11 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("this is a read-only case package: nothing in it can be changed")]
     ReadOnly,
-    #[error("not a Locus project (no project.sqlite): {0}")]
+    #[error("not a Lotus project (no project.sqlite): {0}")]
     NotAProject(PathBuf),
     #[error("the folder for a new project must be empty: {0}")]
     NotEmpty(PathBuf),
-    #[error("project was written by a newer or unknown version of Locus (schema {0})")]
+    #[error("project was written by a newer or unknown version of Lotus (schema {0})")]
     SchemaVersion(String),
     #[error("audit log has been altered at entry {seq}: {reason}")]
     Tampered { seq: i64, reason: String },

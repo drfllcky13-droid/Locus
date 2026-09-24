@@ -186,7 +186,7 @@ pub fn document(meta: &Meta, r: &RegistrationReport) -> Document {
                 "Report made by".into(),
                 format!("{}, {}", meta.printed_by, meta.printed_at),
             ],
-            ["Software".into(), format!("Locus {}", meta.app_version)],
+            ["Software".into(), format!("Lotus {}", meta.app_version)],
             ["Recorded in audit entry".into(), meta.record_entry.clone()],
             ["Audit log head".into(), meta.audit_head.clone()],
         ],

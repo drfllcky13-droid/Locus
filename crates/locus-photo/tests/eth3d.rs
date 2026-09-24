@@ -34,7 +34,7 @@ fn heavy_eth3d_pipes_distances_within_one_percent() {
     println!("{}", build.banner);
     let cpu = std::env::var("LOCUS_COLMAP_GPU").is_err();
     // One camera body and lens for all 14 photos, a fisheye (the ground truth models it as
-    // THIN_PRISM_FISHEYE), features from 4800 px images (Locus's default for measurement; COLMAP's
+    // THIN_PRISM_FISHEYE), features from 4800 px images (Lotus's default for measurement; COLMAP's
     // own 3200 px left the 99th percentile at 1.02 %): the choices an examiner would make.
     let settings = colmap::Settings {
         cpu_only: cpu,

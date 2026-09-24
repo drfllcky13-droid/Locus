@@ -1,6 +1,6 @@
 //! Crash reports that never leave the machine by themselves and never carry case data: a panic
 //! writes the app version, system, the message (with anything that looks like a file path
-//! removed) and a backtrace of Locus's own code to the app's log folder. On the next start the
+//! removed) and a backtrace of Lotus's own code to the app's log folder. On the next start the
 //! app offers to show it, and the user can copy it and send it on if they choose.
 
 use crate::commands::CmdResult;
@@ -39,7 +39,7 @@ fn write(dir: &Path, kind: &str, message: &str, detail: &str) {
     let _ = std::fs::create_dir_all(dir);
     let at = locus_core::timestamp();
     let text = format!(
-        "Locus crash report\r\n\
+        "Lotus crash report\r\n\
          Version: {}\r\nSystem: {} {}\r\nWhen: {at}\r\nKind: {kind}\r\n\
          \r\nMessage:\r\n{}\r\n\r\nWhere:\r\n{}\r\n\
          \r\nThis report holds no case data: file paths are removed. Nothing was sent anywhere.\r\n",
@@ -69,7 +69,7 @@ pub fn install(app: &AppHandle) {
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_default();
         let bt = std::backtrace::Backtrace::force_capture();
-        // Only Locus's own frames: names of functions, not data.
+        // Only Lotus's own frames: names of functions, not data.
         let ours: Vec<String> = bt
             .to_string()
             .lines()

@@ -67,7 +67,7 @@ const END: Step[] = [
   },
   {
     title: "Make a case package",
-    body: "A read-only folder for a USB drive: the viewer, the case data, every report and render, all hashed. Give it to anyone who needs to see the case without Locus.",
+    body: "A read-only folder for a USB drive: the viewer, the case data, every report and render, all hashed. Give it to anyone who needs to see the case without Lotus.",
     where: "3D view → Export → Make a case package…",
     help: "case-package",
     done: (s) => s.packages > 0,
@@ -111,7 +111,7 @@ export const GUIDES: Guide[] = [
       },
       {
         title: "Find the area of origin",
-        body: "Add each wall stain from its photo: line the photo up on the scan with two or more pairs, let Locus find its edge, then mark its tail. At least four stains clearly moving upward are needed. The result is the point in 3D with its 95 % region, and the conventional point beside it.",
+        body: "Add each wall stain from its photo: line the photo up on the scan with two or more pairs, let Lotus find its edge, then mark its tail. At least four stains clearly moving upward are needed. The result is the point in 3D with its 95 % region, and the conventional point beside it.",
         where: "3D view → Bloodstain area of origin",
         help: "bloodstain",
         done: (s) => n(s, "bloodstain") > 0,
@@ -182,7 +182,7 @@ export const GUIDES: Guide[] = [
       ...START,
       {
         title: "Import the photos or a video",
-        body: "Photos and walkthrough video are evidence. From enough overlapping photos Locus can also build a measured point cloud (photogrammetry).",
+        body: "Photos and walkthrough video are evidence. From enough overlapping photos Lotus can also build a measured point cloud (photogrammetry).",
         where: "Import evidence…; 3D view → Photogrammetry",
         help: "photogrammetry",
         done: (s) => s.photos + s.videos > 0,
@@ -204,7 +204,7 @@ export const GUIDES: Guide[] = [
       },
       {
         title: "Draw the scene",
-        body: "Rooms, openings, fuel packages and the area of origin as you've determined it, with evidence markers and dimensions. Locus documents and measures; the origin and cause are your determination.",
+        body: "Rooms, openings, fuel packages and the area of origin as you've determined it, with evidence markers and dimensions. Lotus documents and measures; the origin and cause are your determination.",
         where: "+ New diagram",
         help: "diagrams",
         done: (s) => s.diagrams > 0,

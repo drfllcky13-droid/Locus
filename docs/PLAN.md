@@ -1,6 +1,6 @@
-# Locus plan
+# Lotus plan
 
-The single, living plan for Locus. It says what Locus is for, the rules it is built under, the decisions taken and why, what is left in what order, and what only Addison can answer. The detail lives elsewhere and is linked, not copied:
+The single, living plan for Lotus. It says what Lotus is for, the rules it is built under, the decisions taken and why, what is left in what order, and what only Addison can answer. The detail lives elsewhere and is linked, not copied:
 - the build specification: [SPEC.md](SPEC.md);
 - the phase log and the Blocked list: [PROGRESS.md](PROGRESS.md);
 - every decision with its full reasoning, dated: [DECISIONS.md](DECISIONS.md);
@@ -29,10 +29,10 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 
 ## 1. Goal and scope
 
-- **What Locus is.** An original, clean-room desktop application with the capabilities of the top commercial forensic scene packages. It covers 2D and 3D documentation, analysis and court presentation of crime and crash scenes. Addison, the owner, works in law-enforcement forensic services.
+- **What Lotus is.** An original, clean-room desktop application with the capabilities of the top commercial forensic scene packages. It covers 2D and 3D documentation, analysis and court presentation of crime and crash scenes. Addison, the owner, works in law-enforcement forensic services.
 - **The overriding goal.** Crime and crash tools must produce results an examiner can defend in court. Every other design choice gives way to it.
-- **Registration is in scope, but only so far.** The top tier of such packages registers scans itself, so Locus does too. Locus is **not** a full scan-processing suite: registration exists only to get scan data into the analysis tools.
-- **Desktop only.** Locus is an installed app, with no web version and no hosted deployment, and the repo is never published as a website. Network features (auto-update, crash reporting that never uploads case data) **are** allowed. An earlier offline-only rule was superseded on 2026-09-22; both entries are kept in DECISIONS.md.
+- **Registration is in scope, but only so far.** The top tier of such packages registers scans itself, so Lotus does too. Lotus is **not** a full scan-processing suite: registration exists only to get scan data into the analysis tools.
+- **Desktop only.** Lotus is an installed app, with no web version and no hosted deployment, and the repo is never published as a website. Network features (auto-update, crash reporting that never uploads case data) **are** allowed. An earlier offline-only rule was superseded on 2026-09-22; both entries are kept in DECISIONS.md.
 - **No VR.** Phase 12 (VR) was dropped by Addison on 2026-09-23.
 - **Three licence tiers**, as feature flags on one codebase: Diagram, Analyst, Analyst Plus. See [SPEC.md §1](SPEC.md).
 
@@ -52,7 +52,7 @@ The rules in [CLAUDE.md](../CLAUDE.md), in short:
 
 Working principles, established in review:
 - **Honest uncertainty.** Every result carries an uncertainty, and validation shows its stated 95 % interval covers the truth about 95 % of the time, poor inputs included. Deliberately conservative ranges are acceptable when they are stated as such.
-- **Show the conventional method.** Where Locus uses a better but less conventional method, it also computes and reports the conventional result, with the reason and the validation comparison: admissibility weighs general acceptance.
+- **Show the conventional method.** Where Lotus uses a better but less conventional method, it also computes and reports the conventional result, with the reason and the validation comparison: admissibility weighs general acceptance.
 - **Label judgment against computation.** Examiner-set values (the ±5° trajectory zone, assumed motion, a default seat position) never look like computed or measured results.
 - **Refuse rather than degrade.** Examples: a print scale that doesn't fit is refused rather than shrunk; a pick beyond the encoding limits is refused; a changed underlay image is refused.
 - **Saved records never change silently.** When an algorithm changes, saved measurements keep their stored values; a revision is a new record.
@@ -92,7 +92,7 @@ A summary by area. The dated entries with full reasons and alternatives are in [
   - Unicode-3.0 is approved.
   - The data-file exception covers unmodified or format-converted data.
   - Slovak (GPL) and Hungarian (MPL-1.1) hyphenation are dropped by a local hypher patch, and CI fails if they return.
-  - First-party data uses LicenseRef-Locus-Proprietary, and the notices check has no unexplained ignores.
+  - First-party data uses LicenseRef-Lotus-Proprietary, and the notices check has no unexplained ignores.
   - Crates are UNLICENSED with publish = false.
 - **Reports use Typst,** compiled in-process and sealed: one template, one data file, no file access, no clock. It was chosen over a custom generator to avoid throwaway work. All analysis reports share one layout.
 
@@ -187,13 +187,13 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 
 - **Textbook worked examples** for skid, yaw and momentum: which text (Fricke/Northwestern; Daily et al./IPTM; Brach & Brach/SAE), and the inputs and published answers for 3–5 examples.
 - **The physical print check:** measure a 1:100 print with a ruler.
-- **A case package on a clean machine:** open a package on a Windows PC that has never had Locus, as a standard user, from a USB drive.
+- **A case package on a clean machine:** open a package on a Windows PC that has never had Lotus, as a standard user, from a USB drive.
 - **A mid-range GPU run,** for example on an RTX 3060 or a GTX 1660.
 - **The publisher domain** for the bundle identifier, needed before the first signed release.
 - **The lab's trajectory angle convention,** and whether the plan-view convergence of floor stains is used.
 - **GitHub Actions minutes and billing.**
 - **Legal review** of THIRD_PARTY_NOTICES before any commercial release.
-- **The final product name** ("Locus" is a working name) and commercial intent.
+- **The final product name** ("Lotus" is a working name) and commercial intent.
 - **Physical validation studies:** who runs them, and when.
 - **Evidence.com integration:** whether to pursue it.
 - **A recorded conflict, resolved by the repo.** The handover prompt described the heavy tests as running per push on Linux. The CI (2026-09-23) runs them only on release tags and on runs by hand, to save minutes. The repo's newer record stands; say if you want them per push.

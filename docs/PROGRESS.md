@@ -528,4 +528,3 @@ Results (2026-09-24), run in the built app (E:/Claude/scratch/locus/phase14_ui.m
 
 - **Case package on a clean machine** (2026-09-24): open a case package on a Windows machine that has never had Locus, as a standard user (no admin), from a USB drive, and confirm it opens, verifies, and shows its hash. Needs a spare PC or a VM (Windows Sandbox isn't available on Windows Home).
 
-- **Bundle identifier** (2026-09-22): `app.locus.desktop` is a placeholder. Addison will supply the real publisher domain before Phase 14; it must change before the first signed release.

@@ -138,7 +138,7 @@ pub fn stream_las(
         y: t(offset[1]),
         z: t(offset[2]),
     };
-    b.generating_software = "Locus".into();
+    b.generating_software = "Lotus".into();
     b.system_identifier = "EXTRACTION".into();
     let header = b.into_header().map_err(e)?;
     let mut w = las::Writer::from_path(out, header).map_err(e)?;

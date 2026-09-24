@@ -1,4 +1,4 @@
-// Photogrammetry, in the 3D view's side panel: COLMAP's setup (installed by the examiner; Locus
+// Photogrammetry, in the 3D view's side panel: COLMAP's setup (installed by the examiner; Lotus
 // runs it and records its version and hash), a reconstruction from the project's photos or a
 // video, then scaling (known distances or control points clicked in the photos, or the photos'
 // GPS) and import of the scaled point cloud as evidence, with the run stored as an analysis.
@@ -47,9 +47,9 @@ interface Gcp {
 
 const LICENCES = [
   "COLMAP itself: BSD-3-Clause.",
-  "Bundled in COLMAP's source: SiftGPU, licensed for educational, research and non-profit use only (used for GPU feature extraction and matching; the CPU-only setting avoids it); LSD, AGPL-3.0 (line detection, not used by Locus); PoissonRecon, MIT; VLFeat, BSD-2-Clause (the CPU SIFT).",
+  "Bundled in COLMAP's source: SiftGPU, licensed for educational, research and non-profit use only (used for GPU feature extraction and matching; the CPU-only setting avoids it); LSD, AGPL-3.0 (line detection, not used by Lotus); PoissonRecon, MIT; VLFeat, BSD-2-Clause (the CPU SIFT).",
   "Linked in the official builds: Qt (LGPL-3, the GUI), CGAL (GPL-3/LGPL-3, meshing), Ceres Solver (BSD-3), Eigen (MPL-2.0), Boost (BSL-1.0), SQLite (public domain), OpenImageIO and its codecs (Apache-2.0 and permissive), SuiteSparse (parts LGPL/GPL) and, in the CUDA build, NVIDIA's CUDA runtime (NVIDIA's licence).",
-  "Locus doesn't ship COLMAP: your agency installs it and decides whether these terms suit its use. Check the licence files in the COLMAP folder you install; this summary was made for COLMAP 4.2.",
+  "Lotus doesn't ship COLMAP: your agency installs it and decides whether these terms suit its use. Check the licence files in the COLMAP folder you install; this summary was made for COLMAP 4.2.",
 ];
 
 function pad(n: number) {
@@ -298,7 +298,7 @@ export function PhotoPanel({
               : "not set up"}
         </summary>
         <p className="muted">
-          Locus runs COLMAP, installed separately. Download it from{" "}
+          Lotus runs COLMAP, installed separately. Download it from{" "}
           <span className="selectable">{setup?.releases}</span> (the CUDA build for dense point
           clouds on NVIDIA graphics), unzip it, and choose its COLMAP.bat or bin\colmap.exe. Every
           run records COLMAP&apos;s version and its executable&apos;s SHA-256.

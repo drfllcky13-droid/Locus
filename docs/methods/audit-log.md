@@ -24,14 +24,14 @@ Each field is preceded by its length as an unsigned 64-bit little-endian integer
 
 ## What is checked on open
 
-Locus refuses to open a project unless all of these hold:
+Lotus refuses to open a project unless all of these hold:
 
 1. Entries are numbered 1…N with no gaps or duplicates.
 2. Each entry's `prev_hash` equals the previous entry's `hash`.
 3. Each entry's `hash` recomputes correctly from its stored fields.
 4. The last entry's `seq` and `hash` equal the chain head recorded separately in the `meta` table.
 
-Rules 1–3 detect any edited, deleted, inserted or reordered entry. Rule 4 detects entries removed from the end and entries appended outside Locus. The error names the first entry that fails.
+Rules 1–3 detect any edited, deleted, inserted or reordered entry. Rule 4 detects entries removed from the end and entries appended outside Lotus. The error names the first entry that fails.
 
 The database also has triggers that reject `UPDATE` and `DELETE` on the audit log and on evidence records, so no code path in the application can rewrite them.
 

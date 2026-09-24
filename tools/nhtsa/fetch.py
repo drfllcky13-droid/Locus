@@ -13,7 +13,7 @@ file (crates/locus-analysis/src/stiffness.rs; docs/methods/crash-stiffness.md). 
 import argparse, concurrent.futures, csv, json, os, sys, time, urllib.request
 
 BASE = 'https://nrd.api.nhtsa.dot.gov/nhtsa/vehicle/api/v1/vehicle-database-test-results'
-UA = {'User-Agent': 'Locus crash-stiffness table builder (forensic reconstruction; stdlib urllib)'}
+UA = {'User-Agent': 'Lotus crash-stiffness table builder (forensic reconstruction; stdlib urllib)'}
 COLUMNS = ['test_no', 'test_date', 'test_type', 'test_reference', 'vehicle_no', 'make', 'model',
            'model_year', 'body_type', 'mass_kg', 'speed_kmh', 'vehicle_width_mm',
            'damage_width_mm', 'pdof_deg', 'c1_mm', 'c2_mm', 'c3_mm', 'c4_mm', 'c5_mm', 'c6_mm',

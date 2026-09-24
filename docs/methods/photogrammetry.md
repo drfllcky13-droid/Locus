@@ -1,13 +1,13 @@
 # Photogrammetry
 
-Locus turns photos or a video into a scaled point cloud by running COLMAP, installed separately by the examiner's agency. It then scales and places the result and imports it as evidence.
+Lotus turns photos or a video into a scaled point cloud by running COLMAP, installed separately by the examiner's agency. It then scales and places the result and imports it as evidence.
 
 - Code: `crates/locus-photo` (runner, camera models, scaling, EXIF, video), `src-tauri/src/photo_cmds.rs` (commands), `crates/locus-report/src/photo.rs` (report).
 - Why COLMAP isn't bundled: `docs/phase8-colmap-licence-review.txt`.
 
 ## COLMAP setup
 
-In the panel's setup section, the examiner chooses COLMAP's `COLMAP.bat` (its release folder) or `bin\colmap.exe`. Locus:
+In the panel's setup section, the examiner chooses COLMAP's `COLMAP.bat` (its release folder) or `bin\colmap.exe`. Lotus:
 - runs it to read its banner, which gives the version and whether it has CUDA;
 - hashes the executable;
 - refuses versions older than 3.9.
@@ -140,7 +140,7 @@ The PDF report prints all of it.
 `crates/locus-photo/tests/eth3d.rs` (heavy; data outside the repository, see its README) uses **ETH3D's "pipes"** scene: 14 DSLR photos with a fisheye lens, and ground-truth camera poses and calibration registered to a laser scan. The benchmark data is CC BY-NC-SA 4.0 and is used only as test input.
 
 1. COLMAP reconstructs from the photos alone.
-2. Each reconstructed point is triangulated again with the ground-truth cameras, from its own observations. Their median reprojection error is 0.5 px, a check on Locus's camera models.
+2. Each reconstructed point is triangulated again with the ground-truth cameras, from its own observations. Their median reprojection error is 0.5 px, a check on Lotus's camera models.
 3. The model is scaled by 3–4 known distances of 2–3 m between well-triangulated points.
 4. Every other distance of at least 0.5 m is compared with the truth.
 

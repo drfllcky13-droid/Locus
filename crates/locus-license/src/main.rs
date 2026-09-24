@@ -1,4 +1,4 @@
-//! Makes Locus licence files. The private key stays with the publisher, never in the
+//! Makes Lotus licence files. The private key stays with the publisher, never in the
 //! repository or the app (docs/methods/licensing.md).
 //!
 //! - `locus-license keygen --out KEY.txt` writes a new private key (hex) and prints its public

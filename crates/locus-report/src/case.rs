@@ -80,7 +80,7 @@ pub fn report(d: &CaseData) -> Report {
         [
             "Printed".into(),
             format!(
-                "{}, {} (Locus {})",
+                "{}, {} (Lotus {})",
                 d.printed_by, d.printed_at, d.app_version
             ),
         ],

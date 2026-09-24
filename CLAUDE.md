@@ -1,6 +1,6 @@
-# Locus: forensic scene reconstruction software
+# Lotus: forensic scene reconstruction software
 
-Locus is a desktop application for documenting, analyzing, and presenting crime and crash scenes from 3D laser scans, drone imagery, and hand measurements. It is an original, clean-room product. The full build plan is in `docs/SPEC.md`. Read it before starting any phase. Track progress in `docs/PROGRESS.md`.
+Lotus is a desktop application for documenting, analyzing, and presenting crime and crash scenes from 3D laser scans, drone imagery, and hand measurements. It is an original, clean-room product. The full build plan is in `docs/SPEC.md`. Read it before starting any phase. Track progress in `docs/PROGRESS.md`.
 
 ## Non-negotiable rules
 
@@ -11,7 +11,7 @@ Locus is a desktop application for documenting, analyzing, and presenting crime 
 5. **Explain the method.** Each analysis tool records which method, inputs, assumptions, and limitations were used, so the report can show its work. An examiner must be able to defend every number in court.
 6. **Tests before merge.** `cargo test`, `cargo clippy -- -D warnings`, `pnpm test`, and `pnpm typecheck` must pass before a phase is marked done.
 7. **Licensing.** Dependencies must be MIT, Apache-2.0, BSD, Zlib, MPL-2.0, or Unicode-3.0. Ask before adding anything GPL, AGPL, LGPL, or with unclear terms. Data-file exception: CC-BY-4.0, CC-BY-SA-3.0, LPPL, the W3C licence, the permissive hyphenation-pattern licences (FSF all-permissive, and the custom Bulgarian and Sanskrit pattern licences) and the Sublime HQ packages licence are allowed only for data files bundled unmodified or converted to another format without changing their content (hyphenation patterns, citation styles, character tables, syntax definitions), never for code. Slovak and Hungarian hyphenation patterns are excluded (GPL/MPL-1.1); hypher is patched to drop them. Every bundled third-party data file must have an entry in THIRD_PARTY_NOTICES.txt; CI checks this.
-8. **Desktop only.** Locus ships as an installed desktop app. There is no web version and no hosted deployment, and nothing in the repo should be set up to publish it as a website.
+8. **Desktop only.** Lotus ships as an installed desktop app. There is no web version and no hosted deployment, and nothing in the repo should be set up to publish it as a website.
 
 ## Stack
 

@@ -1,13 +1,13 @@
 # Physical validation protocol
 
-The validation report (`locus-validate run`, [validation.md](validation.md)) shows that each tool recovers known truth on synthetic data. That is necessary but not enough for court. Synthetic data can't model real surfaces, lighting, scanner behaviour, or how examiners actually pick points and read stains. This protocol describes the physical studies that measure Locus's accuracy the way it will be used: on staged scenes with measured truth, by several examiners working blind.
+The validation report (`locus-validate run`, [validation.md](validation.md)) shows that each tool recovers known truth on synthetic data. That is necessary but not enough for court. Synthetic data can't model real surfaces, lighting, scanner behaviour, or how examiners actually pick points and read stains. This protocol describes the physical studies that measure Lotus's accuracy the way it will be used: on staged scenes with measured truth, by several examiners working blind.
 
 It follows the general design of the published black-box and white-box studies in forensic science: known ground truth, independent examiners, blinding, pre-registered analysis, and error rates reported with their confidence intervals.
 
 ## 1. Roles
 
 - **Study lead**: designs each scene, records its ground truth, holds the answer key, and analyses the results. Never an examiner in the same study.
-- **Examiners**: at least **five** per study, of mixed experience, trained on Locus to the same standard (the guided workflow plus the method notes). They see only what an examiner sees at a real scene.
+- **Examiners**: at least **five** per study, of mixed experience, trained on Lotus to the same standard (the guided workflow plus the method notes). They see only what an examiner sees at a real scene.
 - **Independent reviewer**: checks the ground-truth measurements and the analysis before results are released.
 
 ## 2. Ground truth
@@ -36,9 +36,9 @@ Each scene's truth is measured with an instrument at least **five times more pre
 
 ## 4. What each examiner records
 
-Examiners use Locus as they would in casework, and each submits:
+Examiners use Lotus as they would in casework, and each submits:
 - the project (the `.locus` folder), so every pick and setting is in its audit log;
-- each result with its stated uncertainty, as Locus reports it;
+- each result with its stated uncertainty, as Lotus reports it;
 - any judgment calls (an excluded stain, a chosen lens model, an assumed segment), with the reason;
 - time taken, and any problems.
 
@@ -49,12 +49,12 @@ For each tool and scene:
 - **Coverage**: the share of results whose stated 95 % interval or region contains the truth, with its binomial 95 % confidence interval. The target is about 95 %; well below that means the stated uncertainty is too small.
 - **Between-examiner reproducibility**: the spread of results across examiners on the same scene.
 - **Within-examiner repeatability**: the difference between an examiner's first and repeated results.
-- **Conventional method**: where Locus reports it (the bloodstain conventional point, for example), the same statistics for it, so the choice of primary method stays justified on real data.
+- **Conventional method**: where Lotus reports it (the bloodstain conventional point, for example), the same statistics for it, so the choice of primary method stays justified on real data.
 - **Failures**: every result that misses its bound, with its cause (tool, examiner, scene condition). Where a failure shows a software problem, it is logged and fixed. The study is then rerun on the fixed version, not re-scored.
 
 ## 6. Reporting
 
-- A study report gives the scenes, truth and its uncertainty, examiners (anonymised), the pre-registered plan, all results (none withheld), the statistics above, the failures and their causes, and the Locus version and validation report it used.
+- A study report gives the scenes, truth and its uncertainty, examiners (anonymised), the pre-registered plan, all results (none withheld), the statistics above, the failures and their causes, and the Lotus version and validation report it used.
 - The report is kept with the release it validates. The validation report's "What this does and doesn't show" section points to it.
 - A new release that changes a tool's method needs that tool's study repeated, at least on the typical scene.
 

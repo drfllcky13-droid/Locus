@@ -1,6 +1,6 @@
 # Reports and exports
 
-Everything Locus writes out of a project comes from saved records, never from unsaved work in the view. Every file is hashed (SHA-256) and logged in the audit log with what it was made from: `analysis.reported`, `diagram.exported`, `report.exported` or `export.written`. Those entries record reading the project, not changing it, so they don't move the project's *state head* (below).
+Everything Lotus writes out of a project comes from saved records, never from unsaved work in the view. Every file is hashed (SHA-256) and logged in the audit log with what it was made from: `analysis.reported`, `diagram.exported`, `report.exported` or `export.written`. Those entries record reading the project, not changing it, so they don't move the project's *state head* (below).
 
 ## Reports
 

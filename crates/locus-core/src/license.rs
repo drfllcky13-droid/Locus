@@ -93,7 +93,7 @@ pub fn public_key(secret: &[u8; 32]) -> [u8; 32] {
 /// (YYYY-MM-DD).
 pub fn verify(text: &str, public: &[u8; 32], today: &str) -> Result<License, String> {
     let f: LicenseFile =
-        serde_json::from_str(text).map_err(|e| format!("not a Locus licence file ({e})"))?;
+        serde_json::from_str(text).map_err(|e| format!("not a Lotus licence file ({e})"))?;
     let key = VerifyingKey::from_bytes(public).map_err(|e| e.to_string())?;
     let bytes: [u8; 64] = hex::decode(&f.signature)
         .ok()

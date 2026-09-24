@@ -7,7 +7,7 @@ const REFS: &[&str] = &[
     "J. L. Schönberger and J.-M. Frahm, \"Structure-from-Motion Revisited\", CVPR 2016: COLMAP's sparse reconstruction.",
     "J. L. Schönberger, E. Zheng, M. Pollefeys and J.-M. Frahm, \"Pixelwise View Selection for Unstructured Multi-View Stereo\", ECCV 2016: COLMAP's dense reconstruction.",
     "S. Umeyama, \"Least-squares estimation of transformation parameters between two point patterns\", IEEE Transactions on Pattern Analysis and Machine Intelligence 13(4), 1991: the similarity fit to control points.",
-    "T. Schöps et al., \"A Multi-View Stereo Benchmark with High-Resolution Images and Multi-Camera Videos\", CVPR 2017 (ETH3D): the benchmark Locus's photogrammetry is validated on.",
+    "T. Schöps et al., \"A Multi-View Stereo Benchmark with High-Resolution Images and Multi-Camera Videos\", CVPR 2017 (ETH3D): the benchmark Lotus's photogrammetry is validated on.",
 ];
 
 pub fn report(meta: &Meta, r: &PhotoRun) -> Report {

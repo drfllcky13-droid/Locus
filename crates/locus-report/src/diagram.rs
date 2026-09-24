@@ -707,7 +707,7 @@ pub fn raster(
         .ok_or_else(|| "the sheet has no page".to_string())
 }
 
-/// The symbol library (assets/symbols: original, drawn for Locus), as the editor has it.
+/// The symbol library (assets/symbols: original, drawn for Lotus), as the editor has it.
 pub fn symbols() -> Vec<SymbolDef> {
     macro_rules! sym {
         ($id:literal, $name:literal, $size:expr) => {

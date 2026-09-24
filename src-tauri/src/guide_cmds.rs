@@ -86,7 +86,7 @@ pub async fn guide_state(app: AppHandle) -> CmdResult<GuideState> {
 pub async fn sample_create(app: AppHandle, parent: String) -> CmdResult<String> {
     blocking(app, move |_| {
         use locus_synth::bloodstain as b;
-        let dir = PathBuf::from(&parent).join("Locus sample case (synthetic)");
+        let dir = PathBuf::from(&parent).join("Lotus sample case (synthetic)");
         if dir.exists() {
             return Err(format!("{} already exists.", dir.display()));
         }
@@ -116,7 +116,7 @@ pub async fn sample_create(app: AppHandle, parent: String) -> CmdResult<String> 
         std::fs::write(
             dir.join("README.txt"),
             format!(
-                "Locus sample case (synthetic)\r\n\r\n\
+                "Lotus sample case (synthetic)\r\n\r\n\
                  Made on this computer for practice with the in-app guide \"Indoor crime scene\". \
                  Nothing here comes from a real case.\r\n\r\n\
                  room scan.e57   a scanned room (metres) with bloodstains on its walls and floor\r\n\

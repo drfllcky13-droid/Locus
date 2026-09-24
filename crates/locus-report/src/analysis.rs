@@ -231,7 +231,7 @@ pub fn details(m: &Meta) -> Vec<[String; 2]> {
     d.push([
         "Printed".into(),
         format!(
-            "{}, {} (Locus {})",
+            "{}, {} (Lotus {})",
             m.printed_by, m.printed_at, m.app_version
         ),
     ]);

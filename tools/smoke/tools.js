@@ -1,4 +1,4 @@
-// In-page functional checks, evaluated in the Locus webview by smoke.mjs (or by hand with
+// In-page functional checks, evaluated in the Lotus webview by smoke.mjs (or by hand with
 // cdp.mjs). Exercises rendering, picking, every measurement kind, every cleanup kind with
 // undo, colour modes and clipping. Returns a summary; throws on any failed expectation.
 (async () => {
