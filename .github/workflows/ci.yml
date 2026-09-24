@@ -133,8 +133,9 @@ jobs:
             filter: "test(/heavy_hybrid/)"
           - name: bad-link
             filter: "test(/heavy_an_injected/)"
+          # The ETH3D benchmark and the frame-dump tool need data kept outside the repository.
           - name: rest
-            filter: "not (test(/heavy_hybrid/) | test(/heavy_an_injected/))"
+            filter: "not (test(/heavy_hybrid/) | test(/heavy_an_injected/) | test(/heavy_eth3d/) | test(/dump_frames/))"
     name: heavy (${{ matrix.os }}, ${{ matrix.part.name }})
     runs-on: ${{ matrix.os }}
     steps:

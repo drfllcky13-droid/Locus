@@ -93,6 +93,11 @@ mod imp {
 pub use imp::{load_image, write_mp4};
 
 #[cfg(not(windows))]
+pub fn load_image(_: &Path, _: f64) -> Result<Frame, String> {
+    Err("loading images for video needs Windows Imaging Component".into())
+}
+
+#[cfg(not(windows))]
 pub fn write_mp4(_: &Path, _: &[Frame], _: u32) -> Result<(), String> {
     Err("writing MP4 needs Windows Media Foundation".into())
 }

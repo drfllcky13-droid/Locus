@@ -40,6 +40,7 @@ pub fn sample_frames(
 }
 
 /// A frame (BGRX, rows top to bottom) as an RGB PNG.
+#[cfg(windows)]
 fn write_png(path: &Path, w: u32, h: u32, bgrx: &[u8], stride: usize) -> Result<(), String> {
     let f = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(f), w, h);
