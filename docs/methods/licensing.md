@@ -37,8 +37,5 @@ This is the spec's "crash reporting that never uploads case data", taken to the 
 ## Installer and updates
 
 - **The installer** is a Windows MSI built by Tauri's bundler (WiX). It installs Lotus for every user of the PC under Program Files, with a Start-menu entry. It isn't code-signed (in-house use), so Windows SmartScreen may warn on first run.
-- **Releases.** Pushing a tag `vX.Y.Z` runs the release job in CI: it runs the full validation report, builds the MSI, and publishes a GitHub release with the MSI, its update signature, `latest.json` and the validation report.
-- **Updates** come from those releases. Lotus checks at start (quietly; offline is fine) and under Help → About → Check for updates. When one is found the side panel offers "Install and restart". An update installs only if its signature matches the update key built into Lotus. Updates contain only the program: no case data goes anywhere, and nothing is sent but the version check.
-- **The update-signing key** is outside the repository (`E:\Claude\scratch\locus\license\updater\lotus-updater.key`, no password); its public half is in `src-tauri/tauri.conf.json`. CI reads it from the repository secret `TAURI_SIGNING_PRIVATE_KEY`. Losing it means installed copies can't be updated; they'd need the next MSI installed by hand.
-- **The repository is public** (2026-09-24), so installed copies can read its releases. It was private until then; making it public also gave CI unlimited free minutes.
-- The updater uses Windows' own TLS (schannel) rather than rustls, whose `ring` dependency is ISC-licensed, outside CLAUDE.md rule 7.
+- **Releases.** Pushing a tag `vX.Y.Z` runs the release job in CI: it runs the full validation report, builds the MSI and publishes a GitHub release with both.
+- **Updates are by hand.** Installing a newer MSI upgrades Lotus in place; projects and settings are kept. There is no in-app updater: Tauri's needs an update-signing key, and Addison chose not to have one (2026-09-24). Nothing is sent from Lotus.

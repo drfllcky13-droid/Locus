@@ -38,18 +38,6 @@
     ],
     "resources": [
       "../THIRD_PARTY_NOTICES.txt"
-    ],
-    "createUpdaterArtifacts": true
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGNDBGRTdGRUVCQTFDMDYKUldRR0hMcnVmLzVBei9naGtEaHZpcXEvNVhEWnpESFh0Ky9MeS94NDNENFFlSVZxcTQvcS8rMjQK",
-      "endpoints": [
-        "https://github.com/drfllcky13-droid/Locus/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
-      }
-    }
+    ]
   }
 }

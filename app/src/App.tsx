@@ -1,5 +1,4 @@
 import { listen } from "@tauri-apps/api/event";
-import { UpdateCheck } from "./Update";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { api, type DiagramRevision, type EvidenceRecord, type ProjectInfo } from "./api";
@@ -188,7 +187,6 @@ export function App() {
         <div className="app">
           <aside className="sidebar">
             {pkg && <PackagePanel pkg={pkg} onNotice={setNotice} />}
-            {!pkg && !import.meta.env.DEV && <UpdateCheck auto />}
             {license?.status === "invalid" && !pkg && (
               <p className="muted license-note">
                 Licence not valid ({license.problem}): every tool is on without it.

@@ -213,9 +213,7 @@ jobs:
           pnpm -C app exec playwright install --with-deps chromium
           node tools/smoke/viewer-smoke.mjs
 
-  # A v* tag publishes a GitHub release: the signed-for-update MSI, latest.json for the in-app
-  # updater, and the validation report. The update-signing key is the TAURI_SIGNING_PRIVATE_KEY
-  # secret (kept outside the repository; docs/methods/licensing.md).
+  # A v* tag publishes a GitHub release: the MSI and the validation report.
   release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs: validation
@@ -235,16 +233,14 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tauriScript: pnpm tauri
           args: --bundles msi
           tagName: ${{ github.ref_name }}
           releaseName: Lotus ${{ github.ref_name }}
-          releaseBody: The MSI installs Lotus; installed copies update themselves from here. The validation report for this release is attached.
+          releaseBody: Install the MSI (a newer one upgrades an installed Lotus in place). The validation report for this release is attached.
           releaseDraft: false
-          includeUpdaterJson: true
+          includeUpdaterJson: false
       - uses: actions/download-artifact@v4
         with:
           name: validation-${{ github.ref_name }}

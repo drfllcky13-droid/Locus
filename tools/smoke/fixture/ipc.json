@@ -378,6 +378,5 @@
   "status": "evaluation",
   "license": null,
   "problem": null
- },
- "plugin:updater|check": null
+ }
 }

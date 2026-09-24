@@ -41,7 +41,6 @@ use tauri::Emitter;
 fn main() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(commands::AppState::default());
 
     #[cfg(not(feature = "spike"))]

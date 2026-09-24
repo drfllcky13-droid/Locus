@@ -1,6 +1,5 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { LicenseInfo } from "./license";
-import { UpdateCheck } from "./Update";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
@@ -97,7 +96,6 @@ export function AboutDialog({
           On laptops with two GPUs, Lotus asks for the dedicated one. If this shows integrated
           graphics, set Lotus to &quot;High performance&quot; in Windows graphics settings.
         </p>
-        {!packageHash && <UpdateCheck />}
         {licenseError && <p className="error">{licenseError}</p>}
         {notices !== null && (
           <pre className="notices" aria-label="Third-party notices">

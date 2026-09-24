@@ -1079,8 +1079,3 @@ input.anim-missing {
   border-left: 3px solid var(--accent);
   padding-left: 6px;
 }
-
-.update-note {
-  margin: 0 0 8px;
-  font-size: 12px;
-}

@@ -29,9 +29,6 @@ opt-level = 2
 [profile.dev.package.nalgebra]
 opt-level = 2
 
-[profile.dev.package.laz]
-opt-level = 2
-
 [profile.dev.package."*"]
 debug = false
 

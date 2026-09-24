@@ -17,13 +17,13 @@ Things only you can do. Nothing here blocks the next phases, but each is needed 
 - [x] **GitHub Actions minutes:** stay free (2026-09-24).
 
 ## Releases and updates
-- [ ] **Add the update-signing secret:** GitHub → drfllcky13-droid/Locus → Settings → Secrets and variables → Actions → New repository secret. Name `TAURI_SIGNING_PRIVATE_KEY`, value: the whole contents of `E:\Claude\scratch\locus\license\updater\lotus-updater.key`. Then move that folder somewhere safe and backed up (with the licence key).
+- [x] **Updates:** by hand (install the newer MSI); no update-signing key (2026-09-24).
 - [x] **Public releases:** the repository is public (2026-09-24), with commit emails and names rewritten to drfllcky13-droid and the noreply address.
 
 ## Before any commercial release
 - [ ] **New-user test:** someone who hasn't used Locus follows the in-app "Indoor crime scene" guide on the sample case (Guides → Create the sample case…), timed; the target is under 30 minutes. Note where they got stuck.
 - [x] **Installer:** WiX approved (2026-09-24). - [ ] Code-signing certificate, only if it's ever sold.
-- [x] **Updates:** GitHub Releases (2026-09-24). I'll make the update-signing key.
+- [x] **Releases:** GitHub Releases (2026-09-24).
 - [x] **No licence:** not needed; every tool works (2026-09-24).
 - [ ] **Licence private key:** move `E:\Claude\scratch\locus\license\locus-license-private-key.txt` somewhere safe and backed up (not the repository). Anyone with it can make licences.
 - [ ] **Legal review** of THIRD_PARTY_NOTICES.txt.
