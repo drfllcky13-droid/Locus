@@ -27,6 +27,8 @@ pub struct Meta {
     pub app_version: String,
     /// Hash of the newest audit log entry when the report was made.
     pub audit_head: String,
+    /// The audit entry that recorded this registration: "#seq, hash".
+    pub record_entry: String,
     /// "the first scan's file pose" or "survey control".
     pub frame: String,
     /// Settings as the examiner chose them, already worded (e.g. "Sphere diameter", "145 mm").
@@ -185,6 +187,7 @@ pub fn document(meta: &Meta, r: &RegistrationReport) -> Document {
                 format!("{}, {}", meta.printed_by, meta.printed_at),
             ],
             ["Software".into(), format!("Locus {}", meta.app_version)],
+            ["Recorded in audit entry".into(), meta.record_entry.clone()],
             ["Audit log head".into(), meta.audit_head.clone()],
         ],
         settings: meta
@@ -252,6 +255,7 @@ mod tests {
             printed_at: "2026-09-22 21:05".into(),
             app_version: "0.1.0".into(),
             audit_head: "4ace6979a0".into(),
+            record_entry: "#3, 77aa".into(),
             frame: "the first scan's file pose".into(),
             settings: vec![("Sphere diameter".into(), "145 mm".into())],
             scan_names: (0..n).map(|i| format!("Station {}", i + 1)).collect(),
@@ -318,6 +322,8 @@ mod tests {
         let report = build(&links, &sol.poses, &sol.links, &overlap, &v);
 
         let out = pdf(&meta(3), &report).unwrap();
+        // Reproducible: the same inputs give the same bytes.
+        assert!(out.pdf == pdf(&meta(3), &report).unwrap().pdf);
         assert!(out.pdf.starts_with(b"%PDF"));
         let text = out.text.replace('\u{c}', " ");
         // Every link's figures, as the adjustment computed them, are in the laid-out report.

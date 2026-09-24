@@ -657,6 +657,7 @@ mod tests {
             app_version: "0.1.0".into(),
             audit_head: "ef".repeat(32),
             case_number: Some("2026-00417".into()),
+            record_entry: Some("#12, ab12".into()),
         }
     }
 
@@ -728,6 +729,7 @@ mod tests {
     #[test]
     fn the_camera_report_says_what_the_run_computed() {
         let r = sample();
+        crate::analysis::assert_reproducible(&meta("camera/1"), |m| report(m, &r));
         let doc = report(&meta("camera/1"), &r);
         let out = pdf(&doc, vec![]).unwrap();
         assert!(out.pdf.starts_with(b"%PDF"));

@@ -404,6 +404,7 @@ mod tests {
             app_version: "0.1.0".into(),
             audit_head: "ef".repeat(32),
             case_number: Some("2026-00417".into()),
+            record_entry: Some("#12, ab12".into()),
         }
     }
 
@@ -500,6 +501,7 @@ mod tests {
             }],
         };
         let r = run(4, 12, &a, &req).unwrap();
+        crate::analysis::assert_reproducible(&meta(), |m| report(m, &r, &[]));
         let text = pdf(&report(&meta(), &r, &[]), vec![]).unwrap().text;
         for want in [
             "EDR trigger",

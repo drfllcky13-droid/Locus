@@ -59,3 +59,31 @@ fn analysis_runs_are_kept_hashed_logged_and_only_withdrawn() {
         .is_err());
     assert!(c.execute("DELETE FROM analyses WHERE id = 1", []).is_err());
 }
+
+#[test]
+fn printing_doesnt_move_the_state_head_and_a_record_traces_to_its_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut p = Project::create(&dir.path().join("a.locus"), "A", "Examiner").unwrap();
+    let rec = json!({ "summary": "x" });
+    let a = p
+        .add_analysis("trajectory", "trajectory/1", "Shot 1", &rec, None)
+        .unwrap();
+    let head = p.state_head().unwrap().unwrap();
+    // The record's own entry carries its hash.
+    let e = p
+        .audit_entry_for("analysis.created", "id", &json!(a.id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(e.hash, head.hash);
+    let d: serde_json::Value = serde_json::from_str(&e.details).unwrap();
+    assert_eq!(d["sha256"], json!(a.sha256));
+    // Printing is logged but doesn't change the project, so the state head stays.
+    p.record_analysis_report(a.id, "r.pdf", &"ab".repeat(32), 10)
+        .unwrap();
+    assert_ne!(p.audit_log().unwrap().last().unwrap().hash, head.hash);
+    assert_eq!(p.state_head().unwrap().unwrap().hash, head.hash);
+    // A change does.
+    p.add_analysis("trajectory", "trajectory/1", "Shot 2", &rec, None)
+        .unwrap();
+    assert_ne!(p.state_head().unwrap().unwrap().hash, head.hash);
+}

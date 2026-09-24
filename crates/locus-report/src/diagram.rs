@@ -863,6 +863,13 @@ mod tests {
     }
 
     #[test]
+    fn a_diagram_prints_the_same_bytes_twice() {
+        let (d, o) = (diagram(PLAN), opts(100.0));
+        let a = pdf(&d, &symbols(), &o, vec![]).unwrap();
+        assert!(a.pdf == pdf(&d, &symbols(), &o, vec![]).unwrap().pdf);
+    }
+
+    #[test]
     fn the_printed_page_measures_correctly() {
         let s = sheet(&diagram(PLAN), &symbols(), &opts(100.0)).unwrap();
         let data = serde_json::to_vec(&s).unwrap();

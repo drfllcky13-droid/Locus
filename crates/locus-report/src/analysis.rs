@@ -25,8 +25,10 @@ pub struct Meta {
     pub printed_by: String,
     pub printed_at: String,
     pub app_version: String,
-    /// Hash of the newest audit entry when the report was made.
+    /// Hash of the project state's newest audit entry (prints and exports excluded).
     pub audit_head: String,
+    /// The audit entry that recorded this record: "#seq, hash".
+    pub record_entry: Option<String>,
     /// The project's case number, if set.
     pub case_number: Option<String>,
 }
@@ -213,6 +215,12 @@ pub fn details(m: &Meta) -> Vec<[String; 2]> {
         ["Method".into(), m.method.clone()],
         ["Record SHA-256".into(), m.sha256.clone()],
         [
+            "Recorded in audit entry".into(),
+            m.record_entry
+                .clone()
+                .unwrap_or_else(|| "(not found)".into()),
+        ],
+        [
             "Run by".into(),
             format!("{}, {}", m.created_by, m.created_at),
         ],
@@ -229,4 +237,22 @@ pub fn details(m: &Meta) -> Vec<[String; 2]> {
     ]);
     d.push(["Audit log head".into(), m.audit_head.clone()]);
     d
+}
+
+/// A report built twice from the same inputs is byte-identical, and one printed later differs
+/// only in its printed time (Phase 10's acceptance). Test helper.
+#[cfg(test)]
+pub(crate) fn assert_reproducible(meta: &Meta, build: impl Fn(&Meta) -> Report) {
+    let a = pdf(&build(meta), vec![]).unwrap();
+    let b = pdf(&build(meta), vec![]).unwrap();
+    assert!(a.pdf == b.pdf, "the same inputs gave different PDF bytes");
+    let mut later = meta.clone();
+    later.printed_at = "2027-01-02T03:04:05Z".into();
+    let c = pdf(&build(&later), vec![]).unwrap();
+    assert_ne!(a.pdf, c.pdf);
+    assert_eq!(
+        a.text.replace(&meta.printed_at, "<printed>"),
+        c.text.replace(&later.printed_at, "<printed>"),
+        "a later print differs in more than its time"
+    );
 }

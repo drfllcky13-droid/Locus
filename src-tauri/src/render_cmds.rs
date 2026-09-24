@@ -76,10 +76,9 @@ pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<R
         let p = guard.as_ref().ok_or("Open or create a project first.")?;
         let (rev, a) = crate::scene3d_cmds::scene_animation(p, q.scene_id)?;
         let head = p
-            .audit_log()
+            .state_head()
             .map_err(err)?
-            .last()
-            .map(|e| e.hash.clone())
+            .map(|e| e.hash)
             .unwrap_or_default();
         Ok((rev, a, head))
     })

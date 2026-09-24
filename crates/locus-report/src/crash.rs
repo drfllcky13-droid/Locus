@@ -1224,6 +1224,7 @@ mod tests {
             app_version: "0.1.0".into(),
             audit_head: "ef".repeat(32),
             case_number: Some("2026-00417".into()),
+            record_entry: Some("#12, ab12".into()),
         }
     }
 
@@ -1244,6 +1245,7 @@ mod tests {
             1,
         )
         .unwrap();
+        crate::analysis::assert_reproducible(&meta("skid/1"), |m| super::skid(m, &skid));
         let t = pdf(&super::skid(&meta("skid/1"), &skid), vec![])
             .unwrap()
             .text;

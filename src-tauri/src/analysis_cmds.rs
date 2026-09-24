@@ -250,11 +250,14 @@ pub(crate) fn meta(p: &Project, a: &AnalysisRecord) -> CmdResult<locus_report::a
         printed_at: locus_core::timestamp(),
         app_version: env!("CARGO_PKG_VERSION").into(),
         audit_head: p
-            .audit_log()
+            .state_head()
             .map_err(err)?
-            .last()
-            .map(|e| e.hash.clone())
+            .map(|e| e.hash)
             .unwrap_or_default(),
+        record_entry: p
+            .audit_entry_for("analysis.created", "id", &serde_json::json!(a.id))
+            .map_err(err)?
+            .map(|e| format!("#{}, {}", e.seq, e.hash)),
         case_number: p.setting("case_number").map_err(err)?,
     })
 }

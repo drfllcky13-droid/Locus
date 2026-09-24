@@ -5,6 +5,16 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
 use serde_json::json;
 use std::fs;
+
+/// Audit actions that record reading the project (a print, an export, an integrity check),
+/// not a change to it.
+pub const READ_ONLY_ACTIONS: &[&str] = &[
+    "analysis.reported",
+    "diagram.exported",
+    "report.exported",
+    "export.written",
+    "evidence.verified",
+];
 use std::path::{Path, PathBuf};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -288,6 +298,32 @@ impl Project {
 
     pub fn audit_log(&self) -> Result<Vec<AuditEntry>> {
         audit::entries(&self.conn)
+    }
+
+    /// The newest audit entry that changed the project's content: prints, exports and
+    /// integrity checks read the project without changing it, so they don't move it. A report
+    /// printed twice from the same project names the same head.
+    pub fn state_head(&self) -> Result<Option<AuditEntry>> {
+        Ok(self
+            .audit_log()?
+            .into_iter()
+            .rev()
+            .find(|e| !READ_ONLY_ACTIONS.contains(&e.action.as_str())))
+    }
+
+    /// The audit entry with `action` whose details have `key` equal to `value` (the entry that
+    /// recorded a record).
+    pub fn audit_entry_for(
+        &self,
+        action: &str,
+        key: &str,
+        value: &serde_json::Value,
+    ) -> Result<Option<AuditEntry>> {
+        Ok(self.audit_log()?.into_iter().find(|e| {
+            e.action == action
+                && serde_json::from_str::<serde_json::Value>(&e.details)
+                    .is_ok_and(|d| d.get(key) == Some(value))
+        }))
     }
 
     pub fn evidence(&self) -> Result<Vec<EvidenceRecord>> {

@@ -465,11 +465,14 @@ pub async fn registration_report(app: AppHandle, id: i64, path: String) -> CmdRe
         let report = locus_register::report::build(&links, &poses, &tests, &overlap, &verified);
         let has_control = links.iter().any(|l| l.b.is_none());
         let audit_head = p
-            .audit_log()
+            .state_head()
             .map_err(err)?
-            .last()
-            .map(|e| e.hash.clone())
+            .map(|e| e.hash)
             .unwrap_or_default();
+        let record_entry = p
+            .audit_entry_for("registration.run", "id", &serde_json::json!(rec.id))
+            .map_err(err)?
+            .map_or("(not found)".into(), |e| format!("#{}, {}", e.seq, e.hash));
         // A re-solve's settings are its edits; show the original run's settings too.
         let mut settings_rows = settings(&rec.params);
         if rec.params.get("edits").is_some() {
@@ -497,6 +500,7 @@ pub async fn registration_report(app: AppHandle, id: i64, path: String) -> CmdRe
             printed_at: locus_core::timestamp(),
             app_version: env!("CARGO_PKG_VERSION").into(),
             audit_head,
+            record_entry,
             frame: if has_control {
                 "survey control".into()
             } else {

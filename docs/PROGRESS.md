@@ -367,6 +367,36 @@ Opposing counsel's likely challenges, and where each is answered:
 
 Phase 9 is done.
 
+### Phase 10: Reports and exports
+
+Plan (2026-09-23):
+
+1. **Reproducible, traceable reports.**
+   - The "audit log head" a report prints becomes the head of the project's *state*: the last entry that isn't itself a print or an export. Printing a report appends an entry, so printing twice used to give two different heads, and two different PDFs.
+   - Every report names the audit entry that recorded what it reports (sequence number and hash). The record's SHA-256 is in that entry's details, so each number traces from the report to the record to the log.
+   - Tests render every report type twice and require identical bytes, then change only the print time and require that nothing else differs. In the app, the same record printed twice gives identical PDFs apart from the printed time.
+2. **A case report**, the scene summary. It gives:
+   - the project and case, examiner, and the evidence list with each file's SHA-256, size, import time and its import's audit entry;
+   - the latest integrity check;
+   - an index of every record: registrations, diagram and scene revisions, analyses (including withdrawn ones, marked), measurements and renders, each with its hash and audit entry.
+3. **Exports**, each hashed and audit-logged like a report, from saved records only:
+   - diagrams as PNG and TIFF at a chosen DPI (the printed sheet rasterised, scale kept, DPI in the file);
+   - diagrams as DXF, in world metres with layers (lines, polylines, arcs, rooms and roads as built, dimensions, text, markers, points; symbols as their outline and name);
+   - point clouds as E57 and LAS: the chosen scans in the project frame, with cleanup applied, streamed for large clouds. The coordinate frame and units are stated in the file and the log;
+   - the 3D scene as glTF binary (.glb), its models and extrusions;
+   - measurements as CSV (value, uncertainty, unit, points, source scans, audit entry).
+4. **One Export panel** listing what each record can be exported as.
+
+Item 1 done (2026-09-24):
+- reports print the state head (`Project::state_head`: prints, exports and integrity checks excluded) and the audit entry that recorded the record (`audit_entry_for`);
+- diagram prints name their revision's entry;
+- tests: every analysis report type tested, and the registration and diagram reports, give identical bytes twice; a later print differs only in its time;
+- in the app, a skid record printed twice differs in one line, the printed time, and both name audit entry #5, which carries the record's SHA-256.
+
+Acceptance criteria (SPEC):
+- [ ] A report generated twice from the same project is byte-identical apart from the timestamp.
+- [ ] Every number in a report traces to an audit log entry.
+
 ## Blocked
 
 - **Physical print-scale check at 1:100** (2026-09-22): print a scaled diagram PDF at actual size and measure it (the 10 m line and the 100 mm calibration bar in the title block) with a ruler. The PDF geometry is proven by tests; the physical check must be done before release.

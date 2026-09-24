@@ -140,6 +140,19 @@ pub async fn diagram_pdf(
                     "Revision".into(),
                     format!("{} (SHA-256 {})", rev.number, &rev.sha256[..16]),
                 ),
+                (
+                    "Audit entry".into(),
+                    ["diagram.revised", "diagram.created"]
+                        .iter()
+                        .find_map(|act| {
+                            p.audit_entry_for(act, "revision", &serde_json::json!(rev.revision_id))
+                                .ok()
+                                .flatten()
+                        })
+                        .map_or("(not found)".into(), |e| {
+                            format!("#{}, {}", e.seq, &e.hash[..16])
+                        }),
+                ),
                 ("Drawn by".into(), rev.created_by.clone()),
                 (
                     "Printed".into(),

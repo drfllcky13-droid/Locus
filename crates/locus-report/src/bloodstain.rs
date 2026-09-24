@@ -855,6 +855,7 @@ mod tests {
             app_version: "0.1.0".into(),
             audit_head: "ef".repeat(32),
             case_number: Some("2026-00417".into()),
+            record_entry: Some("#12, ab12".into()),
         };
         (meta, r)
     }
@@ -862,6 +863,7 @@ mod tests {
     #[test]
     fn the_pdf_says_what_the_run_computed() {
         let (meta, r) = sample();
+        crate::analysis::assert_reproducible(&meta, |m| report(m, &r));
         let doc = report(&meta, &r);
         let out = pdf(&doc, vec![]).unwrap();
         assert!(out.pdf.starts_with(b"%PDF"));
