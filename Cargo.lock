@@ -3024,6 +3024,7 @@ dependencies = [
  "locus-octree",
  "locus-photo",
  "locus-register",
+ "locus-report",
  "locus-synth",
  "nalgebra",
  "png 0.18.1",

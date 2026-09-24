@@ -13,7 +13,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 
 *Updated 2026-09-23.*
 
-- **Done.** Phases 0–11 are done. Phase 11's clean-machine check is under Open questions. Phase 7's textbook-case criterion is blocked (see Open questions).
+- **Done.** Phases 0–11 and 13 are done. Phase 11's clean-machine check is under Open questions. Phase 7's textbook-case criterion is blocked (see Open questions).
 - **Phase 9 (animation), closed 2026-09-23.** It covers:
   - the motion model with provenance, time zero and plausibility checks;
   - the timeline UI;
@@ -22,7 +22,8 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
   - MP4 render with read-back checks.
 - **Phase 10 (reports and exports), closed 2026-09-24.** Reports are reproducible and traceable. There is a case report, and diagrams export as PNG, TIFF and DXF, point clouds as E57, LAS and LAZ, the scene as glTF, and measurements as CSV, all hashed and logged ([exports.md](methods/exports.md)).
 - **Phase 11 (portable case package), closed 2026-09-24.** A folder with the program itself as a read-only viewer, the case data, freshly printed reports and the renders, all hashed in a manifest whose hash is the package hash ([case-package.md](methods/case-package.md)).
-- **Next:** Phase 13, validation.
+- **Phase 13 (validation), closed 2026-09-24.** `locus-validate run` prints the validation report for every release ([validation.md](methods/validation.md)), and the physical study protocol is written ([validation-protocol.md](methods/validation-protocol.md)). The full run found the hand-measured bloodstain region under-covering (81 %); bloodstain method version 2 corrects the bias (coverage now 97 %).
+- **Next:** Phase 14, polish.
 - **Waiting on Addison:** his to-do list is [ADDISON-TODO.md](ADDISON-TODO.md) (also summarised under Open questions).
 
 ## 1. Goal and scope
@@ -163,7 +164,7 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 
 ## 4. Remaining work, in recommended order
 
-1. **Phase 13, validation.**
+1. ~~**Phase 13, validation.**~~ Done.
    - Consolidate the per-tool validation into one `locus-validate` run and PDF, regenerated for every release.
    - Write `docs/methods/validation-protocol.md` for physical studies (staged scenes, several blind examiners), since synthetic tests alone won't satisfy a court.
 2. **Phase 14, polish.**

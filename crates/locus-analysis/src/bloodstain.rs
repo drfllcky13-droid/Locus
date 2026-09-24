@@ -12,7 +12,7 @@ use crate::measure::{cross, dot, eigen_sym, norm, sub, Measured, P3};
 use crate::trajectory::{PhotoRef, PointSource};
 use serde::{Deserialize, Serialize};
 
-pub const METHOD: &str = "bloodstain/1";
+pub const METHOD: &str = "bloodstain/2";
 
 /// ln Γ(x) for x > 0 (Lanczos, g = 7; relative error below 1e-13).
 fn ln_gamma(x: f64) -> f64 {
@@ -111,7 +111,7 @@ pub const LIMITATIONS: &[&str] = &[
     "Straight-line paths ignore gravity and drag. Real droplets fall along curved paths, so the straight-line origin is usually too high. The height is the least reliable coordinate, and the estimate is best read as an upper bound on it.",
     "Width over length is sensitive to measurement for nearly round stains (impact angles above about 70°): a small error in either axis moves the angle a lot.",
     "Rough, absorbent or textured surfaces, satellite spatter, and stains that ran, dried unevenly or overlap distort the ellipse.",
-    "The ellipsoid is from resampling the stains used. It does not include any bias from the straight-line model, the photo alignment, or stains chosen from one side of the pattern.",
+    "The origin is corrected for the bias the stated measurement noise gives it, and the region covers that noise and the scatter among the stains. Neither includes bias from the straight-line model, the photo alignment, or stains chosen from one side of the pattern.",
     "The origin is where the rays pass closest together. It does not say what caused the pattern, or how many events there were.",
     "A photo taken at an angle to the surface is corrected from four corners of its scale, assuming a pinhole camera: lens distortion is not modelled. Photos taken square on are better evidence.",
 ];
@@ -932,6 +932,18 @@ pub struct Origin {
     /// The share of the fit's information from near-round stains (`NEAR_ROUND_DEG`).
     #[serde(default)]
     pub near_round_share: f64,
+    /// The estimator's bias under the stated measurement noise (parametric bootstrap: every
+    /// stain re-measured around the fitted origin's geometry with its stated noise, re-selected
+    /// by the upward rule, and refitted): mean refit − fit (m). `point` is `fitted` − `bias`.
+    #[serde(default)]
+    pub bias: P3,
+    /// The fit before the bias correction.
+    #[serde(default)]
+    pub fitted: P3,
+    /// The region's inflation for misfit beyond the stated noise: max(1, χ²/dof) on its
+    /// variance (Birge).
+    #[serde(default)]
+    pub inflation: f64,
 }
 
 /// The conventional origin, for comparison: the least-squares point nearest the rays used
@@ -1200,6 +1212,9 @@ fn distance_to_ray(x: P3, c: P3, r: P3) -> (f64, bool) {
     let along = dot(d, r);
     (norm(sub(d, scale(r, along))), along < 0.0)
 }
+
+/// Parametric bootstrap draws for the estimator's bias.
+const BIAS_DRAWS: usize = 200;
 
 /// Deterministic uniform stream (xorshift64*), for the bootstrap.
 struct Rng(u64);
@@ -1525,6 +1540,78 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
         .map(|s| s.influence)
         .sum::<f64>();
     let chi2 = rays.iter().map(|r| r.chi2(x)).sum::<f64>();
+    let bias = {
+        // Every stain the examiner didn't exclude, re-selected by the same rule each draw:
+        // which stains pass the upward test depends on their measured directions too.
+        let used: Vec<&StainInput> = inputs.iter().filter(|i| i.excluded.is_none()).collect();
+        let mut rng = Rng(p.seed.max(1).wrapping_mul(0xd1b5_4a32_d192_ed03) | 1);
+        let mut sims = vec![];
+        for _ in 0..BIAS_DRAWS {
+            let mut rs = Vec::with_capacity(used.len());
+            for i in &used {
+                let nrm = unit(i.normal);
+                // The fitted origin's geometry: travel from it to the stain, into the surface.
+                let v = sub(i.centre, x);
+                let vn = dot(v, nrm);
+                let alpha = (vn.abs() / norm(v).max(1e-12)).clamp(0.0, 1.0).asin();
+                let t = unit(sub(v, scale(nrm, vn)));
+                let side = cross(nrm, t);
+                let th = rng.gauss() * i.travel_sigma_deg.to_radians();
+                let travel = add(scale(t, th.cos()), scale(side, th.sin()));
+                let len = i.length.value + rng.gauss() * i.length.sigma;
+                let wid = i.length.value * alpha.sin() + rng.gauss() * i.width.sigma;
+                // The longer axis is the one called the length.
+                let (wid, len) = if wid > len { (len, wid) } else { (wid, len) };
+                if wid.is_nan() || wid <= 0.0 {
+                    continue;
+                }
+                let sim = StainInput {
+                    width: Measured {
+                        value: wid,
+                        sigma: i.width.sigma,
+                    },
+                    length: Measured {
+                        value: len,
+                        sigma: i.length.sigma,
+                    },
+                    travel,
+                    ..(*i).clone()
+                };
+                if let Ok(st) = stain(&sim, p) {
+                    if st.clearly_upward || p.include_not_upward.is_some() {
+                        rs.push(ray_of(&st, &sim));
+                    }
+                }
+            }
+            if rs.len() >= 4 {
+                if let Some(b) = nearest(&rs) {
+                    sims.push(b);
+                }
+            }
+        }
+        let n = sims.len();
+        if n <= 4 {
+            ([0.0; 3], None)
+        } else {
+            let mean = scale(
+                sims.iter().fold([0.0; 3], |a, b| add(a, *b)),
+                1.0 / n as f64,
+            );
+            let (sd, e) = spread(&sims, radius2_95(3, rays.len()));
+            let b = sub(mean, x);
+            // Corrected only when the bias is clearly more than the draws' own Monte Carlo
+            // error (χ²₃ at 95 % on the mean's standard error); otherwise the correction
+            // would only add noise.
+            let z2: f64 = (0..3)
+                .map(|k| (b[k] / (sd[k] / (n as f64).sqrt()).max(1e-9)).powi(2))
+                .sum();
+            (if z2 > 7.815 { b } else { [0.0; 3] }, Some((sd, e)))
+        }
+    };
+    let (bias, parametric) = bias;
+    let fitted = x;
+    let x = sub(fitted, bias);
+    let inflation = (chi2 / (2 * rays.len() - 3) as f64).max(1.0);
     let rms_residual = (stains
         .iter()
         .filter(|s| s.used)
@@ -1549,7 +1636,31 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
         ls.extend(nearest_lines(&sample));
     }
     let q = radius2_95(3, rays.len());
-    let (sigma, ellipsoid) = spread(&xs, q);
+    // The region, about the corrected point: the larger of the refits' spread under the stated
+    // noise (inflated for misfit beyond it) and the stain resampling's spread, which also
+    // catches noise larger than stated.
+    let (sigma, ellipsoid) = {
+        let resampled = spread(&xs, q);
+        match parametric {
+            Some((sg, e)) => {
+                let k = inflation.sqrt();
+                let par = (
+                    sg.map(|v| v * k),
+                    Ellipsoid {
+                        semi_axes: e.semi_axes.map(|v| v * k),
+                        axes: e.axes,
+                    },
+                );
+                let vol = |e: &Ellipsoid| e.semi_axes.iter().product::<f64>();
+                if vol(&par.1) >= vol(&resampled.1) {
+                    par
+                } else {
+                    resampled
+                }
+            }
+            None => resampled,
+        }
+    };
     let conventional = nearest_lines(&rays).map(|c| {
         let (sigma, ellipsoid) = spread(&ls, q);
         let rms = (rays
@@ -1567,7 +1678,7 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
             sigma,
             ellipsoid,
             rms_residual: rms,
-            shift: norm(sub(c, x)),
+            shift: norm(sub(c, fitted)),
         }
     });
     let (convergence, convergence_note) = if p.floor_convergence {
@@ -1617,6 +1728,9 @@ pub fn run(inputs: Vec<StainInput>, parameters: Parameters) -> Result<Run, Blood
             bootstrap_failed: failed,
             conditioning,
             near_round_share,
+            bias,
+            fitted,
+            inflation,
         },
         conventional,
         convergence,
@@ -1683,16 +1797,39 @@ mod tests {
     fn exact_stains_give_the_exact_origin() {
         let o = [1.4, 1.5, 1.1];
         let r = run(wall_stains(o), Parameters::default()).unwrap();
-        for (p, q) in r.origin.point.iter().zip(o) {
-            assert!((p - q).abs() < 1e-9, "{:?}", r.origin.point);
+        // The fit is exact; the reported point is corrected by the bias the stated noise
+        // (0.1 mm per axis, 1° on direction) would give six stains, a few millimetres.
+        for (p, q) in r.origin.fitted.iter().zip(o) {
+            assert!((p - q).abs() < 1e-9, "{:?}", r.origin.fitted);
+        }
+        let b = norm(r.origin.bias);
+        assert!(b < 0.01, "bias {b}");
+        for ((p, q), b) in r.origin.point.iter().zip(o).zip(r.origin.bias) {
+            assert!((p - (q - b)).abs() < 1e-12);
         }
         assert!(r
             .stains
             .iter()
             .all(|s| s.used && s.upward && s.residual < 1e-9 && !s.behind));
-        assert!((r.origin.height.value - 1.1).abs() < 1e-9);
-        // No scatter: the bootstrap has nothing to spread.
-        assert!(r.origin.ellipsoid.semi_axes[0] < 1e-9);
+        assert!((r.origin.height.value - (1.1 - r.origin.bias[2])).abs() < 1e-9);
+        // No scatter among the stains, but the region still carries the stated noise.
+        assert!(r.origin.ellipsoid.semi_axes[0] > 1e-4 && r.origin.inflation == 1.0);
+    }
+
+    #[test]
+    fn without_stated_noise_nothing_is_corrected() {
+        let o = [1.4, 1.5, 1.1];
+        let mut s = wall_stains(o);
+        for st in &mut s {
+            st.width.sigma = 0.0;
+            st.length.sigma = 0.0;
+            st.travel_sigma_deg = 0.0;
+        }
+        let r = run(s, Parameters::default()).unwrap();
+        assert_eq!(r.origin.bias, [0.0; 3]);
+        for (p, q) in r.origin.point.iter().zip(o) {
+            assert!((p - q).abs() < 1e-9);
+        }
     }
 
     #[test]

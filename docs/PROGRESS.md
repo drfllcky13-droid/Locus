@@ -452,6 +452,39 @@ Acceptance criteria (SPEC):
 - [ ] The package opens on a clean Windows machine without admin rights. It ran from its own folder as the normal user with nothing installed beyond WebView2, which is part of Windows 11. A run on a clean machine is still to do (Blocked).
 - [x] The viewer cannot modify data, and shows the package hash on its About screen.
 
+### Phase 13: Validation suite (done 2026-09-24)
+
+Plan and result:
+- **`locus-validate run [--full] --out report.pdf`** runs every tool against synthetic ground truth and prints the validation report. It exits non-zero if a bound isn't met, and a CI job runs it at full size for every release tag, keeping the PDF with the release. See `docs/methods/validation.md`. The report covers:
+  - trajectory;
+  - bloodstain (from rendered photos, and hand-measured, each with the conventional point beside it);
+  - camera height;
+  - registration;
+  - crush volume;
+  - crash formulas;
+  - animation;
+  - photogrammetry: its recorded ETH3D result, stated as not rerun.
+- **`docs/methods/validation-protocol.md`:** physical studies with staged scenes, five or more blind examiners, and pre-registration.
+- **Found by the full run and fixed.** With hand-measured stains, the bloodstain region covered the truth in only 81 of 100 rooms, and the origin was 18 cm low on average. The fit in angles is biased by noisy near-round stains and by which stains pass the upward rule.
+  - **Method version 2** subtracts the bias estimated by a parametric bootstrap (the stains re-measured with their stated noise around the fit, re-selected and refitted), when it is clear of Monte Carlo error.
+  - The region is the larger of the refits' spread (Birge-inflated) and the resampling spread.
+  - Now: mean error 16.4 cm (was 23.6), coverage 97 %. Photo-measured stains are essentially unchanged. Version-1 records keep their results.
+- Full run (168 s), every bound met, nothing flagged:
+  - trajectory: 400 runs, mean 0.031°, worst 0.078°, coverage 94.5 %;
+  - bloodstain from photos: mean 0.6 mm, worst 1.0 mm;
+  - height, good solves: 95 % under 1.46 cm; all solves 95 % coverage;
+  - registration: worst 0.05 mm;
+  - crush volume: mean 0.34 %, coverage 40/40 (deliberately conservative).
+- The in-app bloodstain check still passes on version 2 (6 stains, 10.7 mm from the truth).
+
+Acceptance (SPEC):
+- [x] Area of origin mean error under 10 cm on clean synthetic data: 0.06 cm from photo-measured stains.
+- [x] Trajectory under 0.5°: worst of 400 runs 0.078°.
+- [x] Height under 2 cm with a good camera solve: 95 % of good solves under 1.46 cm (the bound as adopted in DECISIONS.md; worst 2.37 cm).
+- [x] Registration under 2 mm: worst of 5 runs 0.05 mm (1M points per scan). The 4M-point acceptance tests stay in the heavy CI group.
+- [x] The report is regenerated in CI on every release: the `validation` job on tags. It has run locally; it runs on CI at the first release tag.
+- [x] Physical validation protocol written. Who runs the studies is on Addison's list.
+
 ## Blocked
 
 - **Physical print-scale check at 1:100** (2026-09-22): print a scaled diagram PDF at actual size and measure it (the 10 m line and the 100 mm calibration bar in the title block) with a ruler. The PDF geometry is proven by tests; the physical check must be done before release.

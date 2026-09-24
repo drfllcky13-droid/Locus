@@ -13,9 +13,14 @@
 //!   `--flight straight|ballistic`.
 //! - `locus-validate import --project DIR --examiner NAME [--unit meter] FILE...` imports
 //!   files and builds their octrees exactly as the app does, reporting time and memory.
+//! - `locus-validate run --out REPORT.pdf [--full] [--json FILE]` runs every tool against
+//!   synthetic ground truth and prints the validation report (docs/methods/validation.md);
+//!   `--full` is the release size. Exits non-zero if any bound isn't met.
 
 mod gen;
 mod import;
+mod report;
+mod suite;
 
 use std::process::ExitCode;
 
@@ -205,8 +210,76 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("run") => {
+            let run = || -> Result<bool, String> {
+                let out: String = arg(&args, "--out", None)?;
+                let full = args.iter().any(|a| a == "--full");
+                let t = std::time::Instant::now();
+                let results = suite::all(full, &mut |name| eprintln!("validating {name}…"));
+                let commit = std::env::var("LOCUS_COMMIT").ok().unwrap_or_else(|| {
+                    std::process::Command::new("git")
+                        .args(["rev-parse", "--short", "HEAD"])
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        .unwrap_or_else(|| "unknown".into())
+                });
+                let run = report::Run {
+                    version: env!("CARGO_PKG_VERSION").into(),
+                    commit,
+                    made_at: locus_core::timestamp(),
+                    machine: format!(
+                        "{} {}, {} threads",
+                        std::env::consts::OS,
+                        std::env::consts::ARCH,
+                        std::thread::available_parallelism().map_or(1, |n| n.get())
+                    ),
+                    full,
+                    seconds: t.elapsed().as_secs_f64(),
+                };
+                let doc = report::report(&run, &results);
+                let pdf = locus_report::analysis::pdf(&doc, vec![])?;
+                std::fs::write(&out, &pdf.pdf).map_err(|e| format!("{out}: {e}"))?;
+                if let Some(i) = args.iter().position(|a| a == "--json") {
+                    let j = args.get(i + 1).ok_or("--json needs a file")?;
+                    std::fs::write(
+                        j,
+                        serde_json::to_vec_pretty(&results).map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| format!("{j}: {e}"))?;
+                }
+                for r in &results {
+                    eprintln!(
+                        "{}: {} cases, mean {:.4} {}, worst {:.4}{}{}",
+                        r.tool,
+                        r.errors.len(),
+                        r.mean(),
+                        r.unit,
+                        r.max(),
+                        r.coverage
+                            .map_or(String::new(), |(i, n)| format!(", coverage {i}/{n}")),
+                        match &r.bound {
+                            Some((_, true)) => ", bound met",
+                            Some((_, false)) => ", BOUND NOT MET",
+                            None => "",
+                        }
+                    );
+                }
+                eprintln!("report: {out} ({} need attention)", doc.warnings.len());
+                Ok(results.iter().all(|r| r.passed()))
+            };
+            match run() {
+                Ok(true) => ExitCode::SUCCESS,
+                Ok(false) => ExitCode::FAILURE,
+                Err(e) => {
+                    eprintln!("run: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         _ => {
-            eprintln!("locus-validate: no validation scenarios yet (Phase 13). Try `gen-scene`, `gen-trajectory`, `gen-bloodstain`, `gen-camera`, `gen-crush` or `import`.");
+            eprintln!("locus-validate: run, gen-scene, gen-trajectory, gen-bloodstain, gen-camera, gen-crush or import (see the top of src/main.rs).");
             ExitCode::FAILURE
         }
     }

@@ -203,6 +203,20 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
             format!("{} of {}", o.stains_used, r.stains.len()),
         ],
         [
+            "Correction for measurement bias".into(),
+            if o.bias == [0.0; 3] {
+                "none: the stated measurement noise gives no bias clearly above the simulation's own error".into()
+            } else {
+                format!(
+                    "({:+.0}, {:+.0}, {:+.0}) mm subtracted from the fit at {} m: the mean shift of 200 refits of the stains re-measured with their stated noise around the fit's geometry",
+                    o.bias[0] * 1000.0,
+                    o.bias[1] * 1000.0,
+                    o.bias[2] * 1000.0,
+                    xyz(o.fitted)
+                )
+            },
+        ],
+        [
             "Fit".into(),
             format!(
                 "χ² = {:.1} on {} degrees of freedom; RMS distance of the origin from the paths used {}",
@@ -504,7 +518,7 @@ pub fn report(meta: &Meta, r: &Run) -> Report {
         heading: "Method".into(),
         blocks: vec![
             Block::Text {
-                text: "Each photo is placed on its surface by a similarity (scale, rotation, shift) fitted to pixel–scan point pairs, on the plane fitted to the scan around them. A photo not taken square on is first corrected for perspective by the homography taking four corners of a rectangle on its scale onto that rectangle's stated size (Hartley and Zisserman 2004); the corners' click error is carried to each stain by Monte Carlo (64 redraws). An ellipse is fitted to the stain's edge points by least squares, leaving out points well off it (the tail). The impact angle is asin(width / length) and the direction of travel is along the long axis toward the marked tail. The origin is the point whose straight paths to the stains best match every stain's impact angle and direction, each in units of its 1σ (Levenberg–Marquardt, started from the point nearest all the paths). The 95 % region is an ellipsoid from bootstrap resampling of the stains used, with a radius from Hotelling's T² for the number of stains. See docs/methods/bloodstain.md.".into(),
+                text: "Each photo is placed on its surface by a similarity (scale, rotation, shift) fitted to pixel–scan point pairs, on the plane fitted to the scan around them. A photo not taken square on is first corrected for perspective by the homography taking four corners of a rectangle on its scale onto that rectangle's stated size (Hartley and Zisserman 2004); the corners' click error is carried to each stain by Monte Carlo (64 redraws). An ellipse is fitted to the stain's edge points by least squares, leaving out points well off it (the tail). The impact angle is asin(width / length) and the direction of travel is along the long axis toward the marked tail. The origin is the point whose straight paths to the stains best match every stain's impact angle and direction, each in units of its 1σ (Levenberg–Marquardt, started from the point nearest all the paths). The fit is then corrected for the bias the stated measurement noise gives it: the stains are re-measured 200 times around the fit's geometry with their stated noise, re-selected by the upward rule and refitted, and the refits' mean shift is subtracted when it is clearly more than the simulation's own error. The 95 % region, about the corrected point, is the larger of the refits' spread (inflated by χ²/dof when the fit is worse than the stated noise) and the spread from bootstrap resampling of the stains used, each with a radius from Hotelling's T² for the number of stains. See docs/methods/bloodstain.md.".into(),
             },
             Block::Pairs {
                 rows: vec![

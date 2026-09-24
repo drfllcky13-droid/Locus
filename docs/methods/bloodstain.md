@@ -60,7 +60,21 @@ Floor stains are never "upward", so they are never used for the origin. On reque
 
 The origin is recomputed on 2,000 bootstrap resamples (the stains used, drawn with replacement; seeded, so a run repeats exactly; Efron and Tibshirani 1993). The covariance C of the resampled origins gives an ellipsoid (x − x̂)ᵀ C⁻¹ (x − x̂) ≤ q centred on the estimate. The radius q comes from Hotelling's T² for p = 3 and n stains used, because C is estimated from the same stains: q = p n / (n − p) · F_(p, n−p)(0.95) (Johnson and Wichern 2007, §5.4). It tends to χ²₃(95 %) = 7.81 for many stains and grows for few (18.6 for n = 10). A χ² radius with 30 stains covered the truth only 88 % of the time; with q, 94.5 % (the unit test, 200 runs). At least 4 stains are required. The F quantile is computed from the regularised incomplete beta function (continued fraction) and checked against the NIST/SEMATECH tables.
 
-The ellipsoid shows the scatter among the stains used. It does not include bias from the straight-line model, the photo alignment, or stains chosen from one side of the pattern.
+**Correction for measurement bias (method version 2, 2026-09-24).** Found by the validation report.
+- **The problem.** With hand measurement's noise the fit in angles is biased. Width over length saturates for nearly round stains, and which stains pass the upward rule depends on their measured directions. Over 100 synthetic rooms the origin came out 18 cm too low on average, and the resampling region covered the truth in only 81 %.
+- **How the bias is estimated.** A parametric bootstrap (Efron and Tibshirani 1993, ch. 10):
+  - every stain the examiner didn't exclude is re-measured 200 times around the fitted origin's geometry: its width from the length and the impact angle the fit implies, its length and direction of travel, each with its stated noise, the longer axis called the length;
+  - each time the stains are re-selected by the upward rule and the origin refitted;
+  - the refits' mean shift from the fit is the estimated bias.
+- **When it is applied.** The bias is subtracted when it is clearly more than the simulation's own error (χ²₃ at 95 % on the mean's standard error). Otherwise it is left at zero, since correcting would only add noise.
+- **The region.** It is centred on the corrected point, and is the larger (by volume) of:
+  - the refits' spread, inflated by χ²/dof when the fit is worse than the stated noise (Birge);
+  - the spread from resampling the stains, which catches noise larger than stated.
+- **Validation** (100 hand-measured rooms): the mean error fell from 23.6 to 16.4 cm and coverage rose from 81 % to 97 %. Unit test: 30 stains with noise three times the stated direction σ, coverage within 91–99 % over 200 runs. Photo-measured stains have almost no bias, so their result is essentially unchanged.
+- **The report** gives the correction and the uncorrected fit.
+- **Older records.** Saved method-version-1 records keep their own results.
+
+Neither the correction nor the region includes bias from the straight-line model, the photo alignment, or stains chosen from one side of the pattern.
 
 ## Validation
 
@@ -95,7 +109,7 @@ These are also stored with every run and printed in its report.
 - **Straight lines.** The straight-line origin is usually too high; its height is best read as an upper bound.
 - **Round stains.** Width over length is sensitive to measurement above about 70° impact, and the direction of a nearly round stain is poorly defined.
 - **Surfaces and stains.** Rough, absorbent or textured surfaces, satellite spatter, and stains that ran, dried unevenly or overlap distort the ellipse.
-- **The region.** The ellipsoid is from resampling the stains used. It does not include bias from the straight-line model, the alignment, or the choice of stains.
+- **The region.** The origin is corrected for the bias the stated measurement noise gives it, and the region covers that noise and the scatter among the stains. Neither includes bias from the straight-line model, the alignment, or the choice of stains.
 - **What it says.** The origin is where the paths pass closest together. It does not say what caused the pattern, or how many events there were.
 - **Photos.** A photo taken at an angle to the surface must be corrected from a scale in the plane of the surface. The correction assumes a pinhole camera: lens distortion is not modelled, so take stain photos square on where possible.
 
