@@ -281,9 +281,9 @@ impl Profile {
     }
 
     /// Distance (m), speed (m/s) and acceleration (m/s²) at `t` seconds from the profile's
-    /// start (0 before it).
+    /// start (0 before it; at its start, already its starting speed).
     pub fn at(&self, t: f64) -> (f64, f64, f64) {
-        if t <= 0.0 {
+        if t < 0.0 {
             return match self {
                 Profile::Table { distances, .. } => (distances[0], 0.0, 0.0),
                 _ => (0.0, 0.0, 0.0),
@@ -636,5 +636,16 @@ mod tests {
             assert!((v - (20.0 - 4.0 * (t - 0.5))).abs() < 1e-9);
         }
         assert!(p.at(0.25).2.abs() < 1e-9);
+        // At the start instant the speed is already the first row's (not 0).
+        assert_eq!(p.at(0.0), (0.0, 20.0, 0.0));
+        assert_eq!(Profile::Constant { speed: 1.4 }.at(0.0), (0.0, 1.4, 0.0));
+        let ph = Profile::Phases {
+            speed: 5.0,
+            phases: vec![Phase {
+                duration: 1.0,
+                acceleration: -2.0,
+            }],
+        };
+        assert_eq!(ph.at(0.0).1, 5.0);
     }
 }

@@ -11,6 +11,7 @@ mod crash_cmds;
 mod diagram_cmds;
 mod photo_cmds;
 mod register_cmds;
+mod render_cmds;
 mod scene3d_cmds;
 mod scene_cmds;
 #[cfg(feature = "spike")]
@@ -77,6 +78,10 @@ fn main() {
             scene3d_cmds::sun_position,
             scene3d_cmds::animation_evaluate,
             scene3d_cmds::animation_save,
+            render_cmds::render_start,
+            render_cmds::render_frame,
+            render_cmds::render_finish,
+            render_cmds::render_cancel,
             analysis_cmds::trajectory_preview,
             analysis_cmds::trajectory_save,
             bloodstain_cmds::bloodstain_align,

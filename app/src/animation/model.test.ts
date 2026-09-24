@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CrashRecord } from "../api";
+import { scaleBar } from "./overlay";
 import { cameraAt, edrSegment, poseMatrix, sampleAt, type Sample } from "./model";
 
 const s = (t: number, x: number, heading: number): Sample => ({
@@ -88,5 +89,12 @@ describe("animation model", () => {
     );
     expect(c.eye[0]).toBeCloseTo(0.25, 12);
     expect(c.target[1]).toBeCloseTo(0.5, 12);
+  });
+
+  it("sizes the scale bar for its stated depth", () => {
+    // 60° across 1920 × 1080 at 10 m: 166.3 px per metre, so 2 m fits in a quarter width.
+    const s = scaleBar(1920, 1080, 60, 10);
+    expect(s.metres).toBe(2);
+    expect(s.px).toBeCloseTo((2 * 540 * 1920) / 1080 / (Math.tan(Math.PI / 6) * 10), 9);
   });
 });

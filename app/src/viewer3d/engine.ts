@@ -87,6 +87,8 @@ export class Engine {
   onModelMoved: ((id: string, matrix: number[]) => void) | null = null;
   private dirty = true;
   private raf = 0;
+  /** Rendering frames for a video: the live view waits. */
+  private capturing = false;
   private lastFrame = 0;
   private budget: BudgetState = initialBudget();
   private fps = 0;
@@ -474,6 +476,55 @@ export class Engine {
     this.requestRender();
   }
 
+  // ---------- rendering frames for a video ----------
+
+  /** Draw at `w`×`h` device pixels until `endCapture`; the live view pauses. Analysis
+   * overlays other than `keep` are hidden meanwhile. */
+  beginCapture(w: number, h: number, keep: string[]) {
+    this.capturing = true;
+    for (const [k, g] of this.analysis) g.visible = keep.includes(k);
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+  }
+
+  endCapture() {
+    this.capturing = false;
+    for (const g of this.analysis.values()) g.visible = true;
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.resize();
+  }
+
+  /**
+   * One frame from `eye` toward `target` with a horizontal field of view, drawn once the
+   * point cloud's nodes for that view have loaded (waiting up to `waitMs`), copied onto a 2D
+   * canvas for overlays.
+   */
+  async captureFrame(
+    eye: [number, number, number],
+    target: [number, number, number],
+    hfovDeg: number,
+    waitMs = 5000,
+  ): Promise<HTMLCanvasElement> {
+    this.setView(eye, target, hfovDeg);
+    this.camera.updateMatrixWorld();
+    const until = performance.now() + waitMs;
+    for (;;) {
+      const view = this.view();
+      if (!this.layer) break;
+      this.layer.uniforms.uScale.value = view.projScale;
+      if (!this.layer.update(view) || performance.now() > until) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    this.edl.render(this.renderer, this.scene, this.camera);
+    const src = this.renderer.domElement;
+    const out = document.createElement("canvas");
+    [out.width, out.height] = [src.width, src.height];
+    // Copied in the same task as the draw, before the buffer is presented and cleared.
+    out.getContext("2d")!.drawImage(src, 0, 0);
+    return out;
+  }
+
   /** The camera's position and the orbit target in the project frame (f64). */
   cameraProject(): { eye: [number, number, number]; target: [number, number, number] } {
     const o = this.origin;
@@ -735,7 +786,7 @@ export class Engine {
 
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
-    if (!this.dirty) {
+    if (!this.dirty || this.capturing) {
       this.lastFrame = 0;
       return;
     }

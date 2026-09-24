@@ -17,7 +17,6 @@ mod imp {
     use windows::core::{Interface, HSTRING};
     use windows::Win32::Foundation::GENERIC_READ;
     use windows::Win32::Graphics::Imaging::*;
-    use windows::Win32::Media::MediaFoundation::*;
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
     };
@@ -31,65 +30,14 @@ mod imp {
         let Some(first) = frames.first() else {
             return Err("no frames".into());
         };
-        let (w, h) = (first.width, first.height);
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            MFStartup(MF_VERSION, MFSTARTUP_FULL).map_err(e("Media Foundation"))?;
-            let r = (|| -> Result<(), String> {
-                let writer = MFCreateSinkWriterFromURL(&HSTRING::from(out.as_os_str()), None, None)
-                    .map_err(e("sink writer"))?;
-                let size = ((w as u64) << 32) | h as u64;
-                let rate = ((fps as u64) << 32) | 1;
-                let set = |t: &IMFMediaType, sub: &windows::core::GUID| -> Result<(), String> {
-                    t.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
-                        .map_err(e("type"))?;
-                    t.SetGUID(&MF_MT_SUBTYPE, sub).map_err(e("type"))?;
-                    t.SetUINT64(&MF_MT_FRAME_SIZE, size).map_err(e("type"))?;
-                    t.SetUINT64(&MF_MT_FRAME_RATE, rate).map_err(e("type"))?;
-                    t.SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, (1u64 << 32) | 1)
-                        .map_err(e("type"))?;
-                    t.SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)
-                        .map_err(e("type"))?;
-                    Ok(())
-                };
-                let outt = MFCreateMediaType().map_err(e("type"))?;
-                set(&outt, &MFVideoFormat_H264)?;
-                // A high bit rate: the frames are for measurement.
-                outt.SetUINT32(&MF_MT_AVG_BITRATE, 40_000_000)
-                    .map_err(e("type"))?;
-                let stream = writer.AddStream(&outt).map_err(e("H.264 stream"))?;
-                let int = MFCreateMediaType().map_err(e("type"))?;
-                set(&int, &MFVideoFormat_RGB32)?;
-                // Positive stride: rows top to bottom.
-                int.SetUINT32(&MF_MT_DEFAULT_STRIDE, w * 4)
-                    .map_err(e("type"))?;
-                writer
-                    .SetInputMediaType(stream, &int, None)
-                    .map_err(e("input type"))?;
-                writer.BeginWriting().map_err(e("begin"))?;
-                let dur = 10_000_000i64 / fps as i64;
-                for (k, f) in frames.iter().enumerate() {
-                    if (f.width, f.height) != (w, h) {
-                        return Err("frames differ in size".into());
-                    }
-                    let len = w * h * 4;
-                    let buf = MFCreateMemoryBuffer(len).map_err(e("buffer"))?;
-                    let mut ptr = std::ptr::null_mut::<u8>();
-                    buf.Lock(&mut ptr, None, None).map_err(e("buffer"))?;
-                    std::ptr::copy_nonoverlapping(f.bgrx.as_ptr(), ptr, len as usize);
-                    buf.Unlock().map_err(e("buffer"))?;
-                    buf.SetCurrentLength(len).map_err(e("buffer"))?;
-                    let s = MFCreateSample().map_err(e("sample"))?;
-                    s.AddBuffer(&buf).map_err(e("sample"))?;
-                    s.SetSampleTime(k as i64 * dur).map_err(e("sample"))?;
-                    s.SetSampleDuration(dur).map_err(e("sample"))?;
-                    writer.WriteSample(stream, &s).map_err(e("write"))?;
-                }
-                writer.Finalize().map_err(e("finalize"))
-            })();
-            let _ = MFShutdown();
-            r
+        let mut w = crate::mp4::Writer::new(out, first.width, first.height, fps as f64)?;
+        for f in frames {
+            if (f.width, f.height) != (first.width, first.height) {
+                return Err("frames differ in size".into());
+            }
+            w.push_bgrx(&f.bgrx)?;
         }
+        w.finish().map(|_| ())
     }
 
     /// Decode an image file and scale it to `scale` of its size (rounded down to even

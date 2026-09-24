@@ -7,6 +7,7 @@ pub mod exif;
 pub mod geo;
 pub mod georef;
 pub mod model;
+pub mod mp4;
 pub mod ply;
 pub mod record;
 pub mod scale;

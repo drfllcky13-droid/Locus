@@ -937,6 +937,39 @@ pub struct RenderRecord {
     pub overlays: Overlays,
     pub file: String,
     pub sha256: String,
+    #[serde(default)]
+    pub view_id: String,
+    #[serde(default)]
+    pub hfov_deg: f64,
+    /// Labels drawn on every frame whatever the overlays (the driver-view limitation).
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// Read back from the written file: its frame count and duration (s).
+    #[serde(default)]
+    pub read_back_frames: u64,
+    #[serde(default)]
+    pub read_back_duration: f64,
+    #[serde(default)]
+    pub encoder: String,
+    #[serde(default)]
+    pub summary: String,
+}
+
+/// On every frame rendered from a driver view: the view has no vehicle interior.
+pub const DRIVER_LABEL: &str = "Vehicle interior (pillars, mirrors, dashboard) not shown";
+
+/// The labels a view's renders always carry.
+pub fn permanent_labels(v: &View) -> Vec<String> {
+    match v.kind {
+        ViewKind::Driver { .. } => vec![DRIVER_LABEL.into()],
+        _ => vec![],
+    }
+}
+
+/// Frames in a render of `from` to `to` s at `fps`: one at `from` and every 1/fps after it,
+/// up to `to`.
+pub fn render_frames(from: f64, to: f64, fps: f64) -> u64 {
+    ((to - from) * fps + 1e-6).floor() as u64 + 1
 }
 
 /// Render overlays: all off by default.
@@ -1200,6 +1233,15 @@ mod tests {
         };
         a.views[0].hfov_deg = 90.0;
         assert!(evaluate(&a, 0.1).unwrap().warnings.is_empty());
+    }
+
+    #[test]
+    fn a_render_has_a_frame_at_the_start_and_every_step_to_the_end() {
+        assert_eq!(render_frames(-6.0, 1.0, 30.0), 211);
+        assert_eq!(render_frames(0.0, 1.0, 24.0), 25);
+        // A range that isn't a whole number of frames stops at the last frame before the end.
+        assert_eq!(render_frames(0.0, 1.01, 25.0), 26);
+        assert_eq!(render_frames(0.0, 1.05, 25.0), 27);
     }
 
     #[test]

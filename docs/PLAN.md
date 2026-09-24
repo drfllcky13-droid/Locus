@@ -19,8 +19,8 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
   - timeline UI;
   - driver, witness, orbit and follow views;
   - time–distance–speed report (1aa2f34);
-  - MP4 render: the backend is built, and `locus-photo::mp4` round-trips in its test, but it isn't yet proven in the app.
-- **Next:** the render run in the app, then the fly-through, mirror and 360° cameras, then the Phase 9 acceptance check.
+  - MP4 render, checked in the app: 211 frames read back over 7.033 s; both Phase 9 acceptance criteria met.
+- **Next:** the fly-through, mirror and 360° cameras, then close Phase 9.
 - **Waiting on Addison:** see Open questions.
 
 ## 1. Goal and scope
@@ -161,7 +161,6 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 ## 4. Remaining work, in recommended order
 
 1. **Finish Phase 9.**
-   - Prove the MP4 render in the app.
    - Build the fly-through, mirror and 360° cameras.
    - Check both acceptance criteria, then close the phase.
 2. **Phase 10, reports and exports.**

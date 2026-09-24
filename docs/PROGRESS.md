@@ -335,7 +335,23 @@ Item 3, first part (2026-09-23):
 - The driver's own vehicle isn't drawn from the seat, and the report carries that as a limitation.
 - Checked in the app: the driver's eye at −1.00 s is 1.215 m ahead of the axle (45 % of the 2.7 m wheelbase), 0.35 m left and 1.2 m up, at 60°.
 
-Next: fly-through, mirror and 360° (after render, unless Chat reorders), then the time–distance–speed report (item 4).
+Items 4 and 5 (2026-09-23):
+- **Time–distance–speed report** (`locus-analysis::tds`, `locus-report::animation`; 1aa2f34):
+  - tables per mover, with source ranges (range method) and "Assumed" rows;
+  - pair distances, with closing speed as an option;
+  - time and distance to picked points;
+  - checked in the app: at −1.00 s the EDR car is at 6.20 m (5.82–6.58), 1.20 m/s (0.92–1.48).
+- **MP4 render** (`locus-photo::mp4`, `src-tauri/src/render_cmds.rs`, `app/src/animation/RenderSection.tsx`), checked in the app:
+  - the driver view, every overlay, 1280×720 at 30 fps over −6 to 1 s: 211 frames, read back 211 frames over 7.033 s (211/30), in 10 s;
+  - logged as analysis 3 with its SHA-256;
+  - every frame carries the driver-view label; the overlays, the scale bar with its depth, and "Illustrative" while Mover 2's assumed motion runs were all checked on extracted frames.
+- **Fixed from that check:** a segment's speed read 0 at its first instant (`Profile::at` treated t = 0 as before the start).
+
+Acceptance so far:
+- [x] An object moving at a set speed shows the correct position at every frame (tested: `an_object_at_a_set_speed_is_right_at_every_frame`).
+- [x] The rendered video's frame count and duration match the timeline: checked by reading every render back, and in the app (211 frames, 7.033 s).
+
+Next: the fly-through, mirror and 360° cameras (item 3's rest), then close Phase 9.
 
 ## Blocked
 
