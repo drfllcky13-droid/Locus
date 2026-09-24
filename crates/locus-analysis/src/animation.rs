@@ -200,6 +200,39 @@ pub enum ViewKind {
         offset: P3,
         look_ahead: f64,
     },
+    /// A presentation camera flying along its own path through picked points at `speed`
+    /// (m/s) from timeline time `start`, looking `look_ahead` m further along the path, or at a
+    /// fixed `target`. Nobody's point of view.
+    FlyThrough {
+        points: Vec<P3>,
+        shape: Shape,
+        speed: f64,
+        start: f64,
+        look_ahead: f64,
+        #[serde(default)]
+        target: Option<P3>,
+    },
+    /// What a driver sees in a flat mirror: the eye and the mirror's centre in the vehicle's
+    /// frame (m: forward of the rear axle, left, up), the mirror's normal in that frame, and its
+    /// width (m). The camera is the eye reflected in the mirror's plane, looking through the
+    /// mirror; its field of view is the mirror's width as seen from the eye. The image is
+    /// left–right reversed, as a mirror shows it. Convex mirrors aren't modelled.
+    Mirror {
+        mover: String,
+        eye: P3,
+        mirror: P3,
+        normal: P3,
+        width: f64,
+    },
+    /// A 360° equirectangular view from a fixed point, or from a point in a mover's frame (a
+    /// seat), centred on the mover's heading or on the project's +y. For 360° viewers.
+    Panorama {
+        at: P3,
+        #[serde(default)]
+        mover: Option<String>,
+        #[serde(default)]
+        eye: P3,
+    },
 }
 
 impl ViewKind {
@@ -213,11 +246,31 @@ impl ViewKind {
 /// body or a person's chest.
 pub const LOOK_HEIGHT: f64 = 1.0;
 
-/// A camera's eye and the point it looks at, in the project frame (m).
+/// A camera's eye, the point it looks at (project frame, m) and its horizontal field of view
+/// (°; 360 for a panorama).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Camera {
     pub eye: P3,
     pub target: P3,
+    pub hfov_deg: f64,
+}
+
+/// A view's horizontal field of view (°): its own, or a mirror's width as seen from the eye,
+/// or 360 for a panorama.
+pub fn view_hfov(v: &View) -> f64 {
+    match &v.kind {
+        ViewKind::Mirror {
+            eye, mirror, width, ..
+        } => mirror_hfov(*eye, *mirror, *width),
+        ViewKind::Panorama { .. } => 360.0,
+        _ => v.hfov_deg,
+    }
+}
+
+/// A mirror view's field of view (°): the mirror's width as seen from the eye.
+fn mirror_hfov(eye: P3, mirror: P3, width: f64) -> f64 {
+    let d = ((0..3).map(|i| (mirror[i] - eye[i]).powi(2)).sum::<f64>()).sqrt();
+    2.0 * (width / 2.0).atan2(d).to_degrees()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -602,20 +655,28 @@ pub struct Evaluation {
 
 /// Where a view's camera is at time `t`, given its mover's sample then (for driver, follow
 /// and a tracking witness).
-pub fn camera(v: &ViewKind, t: f64, from: f64, mover: Option<&Sample>) -> Camera {
+pub fn camera(
+    view: &View,
+    t: f64,
+    from: f64,
+    mover: Option<&Sample>,
+    fly: Option<&Path>,
+) -> Camera {
+    let hfov = view.hfov_deg;
     let add = |p: P3, q: P3| [p[0] + q[0], p[1] + q[1], p[2] + q[2]];
     // A vector in a mover's frame (forward, left, up) to the project frame.
     let frame = |s: &Sample, q: P3| {
         let (c, n) = (s.heading.cos(), s.heading.sin());
         [c * q[0] - n * q[1], n * q[0] + c * q[1], q[2]]
     };
-    match v {
+    match &view.kind {
         ViewKind::Driver { eye, .. } => {
             let s = mover.expect("a driver view has its vehicle");
             let e = add(s.position, frame(s, *eye));
             Camera {
                 eye: e,
                 target: add(e, frame(s, [10.0, 0.0, 0.0])),
+                hfov_deg: hfov,
             }
         }
         ViewKind::Witness {
@@ -626,6 +687,7 @@ pub fn camera(v: &ViewKind, t: f64, from: f64, mover: Option<&Sample>) -> Camera
         } => Camera {
             eye: add(*floor, [0.0, 0.0, *eye_height]),
             target: mover.map_or(*target, |s| add(s.position, [0.0, 0.0, LOOK_HEIGHT])),
+            hfov_deg: hfov,
         },
         ViewKind::Orbit {
             centre,
@@ -637,6 +699,7 @@ pub fn camera(v: &ViewKind, t: f64, from: f64, mover: Option<&Sample>) -> Camera
             Camera {
                 eye: add(*centre, [radius * a.cos(), radius * a.sin(), *height]),
                 target: *centre,
+                hfov_deg: hfov,
             }
         }
         ViewKind::Follow {
@@ -646,17 +709,81 @@ pub fn camera(v: &ViewKind, t: f64, from: f64, mover: Option<&Sample>) -> Camera
             Camera {
                 eye: add(s.position, frame(s, *offset)),
                 target: add(s.position, frame(s, [*look_ahead, 0.0, LOOK_HEIGHT])),
+                hfov_deg: hfov,
             }
         }
+        ViewKind::FlyThrough {
+            speed,
+            start,
+            look_ahead,
+            target,
+            ..
+        } => {
+            let path = fly.expect("a fly-through has its path");
+            let len = path.length();
+            let s = ((t - start) * speed).clamp(0.0, len);
+            let (p, d) = path.point_at(s);
+            let ahead = if s + look_ahead <= len {
+                path.point_at(s + look_ahead).0
+            } else {
+                add(p, d.map(|x| x * look_ahead.max(1.0)))
+            };
+            Camera {
+                eye: p,
+                target: target.unwrap_or(ahead),
+                hfov_deg: hfov,
+            }
+        }
+        ViewKind::Mirror {
+            eye,
+            mirror,
+            normal,
+            width,
+            ..
+        } => {
+            let s = mover.expect("a mirror view has its vehicle");
+            let e = add(s.position, frame(s, *eye));
+            let m = add(s.position, frame(s, *mirror));
+            let n = frame(s, *normal);
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let n = n.map(|x| x / len);
+            // The eye reflected in the mirror's plane sees, through the mirror, what the eye
+            // sees in it.
+            let h = (0..3).map(|i| (e[i] - m[i]) * n[i]).sum::<f64>();
+            let r = [0, 1, 2].map(|i| e[i] - 2.0 * h * n[i]);
+            Camera {
+                eye: r,
+                target: [0, 1, 2].map(|i| 2.0 * m[i] - r[i]),
+                hfov_deg: mirror_hfov(*eye, *mirror, *width),
+            }
+        }
+        ViewKind::Panorama { at, eye, .. } => match mover {
+            Some(s) => {
+                let e = add(s.position, frame(s, *eye));
+                Camera {
+                    eye: e,
+                    target: add(e, frame(s, [1.0, 0.0, 0.0])),
+                    hfov_deg: 360.0,
+                }
+            }
+            None => Camera {
+                eye: *at,
+                target: add(*at, [0.0, 1.0, 0.0]),
+                hfov_deg: 360.0,
+            },
+        },
     }
 }
 
 /// The mover a view is tied to, if any.
 fn view_mover(v: &ViewKind) -> Option<&String> {
     match v {
-        ViewKind::Driver { mover, .. } | ViewKind::Follow { mover, .. } => Some(mover),
+        ViewKind::Driver { mover, .. }
+        | ViewKind::Follow { mover, .. }
+        | ViewKind::Mirror { mover, .. } => Some(mover),
         ViewKind::Witness { target_mover, .. } => target_mover.as_ref(),
-        ViewKind::Orbit { .. } => None,
+        ViewKind::Panorama { mover, .. } => mover.as_ref(),
+        ViewKind::Orbit { .. } | ViewKind::FlyThrough { .. } => None,
     }
 }
 
@@ -712,6 +839,32 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
                 v.name
             ));
         }
+        let fly = match &v.kind {
+            ViewKind::FlyThrough {
+                points,
+                shape,
+                speed,
+                look_ahead,
+                ..
+            } => {
+                if !(*speed > 0.0 && speed.is_finite() && look_ahead.is_finite()) {
+                    return err(format!("{}: the fly-through needs a speed over 0", v.name));
+                }
+                Some(
+                    Path::new(points.clone(), *shape)
+                        .map_err(|e| AnimError(format!("{}: {}", v.name, e.0)))?,
+                )
+            }
+            _ => None,
+        };
+        if let ViewKind::Mirror { width, normal, .. } = &v.kind {
+            if width.is_nan() || *width <= 0.0 || normal.iter().all(|x| *x == 0.0) {
+                return err(format!(
+                    "{}: the mirror needs a width over 0 and a normal",
+                    v.name
+                ));
+            }
+        }
         if let ViewKind::Orbit { radius, period, .. } = &v.kind {
             if !(*radius > 0.0 && *period > 0.0) {
                 return err(format!(
@@ -725,10 +878,13 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
                 let Some(k) = a.movers.iter().position(|m| &m.id == id) else {
                     return err(format!("{}: its mover isn't in the animation", v.name));
                 };
-                if matches!(v.kind, ViewKind::Driver { .. })
+                if matches!(v.kind, ViewKind::Driver { .. } | ViewKind::Mirror { .. })
                     && !matches!(a.movers[k].kind, MoverKind::Vehicle { .. })
                 {
-                    return err(format!("{}: a driver view needs a vehicle", v.name));
+                    return err(format!(
+                        "{}: a driver or mirror view needs a vehicle",
+                        v.name
+                    ));
                 }
                 Some(&samples[k].1)
             }
@@ -740,7 +896,13 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
             (0..=n)
                 .map(|k| {
                     let t = (a.from + k as f64 * step).min(a.to);
-                    camera(&v.kind, t, a.from, track.map(|s: &Vec<Sample>| &s[k]))
+                    camera(
+                        v,
+                        t,
+                        a.from,
+                        track.map(|s: &Vec<Sample>| &s[k]),
+                        fly.as_ref(),
+                    )
                 })
                 .collect(),
         ));
@@ -781,6 +943,18 @@ pub fn evaluate(a: &Animation, step: f64) -> Result<Evaluation, AnimError> {
         "Positions between the stated inputs are interpolated: a path is a smooth curve (or straight segments) through picked points, and motion within a segment follows its stated profile exactly; real motion between those inputs is not known.".to_string(),
         "Segments marked as assumed are the examiner's assumptions, not measurements; they are illustrative.".to_string(),
     ];
+    if a.views
+        .iter()
+        .any(|v| matches!(v.kind, ViewKind::Mirror { .. }))
+    {
+        limitations.push("A mirror view models a flat mirror of the stated position, direction and width, seen from the stated eye; convex (wide-angle) mirrors, which make things look smaller and farther away, are not modelled.".into());
+    }
+    if a.views
+        .iter()
+        .any(|v| matches!(v.kind, ViewKind::Panorama { .. }))
+    {
+        limitations.push("A 360° view is an equirectangular image for a 360° viewer. It is not a person's field of view: a person sees only part of it at once.".into());
+    }
     if a.views
         .iter()
         .any(|v| matches!(v.kind, ViewKind::Driver { .. }))
@@ -962,9 +1136,14 @@ pub const DRIVER_LABEL: &str = "Vehicle interior (pillars, mirrors, dashboard) n
 pub fn permanent_labels(v: &View) -> Vec<String> {
     match v.kind {
         ViewKind::Driver { .. } => vec![DRIVER_LABEL.into()],
+        ViewKind::Mirror { .. } => vec![MIRROR_LABEL.into()],
         _ => vec![],
     }
 }
+
+/// On every frame rendered from a mirror view.
+pub const MIRROR_LABEL: &str =
+    "Flat mirror model (convex mirrors not modelled); image reversed as in a mirror";
 
 /// Frames in a render of `from` to `to` s at `fps`: one at `from` and every 1/fps after it,
 /// up to `to`.
@@ -1320,6 +1499,86 @@ mod tests {
         let c = at(3, 4);
         assert!(close(c.eye, [0.0, 2.0, 3.0]), "{c:?}");
         assert!(close(c.target, [0.0, 15.0, LOOK_HEIGHT]), "{c:?}");
+        // A fly-through along +x at 5 m/s from t = -4, looking 10 m ahead; a flat mirror on the
+        // car's left, 1 m ahead of a 2 m forward, 0.5 m left eye, facing back and in (normal
+        // along -x rotated 20° toward +y in the car's frame); a panorama from the seat.
+        let (c20, s20) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let mut b = a.clone();
+        b.views = vec![
+            view(
+                "fly",
+                ViewKind::FlyThrough {
+                    points: vec![[0.0, 50.0, 2.0], [100.0, 50.0, 2.0]],
+                    shape: Shape::Straight,
+                    speed: 5.0,
+                    start: -4.0,
+                    look_ahead: 10.0,
+                    target: None,
+                },
+            ),
+            view(
+                "mirror",
+                ViewKind::Mirror {
+                    mover: "v1".into(),
+                    eye: [2.0, 0.5, 1.2],
+                    mirror: [3.0, 1.0, 1.1],
+                    normal: [-c20, -s20, 0.0],
+                    width: 0.2,
+                },
+            ),
+            view(
+                "360",
+                ViewKind::Panorama {
+                    at: [0.0; 3],
+                    mover: Some("v1".into()),
+                    eye: [2.0, 0.5, 1.2],
+                },
+            ),
+        ];
+        let e2 = evaluate(&b, 0.5).unwrap();
+        // k = 4, t = -2: 10 m along the fly path, aiming 10 m ahead.
+        let c = e2.cameras[0].1[4];
+        assert!(
+            close(c.eye, [10.0, 50.0, 2.0]) && close(c.target, [20.0, 50.0, 2.0]),
+            "{c:?}"
+        );
+        // The mirror: the reflected eye is as far behind the mirror's plane as the eye is in
+        // front of it, and the eye, the mirror centre and the target are consistent: looking
+        // from the reflected eye through the mirror centre.
+        let c = e2.cameras[1].1[4];
+        let s = &e2.samples[0].1[4];
+        let to_world = |q: P3| {
+            let (co, si) = (s.heading.cos(), s.heading.sin());
+            [
+                s.position[0] + co * q[0] - si * q[1],
+                s.position[1] + si * q[0] + co * q[1],
+                q[2],
+            ]
+        };
+        let (eye_w, m_w) = (to_world([2.0, 0.5, 1.2]), to_world([3.0, 1.0, 1.1]));
+        let dist = |p: P3, q: P3| (0..3).map(|i| (p[i] - q[i]).powi(2)).sum::<f64>().sqrt();
+        assert!((dist(c.eye, m_w) - dist(eye_w, m_w)).abs() < 1e-9, "{c:?}");
+        assert!(close(
+            [0, 1, 2].map(|i| (c.eye[i] + c.target[i]) / 2.0),
+            m_w
+        ));
+        let want = 2.0 * (0.1f64).atan2(dist(eye_w, m_w)).to_degrees();
+        assert!(
+            (c.hfov_deg - want).abs() < 1e-9 && c.hfov_deg < 15.0,
+            "{c:?}"
+        );
+        // The panorama sits at the seat, facing the car's heading (+y).
+        let c = e2.cameras[2].1[4];
+        assert!(
+            close(c.eye, [-0.5, 12.0, 1.2]) && c.hfov_deg == 360.0,
+            "{c:?}"
+        );
+        assert!(close(c.target, [-0.5, 13.0, 1.2]), "{c:?}");
+        assert!(e2.limitations.iter().any(|l| l.contains("flat mirror")));
+        assert_eq!(
+            permanent_labels(&b.views[1]),
+            vec![MIRROR_LABEL.to_string()]
+        );
         // Assumed driver and witness views are listed; a driver view of a person is refused.
         let views = e.assumed.iter().filter(|x| x.note.starts_with("view"));
         assert_eq!(views.count(), 2);

@@ -5,7 +5,7 @@
 
 use crate::commands::{blocking, err, CmdResult};
 use locus_analysis::animation::{
-    permanent_labels, render_frames, Overlays, RenderRecord, ViewKind,
+    permanent_labels, render_frames, view_hfov, Overlays, RenderRecord, ViewKind,
 };
 use locus_photo::mp4;
 use serde::{Deserialize, Serialize};
@@ -117,6 +117,9 @@ pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<R
         ViewKind::Witness { .. } => "witness",
         ViewKind::Orbit { .. } => "orbit",
         ViewKind::Follow { .. } => "follow",
+        ViewKind::FlyThrough { .. } => "fly-through",
+        ViewKind::Mirror { .. } => "mirror",
+        ViewKind::Panorama { .. } => "360°",
     };
     *guard = Some(Job {
         tx: Some(tx),
@@ -125,7 +128,7 @@ pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<R
             scene_id: q.scene_id,
             scene_revision: rev.number,
             audit_head,
-            view: format!("{} ({kind}, {:.0}° horizontal)", v.name, v.hfov_deg),
+            view: format!("{} ({kind}, {:.1}° horizontal)", v.name, view_hfov(v)),
             width: q.width,
             height: q.height,
             fps: q.fps,
@@ -136,7 +139,7 @@ pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<R
             file: q.path.clone(),
             sha256: String::new(),
             view_id: v.id.clone(),
-            hfov_deg: v.hfov_deg,
+            hfov_deg: view_hfov(v),
             labels: labels.clone(),
             read_back_frames: 0,
             read_back_duration: 0.0,

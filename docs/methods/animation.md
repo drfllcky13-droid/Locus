@@ -77,6 +77,20 @@ The curvature is the drawn path's own. A spline through points on a circle rippl
 **Presentation cameras.** These are nobody's point of view, and the report says so. Their field of view isn't held to the human default.
 - An orbit circles a picked centre at a radius and height, once per stated period.
 - A follow camera rides with a mover, at an offset in its frame (8 m behind and 3 m up by default), looking a stated distance ahead of it.
+- A fly-through moves along its own path through picked points (a smooth curve or straight segments, 1.6 m above the picked floor), at a stated speed from a stated time. It looks a stated distance further along the path, or at a fixed picked point.
+
+**Mirror view.** What the driver sees in a flat side mirror.
+- The eye, the mirror's centre and its width are stated in the vehicle's frame. The mirror's aim is the angle out from straight back that it shows the eye.
+- Until measured, they default to a typical seat, a mirror 0.7 m ahead of the eye and 1.0 m out, 0.18 m wide, aimed 10° out. That default is recorded as an assumption.
+- The camera is the eye reflected in the mirror's plane, looking through the mirror's centre. Its field of view is the mirror's width as seen from the eye (about 11° by default), not a chosen value.
+- The image is reversed left to right, as a mirror shows it, both when looking through the view and in renders.
+- Convex (wide-angle) mirrors are not modelled. Every render carries the label "Flat mirror model (convex mirrors not modelled); image reversed as in a mirror", and the report states the limitation.
+
+**360° view.** From a fixed point (1.6 m above the picked floor) or from a seat in a mover. It is centred on the project's +y, or on the mover's heading.
+- It renders as a 2:1 equirectangular video for 360° viewers. Six 90° faces are drawn around the camera, each a quarter of the output width across, and resampled.
+- The report states that it is not a person's field of view.
+- Overlays are drawn on the flat image. The scale bar is left off, since it means nothing across a sphere.
+- The points' edge shading (eye-dome lighting) is computed per face, so their shading can step slightly at the faces' seams. The geometry itself is continuous.
 
 **One source of cameras.** Every view's camera is computed with the motion, at the same times, by `animation::camera` (tested). Playback's "look through" and renders use those cameras.
 

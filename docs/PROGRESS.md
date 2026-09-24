@@ -283,7 +283,7 @@ Acceptance criteria:
   - In the app: worst 0.45 % (photos, scaled by known distances) and 0.38 % (video, scaled by control points on the scan).
 - [x] Missing CUDA falls back gracefully with a clear message: sparse only, the reason in the panel and the report.
 
-### Phase 9: Animation and cameras
+### Phase 9: Animation and cameras (done 2026-09-23)
 
 Plan:
 
@@ -351,7 +351,21 @@ Acceptance so far:
 - [x] An object moving at a set speed shows the correct position at every frame (tested: `an_object_at_a_set_speed_is_right_at_every_frame`).
 - [x] The rendered video's frame count and duration match the timeline: checked by reading every render back, and in the app (211 frames, 7.033 s).
 
-Next: the fly-through, mirror and 360° cameras (item 3's rest), then close Phase 9.
+Item 3 completed (2026-09-23): fly-through, mirror and 360° cameras (`animation::camera`, tested; `app/src/animation/panorama.ts`, tested). Checked in the app, each rendered over −1 to 0 s and read back at 31 frames over 1.033 s:
+- the left mirror at 10.6° (the mirror's width from the eye), reversed, with its flat-mirror label;
+- the 360° view (1920×960) from inside the room, wrapping it correctly;
+- the fly-through along its picked path.
+
+**Fixed from that check:** the mirror's flipped canvas kept its flip for the overlays, drawing them reversed and off the frame; overlays now always draw upright.
+
+Opposing counsel's likely challenges, and where each is answered:
+- "the animation shows more than the evidence": every segment, path, friction value and view has a source; assumed parts are hatched in the timeline, listed in the report, labelled "Assumed" in its tables and optionally "Illustrative" in renders;
+- "the motion is physically impossible": friction-circle, speed-jump and corner flags are in "Needs attention";
+- "the camera exaggerates": human views default to 60° with the value printed and wider warned; presentation cameras say they are nobody's point of view; the scale bar states its depth;
+- "the driver could(n't) see it": the interior isn't drawn, every driver-view frame says so, and night renders carry the no-visibility-conclusion limitation;
+- "the video isn't what was computed": every frame is drawn at exactly its time from the tested motion; every file is read back, hashed and logged with the scene revision and audit head.
+
+Phase 9 is done.
 
 ## Blocked
 

@@ -49,6 +49,8 @@ export function scaleBar(width: number, height: number, hfovDeg: number, distanc
 
 export function drawOverlays(c: HTMLCanvasElement, o: Overlays, f: FrameInfo) {
   const ctx = c.getContext("2d")!;
+  // Upright, whatever the canvas was drawn with (a mirror view's image is flipped).
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   const { width: w, height: h } = c;
   const size = Math.max(12, Math.round(h / 36));
   const pad = Math.round(size * 0.6);
@@ -84,7 +86,8 @@ export function drawOverlays(c: HTMLCanvasElement, o: Overlays, f: FrameInfo) {
   if (o.illustrative && assumed.length)
     box([`Illustrative: assumed motion (${assumed.join(", ")})`], w - pad, -pad, true, "#f2a53a");
   box(f.labels, pad, -pad);
-  if (o.scale_bar && f.targetDistance > 0) {
+  // A scale bar means nothing across a 360° image.
+  if (o.scale_bar && f.targetDistance > 0 && f.hfovDeg < 180) {
     const s = scaleBar(w, h, f.hfovDeg, f.targetDistance);
     const y = h - pad - size * 4;
     const x = w / 2 - s.px / 2;

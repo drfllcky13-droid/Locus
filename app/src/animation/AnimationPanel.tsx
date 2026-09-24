@@ -21,6 +21,8 @@ import {
   cameraAt,
   defaultDriverEye,
   describe,
+  mirrorNormal,
+  mirrorOutward,
   edrSegment,
   HUMAN_HFOV_DEG,
   humanView,
@@ -638,12 +640,124 @@ function ViewEdit({
           {num("Looking ahead (m)", k.look_ahead, (look_ahead) => set({ ...k, look_ahead }), 0.5)}
         </>
       )}
-      {num(
-        "Horizontal field of view (°)",
-        v.hfov_deg,
-        (hfov_deg) => hfov_deg > 1 && hfov_deg < 179 && onChange({ ...v, hfov_deg }),
-        1,
+      {k.kind === "fly_through" && (
+        <>
+          <p className="muted">{k.points.length} points on the camera's path.</p>
+          <div className="row">
+            <button
+              onClick={() => {
+                // Each pick adds a point and asks for the next, until Esc.
+                const more = (pts: P3[]) =>
+                  pickPoint(`Click point ${pts.length + 1} of the camera's path.`, (p) => {
+                    const next = [...pts, [p[0], p[1], p[2] + 1.6] as P3];
+                    set({ ...k, points: next });
+                    more(next);
+                  });
+                more(k.points);
+              }}
+            >
+              Pick points (1.6 m above)
+            </button>
+            <button disabled={!k.points.length} onClick={() => set({ ...k, points: [] })}>
+              Clear
+            </button>
+          </div>
+          {num("Speed (m/s)", k.speed, (speed) => speed > 0 && set({ ...k, speed }), 0.5)}
+          {num("Starts at (s)", k.start, (start) => set({ ...k, start }))}
+          {num(
+            "Looking ahead along it (m)",
+            k.look_ahead,
+            (look_ahead) => set({ ...k, look_ahead }),
+            1,
+          )}
+          <button
+            onClick={() =>
+              k.target
+                ? set({ ...k, target: null })
+                : pickPoint("Click what the camera looks at.", (target) => set({ ...k, target }))
+            }
+          >
+            {k.target ? "Look along the path instead" : "Look at a fixed point…"}
+          </button>
+        </>
       )}
+      {k.kind === "mirror" && (
+        <>
+          {moverSelect("Vehicle", k.mover, (mover) => set({ ...k, mover }), "vehicle")}
+          {xyz("Eye", k.eye, (eye) => set({ ...k, eye }), [
+            "forward of the rear axle",
+            "left",
+            "up",
+          ])}
+          {xyz("Mirror centre", k.mirror, (mirror) => set({ ...k, mirror }), [
+            "forward of the rear axle",
+            "left (− right)",
+            "up",
+          ])}
+          {num("Mirror width (m)", k.width, (width) => width > 0 && set({ ...k, width }), 0.01)}
+          {num(
+            "Shows the view out from straight back (°)",
+            mirrorOutward(k.eye, k.mirror, k.normal),
+            (deg) => set({ ...k, normal: mirrorNormal(k.eye, k.mirror, deg) }),
+            1,
+          )}
+          <p className="muted">
+            A flat mirror; convex mirrors aren&apos;t modelled. The field of view is the
+            mirror&apos;s width from the eye, and the image is reversed, as in a mirror.
+          </p>
+        </>
+      )}
+      {k.kind === "panorama" && (
+        <>
+          <label>
+            From
+            <select
+              value={k.mover ?? ""}
+              onChange={(e) => set({ ...k, mover: e.target.value || null })}
+            >
+              <option value="">A fixed point</option>
+              {movers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  A seat in {m.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {k.mover === null ? (
+            <>
+              <p className="muted">At {k.at.map((x) => x.toFixed(2)).join(", ")}.</p>
+              <button
+                onClick={() =>
+                  pickPoint("Click the floor under the 360° camera.", (p) =>
+                    set({ ...k, at: [p[0], p[1], p[2] + 1.6] }),
+                  )
+                }
+              >
+                Pick the point (1.6 m above)
+              </button>
+            </>
+          ) : (
+            xyz("Eye", k.eye, (eye) => set({ ...k, eye }), [
+              "forward of the rear axle",
+              "left",
+              "up",
+            ])
+          )}
+          <p className="muted">
+            A 360° image for a 360° viewer, centred on{" "}
+            {k.mover === null ? "the project's +y" : "the mover's heading"}; not a person&apos;s
+            field of view.
+          </p>
+        </>
+      )}
+      {k.kind !== "mirror" &&
+        k.kind !== "panorama" &&
+        num(
+          "Horizontal field of view (°)",
+          v.hfov_deg,
+          (hfov_deg) => hfov_deg > 1 && hfov_deg < 179 && onChange({ ...v, hfov_deg }),
+          1,
+        )}
       {human && v.hfov_deg > HUMAN_HFOV_DEG && (
         <p className="error">
           Wider than the {HUMAN_HFOV_DEG}° human-like default: things look farther away and smaller
@@ -793,14 +907,17 @@ export function AnimationPanel({
     if (!a) return null;
     const movers = a.movers.filter((m) => m.path.length >= 2 && m.segments.length);
     const ok = (id: string | null) => id === null || movers.some((m) => m.id === id);
-    const views = a.views.filter((v) =>
-      ok(
-        v.kind.kind === "driver" || v.kind.kind === "follow"
-          ? v.kind.mover
-          : v.kind.kind === "witness"
-            ? v.kind.target_mover
-            : null,
-      ),
+    // The mover a view is tied to, if any; a fly-through needs its path first.
+    const tied = (k: View["kind"]) =>
+      k.kind === "driver" || k.kind === "follow" || k.kind === "mirror"
+        ? k.mover
+        : k.kind === "witness"
+          ? k.target_mover
+          : k.kind === "panorama"
+            ? k.mover
+            : null;
+    const views = a.views.filter(
+      (v) => ok(tied(v.kind)) && (v.kind.kind !== "fly_through" || v.kind.points.length >= 2),
     );
     return { ...a, movers, views };
   }, [a]);
@@ -855,19 +972,22 @@ export function AnimationPanel({
 
   // Looking through a view: the camera follows it; leaving restores the normal lens.
   const cams = ev?.cameras.find(([id]) => id === through)?.[1];
-  const hfov = a?.views.find((v) => v.id === through)?.hfov_deg;
+  const throughKind = a?.views.find((v) => v.id === through)?.kind.kind;
   useEffect(() => {
     const e = engine();
-    if (!e || !a || !ev || !cams || hfov === undefined) return;
+    if (!e || !a || !ev || !cams) return;
     const c = cameraAt(cams, a.from, ev.step, t);
-    e.setView(c.eye, c.target, hfov);
-  }, [engine, a, ev, cams, hfov, t]);
+    // A 360° view is looked through straight ahead at 90°; the render gives the whole sphere.
+    e.setView(c.eye, c.target, cams[0].hfov_deg >= 360 ? 90 : cams[0].hfov_deg);
+  }, [engine, a, ev, cams, t]);
   useEffect(() => {
+    engine()?.setMirrored(throughKind === "mirror");
     if (through) return;
     const e = engine();
     const c = e?.cameraProject();
     if (e && c) e.setView(c.eye, c.target, null);
-  }, [engine, through]);
+  }, [engine, through, throughKind]);
+  useEffect(() => () => engine()?.setMirrored(false), [engine]);
 
   // Linked scene objects follow their mover; the rest show as markers.
   useEffect(() => {
@@ -1166,7 +1286,56 @@ export function AnimationPanel({
                 hfov_deg: HUMAN_HFOV_DEG,
                 source: assumption("presentation camera"),
               };
-            if (!v) return onNotice("Add a mover (a vehicle, for a driver view) first.");
+            else if (kind === "fly_through")
+              v = {
+                id,
+                name: `Fly-through ${n}`,
+                kind: {
+                  kind: "fly_through",
+                  points: [],
+                  shape: "smooth",
+                  speed: 3,
+                  start: a.from,
+                  look_ahead: 5,
+                  target: null,
+                },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption("presentation camera"),
+              };
+            else if (kind.startsWith("mirror") && vehicle && vehicle.kind.kind === "vehicle") {
+              const eye = defaultDriverEye(vehicle.kind.wheelbase);
+              const side = kind === "mirror_left" ? 1 : -1;
+              const mirror: P3 = [eye[0] + 0.7, side * 1.0, 1.05];
+              v = {
+                id,
+                name: `${side > 0 ? "Left" : "Right"} mirror of ${vehicle.name}`,
+                kind: {
+                  kind: "mirror",
+                  mover: vehicle.id,
+                  eye,
+                  mirror,
+                  normal: mirrorNormal(eye, mirror, 10),
+                  width: 0.18,
+                },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption(
+                  "default eye and mirror positions (a typical seat; mirror 0.7 m ahead of the eye, 1.0 m out, 0.18 m wide), not measured",
+                ),
+              };
+            } else if (kind === "panorama")
+              v = {
+                id,
+                name: `360° ${n}`,
+                kind: {
+                  kind: "panorama",
+                  at: [here[0], here[1], here[2] + 1.6],
+                  mover: null,
+                  eye: [1.2, 0.35, 1.2],
+                },
+                hfov_deg: HUMAN_HFOV_DEG,
+                source: assumption("presentation camera"),
+              };
+            if (!v) return onNotice("Add a mover (a vehicle, for a driver or mirror view) first.");
             set({ ...a, views: [...a.views, v] });
             setEditingView(id);
           }}
@@ -1176,6 +1345,10 @@ export function AnimationPanel({
           <option value="witness">Witness (standing at a point)</option>
           <option value="orbit">Orbit (presentation)</option>
           <option value="follow">Follow a mover (presentation)</option>
+          <option value="fly_through">Fly-through (presentation)</option>
+          <option value="mirror_left">Left mirror (from a vehicle)</option>
+          <option value="mirror_right">Right mirror (from a vehicle)</option>
+          <option value="panorama">360° (for a 360° viewer)</option>
         </select>
       </label>
       {(() => {

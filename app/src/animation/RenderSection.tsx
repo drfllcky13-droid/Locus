@@ -10,6 +10,7 @@ import type { SceneObject } from "../scene3d/model";
 import type { Engine } from "../viewer3d/engine";
 import type { Animation, Sample } from "./model";
 import { drawOverlays, NO_OVERLAYS, type Overlays } from "./overlay";
+import { equirect, faces } from "./panorama";
 import { showAt } from "./show";
 
 type Model = Extract<SceneObject, { kind: "model" }>;
@@ -18,6 +19,12 @@ const SIZES: [number, number][] = [
   [1920, 1080],
   [1280, 720],
   [3840, 2160],
+];
+
+/** 360° renders are 2:1 equirectangular. */
+const PANORAMA_SIZES: [number, number][] = [
+  [3840, 1920],
+  [1920, 960],
 ];
 
 const LABELS: [keyof Overlays, string][] = [
@@ -53,11 +60,15 @@ export function RenderSection({
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const cancel = useRef(false);
   const v = a.views.find((x) => x.id === view);
+  const pano = v?.kind.kind === "panorama";
+  const sizes = pano ? PANORAMA_SIZES : SIZES;
 
   const run = async () => {
     const e = engine();
     if (!e || !v) return;
-    const [w, h] = SIZES[size];
+    const [w, h] = sizes[Math.min(size, sizes.length - 1)];
+    // Each cube face covers 90°, so a quarter of the panorama's width keeps its resolution.
+    const face = Math.round(w / 4 / 2) * 2;
     // In-app test scripts can't answer the native dialog; they set the path it would return.
     const scripted = (globalThis as { __locusTestSavePath?: string }).__locusTestSavePath;
     const path =
@@ -88,7 +99,8 @@ export function RenderSection({
       const ev = await api.animationEvaluate(a, 1 / fps);
       const cams = ev.cameras.find(([id]) => id === v.id)?.[1];
       if (!cams) throw new Error("That view's mover isn't ready to play.");
-      e.beginCapture(w, h, ["animation-now"]);
+      if (pano) e.beginCapture(face, face, ["animation-now"]);
+      else e.beginCapture(w, h, ["animation-now"]);
       try {
         for (let k = 0; k < plan.frames; k++) {
           if (cancel.current) throw new Error("Cancelled.");
@@ -96,14 +108,38 @@ export function RenderSection({
           const states = ev.samples.map(([id, s]) => [id, s[k]] as [string, Sample]);
           showAt(e, a, models, states, v.id);
           const c = cams[k];
-          const canvas = await e.captureFrame(c.eye, c.target, v.hfov_deg);
+          let canvas: HTMLCanvasElement;
+          if (pano) {
+            const fwd: [number, number, number] = [0, 1, 2].map((i) => c.target[i] - c.eye[i]) as [
+              number,
+              number,
+              number,
+            ];
+            const imgs = [];
+            for (const f of faces(fwd)) {
+              const fc = await e.captureFace(c.eye, f.dir, f.up);
+              imgs.push(fc.getContext("2d")!.getImageData(0, 0, face, face));
+            }
+            canvas = equirect(fwd, imgs, face, w, h);
+          } else {
+            canvas = await e.captureFrame(c.eye, c.target, c.hfov_deg);
+            if (v.kind.kind === "mirror") {
+              // Reversed left to right, as the mirror shows it.
+              const m = document.createElement("canvas");
+              [m.width, m.height] = [canvas.width, canvas.height];
+              const g = m.getContext("2d")!;
+              g.scale(-1, 1);
+              g.drawImage(canvas, -canvas.width, 0);
+              canvas = m;
+            }
+          }
           drawOverlays(canvas, overlays, {
             t,
             frame: k,
             frames: plan.frames,
             timeZero: a.time_zero.event,
             view: v.name,
-            hfovDeg: v.hfov_deg,
+            hfovDeg: c.hfov_deg,
             movers: states.map(([id, s]) => [
               a.movers.find((m) => m.id === id)?.name ?? id,
               s.speed,
@@ -152,7 +188,7 @@ export function RenderSection({
       <label>
         Size
         <select value={size} onChange={(e) => setSize(Number(e.target.value))}>
-          {SIZES.map(([w, h], i) => (
+          {sizes.map(([w, h], i) => (
             <option key={i} value={i}>
               {w} × {h}
             </option>

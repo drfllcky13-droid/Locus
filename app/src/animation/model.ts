@@ -68,13 +68,55 @@ export type ViewKind =
   | { kind: "driver"; mover: string; eye: P3 }
   | { kind: "witness"; floor: P3; eye_height: number; target: P3; target_mover: string | null }
   | { kind: "orbit"; centre: P3; radius: number; height: number; period: number }
-  | { kind: "follow"; mover: string; offset: P3; look_ahead: number };
+  | { kind: "follow"; mover: string; offset: P3; look_ahead: number }
+  | {
+      kind: "fly_through";
+      points: P3[];
+      shape: "smooth" | "straight";
+      speed: number;
+      start: number;
+      look_ahead: number;
+      target: P3 | null;
+    }
+  | { kind: "mirror"; mover: string; eye: P3; mirror: P3; normal: P3; width: number }
+  | { kind: "panorama"; at: P3; mover: string | null; eye: P3 };
 
 export const humanView = (k: ViewKind) => k.kind === "driver" || k.kind === "witness";
 
 export interface Camera {
   eye: P3;
   target: P3;
+  /** Horizontal field of view (°); 360 for a panorama. */
+  hfov_deg: number;
+}
+
+const unit3 = (a: P3): P3 => {
+  const l = Math.hypot(...a);
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+
+/**
+ * A flat mirror's normal (vehicle frame) that shows the eye the view `outwardDeg` out from
+ * straight back, on the mirror's side: the bisector of the directions to the eye and to that
+ * view.
+ */
+export function mirrorNormal(eye: P3, mirror: P3, outwardDeg: number): P3 {
+  const side = Math.sign(mirror[1]) || 1;
+  const a = (outwardDeg * Math.PI) / 180;
+  const back: P3 = [-Math.cos(a), side * Math.sin(a), 0];
+  const toEye = unit3([eye[0] - mirror[0], eye[1] - mirror[1], eye[2] - mirror[2]]);
+  return unit3([toEye[0] + back[0], toEye[1] + back[1], toEye[2] + back[2]]);
+}
+
+/** How far out from straight back (°) a flat mirror shows the eye (the inverse of
+ * `mirrorNormal`, level part). */
+export function mirrorOutward(eye: P3, mirror: P3, normal: P3): number {
+  const n = unit3(normal);
+  const v = unit3([mirror[0] - eye[0], mirror[1] - eye[1], mirror[2] - eye[2]]);
+  const k = 2 * (v[0] * n[0] + v[1] * n[1] + v[2] * n[2]);
+  const d = [v[0] - k * n[0], v[1] - k * n[1]];
+  const side = Math.sign(mirror[1]) || 1;
+  return (Math.atan2(side * d[1], -d[0]) * 180) / Math.PI;
 }
 
 export interface View {
@@ -195,6 +237,7 @@ export function cameraAt(cams: Camera[], from: number, step: number, t: number):
   return {
     eye: lerp(cams[i].eye, cams[i + 1].eye),
     target: lerp(cams[i].target, cams[i + 1].target),
+    hfov_deg: cams[i].hfov_deg,
   };
 }
 

@@ -80,8 +80,8 @@ describe("animation model", () => {
   it("interpolates a view's camera between samples", () => {
     const c = cameraAt(
       [
-        { eye: [0, 0, 1], target: [10, 0, 1] },
-        { eye: [1, 0, 1], target: [10, 2, 1] },
+        { eye: [0, 0, 1], target: [10, 0, 1], hfov_deg: 60 },
+        { eye: [1, 0, 1], target: [10, 2, 1], hfov_deg: 60 },
       ],
       -1,
       0.01,

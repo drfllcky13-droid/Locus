@@ -1,7 +1,7 @@
 //! The animation's time–distance–speed report, built only from the stored run.
 
 use crate::analysis::{details, Block, Meta, Report, Section};
-use locus_analysis::animation::{RenderRecord, Source, ViewKind, HUMAN_HFOV_DEG};
+use locus_analysis::animation::{view_hfov, RenderRecord, Source, ViewKind, HUMAN_HFOV_DEG};
 use locus_analysis::tds::TdsRun;
 
 const REFS: &[&str] = &[
@@ -238,11 +238,32 @@ pub fn report(meta: &Meta, r: &TdsRun, renders: &[(i64, RenderRecord)]) -> Repor
                                 "presentation camera following {} at {:.1}, {:.1}, {:.1} m in its frame; nobody's point of view",
                                 mover(id), offset[0], offset[1], offset[2]
                             ),
+                            ViewKind::FlyThrough { points, speed, start, .. } => format!(
+                                "presentation camera flying through {} picked points at {:.1} m/s from {:.2} s; nobody's point of view",
+                                points.len(), speed, start
+                            ),
+                            ViewKind::Mirror { mover: id, eye, mirror, width, .. } => format!(
+                                "flat mirror of {} ({:.2} m wide at {:.2}, {:.2}, {:.2} m in its frame), seen from the eye at {:.2}, {:.2}, {:.2} m; image reversed as in a mirror",
+                                mover(id), width, mirror[0], mirror[1], mirror[2], eye[0], eye[1], eye[2]
+                            ),
+                            ViewKind::Panorama { at, mover: m, eye } => match m {
+                                Some(id) => format!(
+                                    "360° from {:.2}, {:.2}, {:.2} m in {}'s frame, centred on its heading",
+                                    eye[0], eye[1], eye[2], mover(id)
+                                ),
+                                None => format!(
+                                    "360° from {:.2}, {:.2}, {:.2}, centred on +y",
+                                    at[0], at[1], at[2]
+                                ),
+                            },
                         };
-                        let fov = if v.kind.human() && v.hfov_deg > HUMAN_HFOV_DEG + 1e-9 {
-                            format!("{:.0}° (wider than the {HUMAN_HFOV_DEG:.0}° human-like default)", v.hfov_deg)
+                        let h = view_hfov(v);
+                        let fov = if v.kind.human() && h > HUMAN_HFOV_DEG + 1e-9 {
+                            format!("{h:.0}° (wider than the {HUMAN_HFOV_DEG:.0}° human-like default)")
+                        } else if matches!(v.kind, ViewKind::Mirror { .. }) {
+                            format!("{h:.1}° (the mirror's width from the eye)")
                         } else {
-                            format!("{:.0}°", v.hfov_deg)
+                            format!("{h:.0}°")
                         };
                         vec![v.name.clone(), eye, fov, v.source.describe()]
                     })

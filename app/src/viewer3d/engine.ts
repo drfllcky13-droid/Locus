@@ -507,6 +507,42 @@ export class Engine {
     waitMs = 5000,
   ): Promise<HTMLCanvasElement> {
     this.setView(eye, target, hfovDeg);
+    return this.drawAndCopy(waitMs);
+  }
+
+  /**
+   * One square frame looking along `dir` with `up` and a 90° field of view (a cube face for a
+   * 360° view); the capture must have been begun square.
+   */
+  async captureFace(
+    eye: [number, number, number],
+    dir: [number, number, number],
+    up: [number, number, number],
+    waitMs = 5000,
+  ): Promise<HTMLCanvasElement> {
+    const o = this.origin;
+    this.setCameraMatch(null);
+    const upWas = this.camera.up.clone();
+    this.camera.position.set(eye[0] - o[0], eye[1] - o[1], eye[2] - o[2]);
+    this.camera.up.set(...up);
+    this.camera.lookAt(eye[0] + dir[0] - o[0], eye[1] + dir[1] - o[1], eye[2] + dir[2] - o[2]);
+    this.camera.fov = 90;
+    this.camera.updateProjectionMatrix();
+    try {
+      return await this.drawAndCopy(waitMs);
+    } finally {
+      this.camera.up.copy(upWas);
+    }
+  }
+
+  /** Mirror the live view left to right (looking through a mirror view). */
+  setMirrored(on: boolean) {
+    this.renderer.domElement.style.transform = on ? "scaleX(-1)" : "";
+  }
+
+  /** Draw once the point cloud's nodes for the current camera have loaded (up to `waitMs`),
+   * and copy the frame onto a 2D canvas. */
+  private async drawAndCopy(waitMs: number): Promise<HTMLCanvasElement> {
     this.camera.updateMatrixWorld();
     const until = performance.now() + waitMs;
     for (;;) {
