@@ -95,6 +95,30 @@ pub struct CleanupRecord {
 }
 
 impl Project {
+    /// Log that something was written out of the project (a case report, an export): what,
+    /// where, its SHA-256 and size, and what it was made from.
+    pub fn record_export(
+        &mut self,
+        what: &str,
+        path: &str,
+        sha256: &str,
+        bytes: u64,
+        from: Value,
+    ) -> Result<()> {
+        self.logged("export.written", |_| {
+            Ok((
+                (),
+                serde_json::json!({
+                    "what": what,
+                    "path": path,
+                    "sha256": sha256,
+                    "bytes": bytes,
+                    "from": from,
+                }),
+            ))
+        })
+    }
+
     pub(crate) fn logged<T>(
         &mut self,
         action: &str,

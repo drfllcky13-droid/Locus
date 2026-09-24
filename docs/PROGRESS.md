@@ -393,6 +393,12 @@ Item 1 done (2026-09-24):
 - tests: every analysis report type tested, and the registration and diagram reports, give identical bytes twice; a later print differs only in its time;
 - in the app, a skid record printed twice differs in one line, the printed time, and both name audit entry #5, which carries the record's SHA-256.
 
+Item 2 and the CSV export done (2026-09-24):
+- **The case report** (`locus-report::case`, `export_cmds::case_report`): evidence with hashes and import entries, the latest integrity check (failures in "Needs attention"), and every registration, diagram and scene revision, analysis (withdrawn ones with their reason) and measurement, each with its audit entry. How to check it is on the last page.
+- **Measurements CSV:** value and 1σ in their unit, the point σ, the points as stored, and the audit entry.
+- Every export is logged as `export.written`, with its SHA-256.
+- In the app, two case reports differ only in the printed time, and the CSV row matches the measurement (2.761968 m ± 0.002828 m, entry #5).
+
 Acceptance criteria (SPEC):
 - [ ] A report generated twice from the same project is byte-identical apart from the timestamp.
 - [ ] Every number in a report traces to an audit log entry.

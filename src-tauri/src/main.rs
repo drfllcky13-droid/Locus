@@ -9,6 +9,7 @@ mod camera_cmds;
 mod commands;
 mod crash_cmds;
 mod diagram_cmds;
+mod export_cmds;
 mod photo_cmds;
 mod register_cmds;
 mod render_cmds;
@@ -78,6 +79,8 @@ fn main() {
             scene3d_cmds::sun_position,
             scene3d_cmds::animation_evaluate,
             scene3d_cmds::animation_save,
+            export_cmds::case_report,
+            export_cmds::measurements_csv,
             render_cmds::render_start,
             render_cmds::render_frame,
             render_cmds::render_finish,

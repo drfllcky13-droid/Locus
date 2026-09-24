@@ -10,6 +10,7 @@ pub mod analysis;
 pub mod animation;
 pub mod bloodstain;
 pub mod camera;
+pub mod case;
 pub mod crash;
 pub mod diagram;
 pub mod photo;
