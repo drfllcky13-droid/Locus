@@ -9,7 +9,7 @@ Three license tiers, built as feature flags on one codebase:
 | Tier | Includes |
 |---|---|
 | Diagram | 2D diagramming, hand measurements, symbol library, reports |
-| Analyst | Everything in Diagram, plus 3D scenes, point clouds, all analysis tools, photogrammetry, animation, portable viewer, VR |
+| Analyst | Everything in Diagram, plus 3D scenes, point clouds, all analysis tools, photogrammetry, animation, portable viewer |
 | Analyst Plus | Everything in Analyst, plus in-app scan registration and volumetric crush comparison |
 
 ## 2. Architecture
@@ -127,9 +127,9 @@ Accept: a report generated twice from the same project is byte-identical apart f
 Build: "Export case package" writes a folder (fits on a USB drive) with the viewer executable plus selected scene data, diagrams, photos, reports, and animations. The viewer is read-only: navigate, measure, play animations, view panoramas, open reports. No install, no internet.
 Accept: package opens on a clean Windows machine without admin rights. Viewer cannot modify data, and shows the package hash on its About screen.
 
-### Phase 12: VR (Analyst)
-Build: WebXR session from the 3D viewer (works with SteamVR/OpenXR headsets via the webview, or document a fallback if the webview blocks WebXR); teleport and smooth movement; measure with controllers; inspect evidence markers; show animations at 1:1 scale.
-Accept: stable 72+ fps on a supported headset with a 100M-point scene.
+### Phase 12: VR (dropped 2026-09-23 by Addison; see DECISIONS.md)
+~~Build: WebXR session from the 3D viewer (works with SteamVR/OpenXR headsets via the webview, or document a fallback if the webview blocks WebXR); teleport and smooth movement; measure with controllers; inspect evidence markers; show animations at 1:1 scale.~~
+~~Accept: stable 72+ fps on a supported headset with a 100M-point scene.~~
 
 ### Phase 13: Validation suite (critical)
 Build `locus-validate`, which generates synthetic ground-truth scenes and runs every tool end to end:
@@ -150,5 +150,5 @@ Accept: a new user can complete the sample indoor crime scene workflow in under 
 
 - GPU precision: render relative to a local origin; never send georeferenced coordinates to the GPU as `f32`.
 - Memory: octree building must stream; never load a full scan into RAM.
-- WebView limits: test WebXR and large buffers in the Tauri webview early (Phase 2), and switch to a native wgpu renderer for the point cloud if performance fails.
+- WebView limits: test large buffers in the Tauri webview early (Phase 2), and switch to a native wgpu renderer for the point cloud if performance fails.
 - Proprietary formats (native scanner files, EDR tools, evidence-management systems): support through vendor-exported open formats or official partner programs only.

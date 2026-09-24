@@ -29,6 +29,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 - **The overriding goal.** Crime and crash tools must produce results an examiner can defend in court. Every other design choice gives way to it.
 - **Registration is in scope, but only so far.** The top tier of such packages registers scans itself, so Locus does too. Locus is **not** a full scan-processing suite: registration exists only to get scan data into the analysis tools.
 - **Desktop only.** Locus is an installed app, with no web version and no hosted deployment, and the repo is never published as a website. Network features (auto-update, crash reporting that never uploads case data) **are** allowed. An earlier offline-only rule was superseded on 2026-09-22; both entries are kept in DECISIONS.md.
+- **No VR.** Phase 12 (VR) was dropped by Addison on 2026-09-23.
 - **Three licence tiers**, as feature flags on one codebase: Diagram, Analyst, Analyst Plus. See [SPEC.md §1](SPEC.md).
 
 ## 2. Standing rules and constraints
@@ -166,11 +167,10 @@ A summary by area. The dated entries with full reasons and alternatives are in [
    - A report regenerated from the same project is byte-identical apart from the timestamp.
    - Every number traces to the audit log.
 2. **Phase 11, the portable case package.** Read-only, runs from a USB drive with no install or admin rights, and shows the package hash.
-3. **Phase 12, VR.** Test WebXR inside WebView2 first, and document a fallback if it's blocked.
-4. **Phase 13, validation.**
+3. **Phase 13, validation.**
    - Consolidate the per-tool validation into one `locus-validate` run and PDF, regenerated for every release.
    - Write `docs/methods/validation-protocol.md` for physical studies (staged scenes, several blind examiners), since synthetic tests alone won't satisfy a court.
-5. **Phase 14, polish.**
+4. **Phase 14, polish.**
    - Guided workflows (indoor crime scene, fatal crash, fire scene), contextual help and a sample project.
    - Tier licensing.
    - A signed MSI installer, auto-update, and crash reporting that never uploads case data.
