@@ -23,7 +23,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 - **Phase 10 (reports and exports), closed 2026-09-24.** Reports are reproducible and traceable. There is a case report, and diagrams export as PNG, TIFF and DXF, point clouds as E57, LAS and LAZ, the scene as glTF, and measurements as CSV, all hashed and logged ([exports.md](methods/exports.md)).
 - **Phase 11 (portable case package), closed 2026-09-24.** A folder with the program itself as a read-only viewer, the case data, freshly printed reports and the renders, all hashed in a manifest whose hash is the package hash ([case-package.md](methods/case-package.md)).
 - **Next:** Phase 13, validation.
-- **Waiting on Addison:** see Open questions.
+- **Waiting on Addison:** his to-do list is [ADDISON-TODO.md](ADDISON-TODO.md) (also summarised under Open questions).
 
 ## 1. Goal and scope
 
