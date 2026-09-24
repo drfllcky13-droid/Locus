@@ -206,7 +206,7 @@ mod imp {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
@@ -214,7 +214,6 @@ mod tests {
     /// A 4 s, 25 fps test video written with Media Foundation (a moving square on a gradient),
     /// sampled every 0.5 s.
     #[test]
-    #[cfg(windows)]
     fn frames_are_sampled_at_the_interval() {
         let dir = std::env::temp_dir().join(format!("locus-video-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
