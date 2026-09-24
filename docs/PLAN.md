@@ -13,14 +13,15 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 
 *Updated 2026-09-23.*
 
-- **Done.** Phases 0–9 are done. Phase 7's textbook-case criterion is blocked (see Open questions).
+- **Done.** Phases 0–10 are done. Phase 7's textbook-case criterion is blocked (see Open questions).
 - **Phase 9 (animation), closed 2026-09-23.** It covers:
   - the motion model with provenance, time zero and plausibility checks;
   - the timeline UI;
   - driver, witness, orbit, follow, fly-through, mirror and 360° views;
   - the time–distance–speed report;
   - MP4 render with read-back checks.
-- **Next:** Phase 10, reports and exports. Start by writing its plan in PROGRESS.md.
+- **Phase 10 (reports and exports), closed 2026-09-24.** Reports are reproducible and traceable. There is a case report, and diagrams export as PNG, TIFF and DXF, point clouds as E57, LAS and LAZ, the scene as glTF, and measurements as CSV, all hashed and logged ([exports.md](methods/exports.md)).
+- **Next:** Phase 11, the portable case package.
 - **Waiting on Addison:** see Open questions.
 
 ## 1. Goal and scope
@@ -161,16 +162,11 @@ A summary by area. The dated entries with full reasons and alternatives are in [
 
 ## 4. Remaining work, in recommended order
 
-1. **Phase 10, reports and exports.**
-   - Consolidate the report templates.
-   - Exports: PDF, PNG and TIFF at a chosen DPI, DXF, E57/LAS, glTF and CSV.
-   - A report regenerated from the same project is byte-identical apart from the timestamp.
-   - Every number traces to the audit log.
-2. **Phase 11, the portable case package.** Read-only, runs from a USB drive with no install or admin rights, and shows the package hash.
-3. **Phase 13, validation.**
+1. **Phase 11, the portable case package.** Read-only, runs from a USB drive with no install or admin rights, and shows the package hash.
+2. **Phase 13, validation.**
    - Consolidate the per-tool validation into one `locus-validate` run and PDF, regenerated for every release.
    - Write `docs/methods/validation-protocol.md` for physical studies (staged scenes, several blind examiners), since synthetic tests alone won't satisfy a court.
-4. **Phase 14, polish.**
+3. **Phase 14, polish.**
    - Guided workflows (indoor crime scene, fatal crash, fire scene), contextual help and a sample project.
    - Tier licensing.
    - A signed MSI installer, auto-update, and crash reporting that never uploads case data.

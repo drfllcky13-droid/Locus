@@ -32,7 +32,7 @@ impl Diagram {
             .collect()
     }
 
-    fn visible(&self, e: &Entity) -> bool {
+    pub(crate) fn visible(&self, e: &Entity) -> bool {
         self.layers
             .iter()
             .find(|l| l.id == e.layer())
@@ -43,6 +43,8 @@ impl Diagram {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Layer {
     pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub visible: bool,
 }
 
@@ -161,7 +163,7 @@ pub struct BuiltArc {
 }
 
 impl Entity {
-    fn layer(&self) -> &str {
+    pub(crate) fn layer(&self) -> &str {
         match self {
             Entity::Line { layer, .. }
             | Entity::Polyline { layer, .. }
@@ -676,6 +678,35 @@ pub fn pdf(
     render_with(TEMPLATE, data, files)
 }
 
+/// The printed sheet as an image at `dpi` (the same page as the PDF, so its scale holds at
+/// that resolution).
+pub fn raster(
+    d: &Diagram,
+    symbols: &[SymbolDef],
+    o: &PrintOptions,
+    underlays: Vec<(String, Vec<u8>)>,
+    dpi: f64,
+) -> Result<crate::raster::Raster, String> {
+    if !(72.0..=crate::raster::MAX_DPI).contains(&dpi) {
+        return Err(format!(
+            "the resolution must be 72 to {} dots per inch",
+            crate::raster::MAX_DPI
+        ));
+    }
+    let s = sheet(d, symbols, o).map_err(|e| e.to_string())?;
+    let data = serde_json::to_vec(&s).map_err(|e| e.to_string())?;
+    let mut files: Vec<(String, Vec<u8>)> = symbols
+        .iter()
+        .map(|d| (format!("symbols/{}.svg", d.id), d.svg.as_bytes().to_vec()))
+        .collect();
+    files.extend(underlays);
+    let doc = crate::compile(TEMPLATE, data, files)?;
+    crate::raster::pages(&doc, dpi)
+        .into_iter()
+        .next()
+        .ok_or_else(|| "the sheet has no page".to_string())
+}
+
 /// The symbol library (assets/symbols: original, drawn for Locus), as the editor has it.
 pub fn symbols() -> Vec<SymbolDef> {
     macro_rules! sym {
@@ -860,6 +891,14 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    #[test]
+    fn the_sheet_rasterises_at_its_resolution() {
+        let r = raster(&diagram(PLAN), &symbols(), &opts(100.0), vec![], 150.0).unwrap();
+        // A4 landscape at 150 dpi.
+        assert_eq!((r.width, r.height), (1754, 1240));
+        assert!(raster(&diagram(PLAN), &symbols(), &opts(100.0), vec![], 1200.0).is_err());
     }
 
     #[test]

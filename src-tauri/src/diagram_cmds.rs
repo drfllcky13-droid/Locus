@@ -109,6 +109,67 @@ pub fn hand_solve(
     .map_err(|e: HandError| e.to_string())
 }
 
+/// A diagram's newest saved revision, its print options and its underlay images (each checked
+/// against the hash the diagram recorded).
+type Printable = (
+    locus_core::Revision,
+    locus_report::diagram::Diagram,
+    locus_report::diagram::PrintOptions,
+    Vec<(String, Vec<u8>)>,
+);
+
+fn printable(
+    p: &locus_core::Project,
+    diagram_id: i64,
+    scale: f64,
+    paper: locus_report::diagram::Paper,
+    landscape: bool,
+) -> CmdResult<Printable> {
+    let rev = p
+        .diagram_latest(diagram_id)
+        .map_err(err)?
+        .ok_or(format!("No diagram {diagram_id}."))?;
+    let d: locus_report::diagram::Diagram =
+        serde_json::from_value(rev.document.clone()).map_err(err)?;
+    let o = locus_report::diagram::PrintOptions {
+        scale,
+        paper,
+        landscape,
+        title: rev.name.clone(),
+        details: vec![
+            ("Project".into(), p.name().map_err(err)?),
+            (
+                "Revision".into(),
+                format!("{} (SHA-256 {})", rev.number, &rev.sha256[..16]),
+            ),
+            (
+                "Audit entry".into(),
+                ["diagram.revised", "diagram.created"]
+                    .iter()
+                    .find_map(|act| {
+                        p.audit_entry_for(act, "revision", &serde_json::json!(rev.revision_id))
+                            .ok()
+                            .flatten()
+                    })
+                    .map_or("(not found)".into(), |e| {
+                        format!("#{}, {}", e.seq, &e.hash[..16])
+                    }),
+            ),
+            ("Drawn by".into(), rev.created_by.clone()),
+            (
+                "Printed".into(),
+                format!("{}, {}", locus_core::timestamp(), p.examiner()),
+            ),
+        ],
+    };
+    let files = d
+        .underlays()
+        .into_iter()
+        .map(|(file, sha)| Ok((file.to_string(), read_checked(p.root(), file, sha)?)))
+        .collect::<CmdResult<Vec<_>>>()?;
+    Ok((rev, d, o, files))
+}
+
 /// Print the diagram's newest saved revision to PDF at 1:`scale`, and log the export.
 /// Returns the PDF's SHA-256.
 #[tauri::command]
@@ -123,49 +184,7 @@ pub async fn diagram_pdf(
     blocking(app, move |s| {
         let mut guard = s.project.lock().unwrap();
         let p = guard.as_mut().ok_or("Open or create a project first.")?;
-        let rev = p
-            .diagram_latest(diagram_id)
-            .map_err(err)?
-            .ok_or(format!("No diagram {diagram_id}."))?;
-        let d: locus_report::diagram::Diagram =
-            serde_json::from_value(rev.document.clone()).map_err(err)?;
-        let o = locus_report::diagram::PrintOptions {
-            scale,
-            paper,
-            landscape,
-            title: rev.name.clone(),
-            details: vec![
-                ("Project".into(), p.name().map_err(err)?),
-                (
-                    "Revision".into(),
-                    format!("{} (SHA-256 {})", rev.number, &rev.sha256[..16]),
-                ),
-                (
-                    "Audit entry".into(),
-                    ["diagram.revised", "diagram.created"]
-                        .iter()
-                        .find_map(|act| {
-                            p.audit_entry_for(act, "revision", &serde_json::json!(rev.revision_id))
-                                .ok()
-                                .flatten()
-                        })
-                        .map_or("(not found)".into(), |e| {
-                            format!("#{}, {}", e.seq, &e.hash[..16])
-                        }),
-                ),
-                ("Drawn by".into(), rev.created_by.clone()),
-                (
-                    "Printed".into(),
-                    format!("{}, {}", locus_core::timestamp(), p.examiner()),
-                ),
-            ],
-        };
-        // Underlay images, each checked against the hash the diagram recorded.
-        let files = d
-            .underlays()
-            .into_iter()
-            .map(|(file, sha)| Ok((file.to_string(), read_checked(p.root(), file, sha)?)))
-            .collect::<CmdResult<Vec<_>>>()?;
+        let (rev, d, o, files) = printable(p, diagram_id, scale, paper, landscape)?;
         let out = locus_report::diagram::pdf(&d, &locus_report::diagram::symbols(), &o, files)?;
         std::fs::write(&path, &out.pdf).map_err(|e| format!("Could not write {path}: {e}"))?;
         let (sha256, bytes) =
@@ -173,6 +192,81 @@ pub async fn diagram_pdf(
         p.record_diagram_export(rev.revision_id, scale, &path, &sha256, bytes)
             .map_err(err)?;
         Ok(sha256)
+    })
+    .await
+}
+
+/// The printed sheet as a PNG or TIFF at `dpi` (the same page as the PDF, scale kept, the
+/// resolution recorded in the file). Returns its SHA-256.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn diagram_image(
+    app: AppHandle,
+    diagram_id: i64,
+    scale: f64,
+    paper: locus_report::diagram::Paper,
+    landscape: bool,
+    dpi: f64,
+    format: String,
+    path: String,
+) -> CmdResult<String> {
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        let (rev, d, o, files) = printable(p, diagram_id, scale, paper, landscape)?;
+        let r =
+            locus_report::diagram::raster(&d, &locus_report::diagram::symbols(), &o, files, dpi)
+                .map_err(|e| e[..1].to_uppercase() + &e[1..] + ".")?;
+        let bytes = match format.as_str() {
+            "png" => locus_report::raster::png(&r, dpi)?,
+            "tiff" => locus_report::raster::tiff(&r, dpi),
+            f => return Err(format!("No {f} export.")),
+        };
+        std::fs::write(&path, &bytes).map_err(|e| format!("Could not write {path}: {e}"))?;
+        crate::export_cmds::log_written(
+            p,
+            &format!("diagram {}", format.to_uppercase()),
+            &path,
+            serde_json::json!({
+                "diagram": diagram_id,
+                "revision": rev.revision_id,
+                "revision_sha256": rev.sha256,
+                "scale": scale,
+                "dpi": dpi,
+                "pixels": [r.width, r.height],
+            }),
+        )
+    })
+    .await
+}
+
+/// The diagram as DXF in world metres (project frame), one layer per visible diagram layer.
+/// Returns its SHA-256.
+#[tauri::command]
+pub async fn diagram_dxf(app: AppHandle, diagram_id: i64, path: String) -> CmdResult<String> {
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        let rev = p
+            .diagram_latest(diagram_id)
+            .map_err(err)?
+            .ok_or(format!("No diagram {diagram_id}."))?;
+        let d: locus_report::diagram::Diagram =
+            serde_json::from_value(rev.document.clone()).map_err(err)?;
+        let text = locus_report::dxf::dxf(&d, &locus_report::diagram::symbols());
+        std::fs::write(&path, text.as_bytes())
+            .map_err(|e| format!("Could not write {path}: {e}"))?;
+        crate::export_cmds::log_written(
+            p,
+            "diagram DXF",
+            &path,
+            serde_json::json!({
+                "diagram": diagram_id,
+                "revision": rev.revision_id,
+                "revision_sha256": rev.sha256,
+                "units": "metres, project frame",
+            }),
+        )
     })
     .await
 }

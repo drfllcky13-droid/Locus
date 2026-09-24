@@ -367,7 +367,7 @@ Opposing counsel's likely challenges, and where each is answered:
 
 Phase 9 is done.
 
-### Phase 10: Reports and exports
+### Phase 10: Reports and exports (done 2026-09-24)
 
 Plan (2026-09-23):
 
@@ -398,6 +398,25 @@ Item 2 and the CSV export done (2026-09-24):
 - **Measurements CSV:** value and 1σ in their unit, the point σ, the points as stored, and the audit entry.
 - Every export is logged as `export.written`, with its SHA-256.
 - In the app, two case reports differ only in the printed time, and the CSV row matches the measurement (2.761968 m ± 0.002828 m, entry #5).
+
+Items 3 and 4 done (2026-09-24); see `docs/methods/exports.md`:
+- **Diagrams:** PNG and TIFF at 150, 300 or 600 dpi with the resolution in the file; DXF in world metres by layer.
+- **Point clouds:** E57, LAS and LAZ, streamed, in the project frame, with cleanup applied.
+- **3D scene:** glTF binary, turned to y-up, with the origin in the root node's extras.
+- **One Export section** in the 3D view's panel; the glTF export is in the scene builder.
+- **Checked in the app** (a 1.57M-point scan, a diagram and a scene with a car):
+  - the LAS holds all 1,573,508 points at 0.0001 m steps with bounds matching the room;
+  - the PNG is A4 at 300 dpi (3508 × 2480) and draws the sheet as the PDF does;
+  - the TIFF is at 150 dpi (1754 × 1240) and PIL reads it;
+  - the DXF has the 10 m line, the dimension "10.000 m" and marker 3 in world metres;
+  - the glTF is valid binary glTF 2;
+  - each export has its SHA-256 in the log. Both point clouds were written in 0.8 s.
+
+Acceptance:
+- [x] A report generated twice from the same project is byte-identical apart from the timestamp. Tested for every report type, and checked in the app for an analysis report and the case report.
+- [x] Every number in a report traces to an audit log entry. Each report names the entry that recorded its record, whose details carry the record's SHA-256, and the case report does so for every record and evidence file.
+
+Report templates: every analysis, the time–distance–speed report and the case report share one layout (`analysis.typ`). The registration report and the diagram sheet keep their own layouts: one needs its pose tables, the other the scaled sheet. Both carry the same identity rows (record, audit entry, state head, printed by and when).
 
 Acceptance criteria (SPEC):
 - [ ] A report generated twice from the same project is byte-identical apart from the timestamp.

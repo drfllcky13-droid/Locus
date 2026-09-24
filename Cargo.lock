@@ -2995,6 +2995,7 @@ dependencies = [
  "locus-photo",
  "locus-register",
  "nalgebra",
+ "png 0.18.1",
  "serde",
  "serde_json",
  "typst",

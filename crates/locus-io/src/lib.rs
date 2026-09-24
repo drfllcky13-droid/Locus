@@ -11,7 +11,7 @@ mod ply;
 mod stats;
 mod text;
 mod write;
-pub use write::write_e57;
+pub use write::{stream_e57, stream_las, write_e57, OutPoint, Sink};
 
 use locus_core::hash::sha256_file;
 use locus_core::{Contents, EvidenceRecord, LinearUnit, Project};

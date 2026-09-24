@@ -4,7 +4,7 @@
 // hashed and logged by the backend (src-tauri/src/render_cmds.rs).
 import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { savePath } from "../export/ExportPanel";
 import { api } from "../api";
 import type { SceneObject } from "../scene3d/model";
 import type { Engine } from "../viewer3d/engine";
@@ -69,14 +69,7 @@ export function RenderSection({
     const [w, h] = sizes[Math.min(size, sizes.length - 1)];
     // Each cube face covers 90°, so a quarter of the panorama's width keeps its resolution.
     const face = Math.round(w / 4 / 2) * 2;
-    // In-app test scripts can't answer the native dialog; they set the path it would return.
-    const scripted = (globalThis as { __locusTestSavePath?: string }).__locusTestSavePath;
-    const path =
-      scripted ??
-      (await saveDialog({
-        defaultPath: `${v.name}.mp4`,
-        filters: [{ name: "MP4 video", extensions: ["mp4"] }],
-      }));
+    const path = await savePath(v.name, "mp4", "MP4 video");
     if (!path) return;
     cancel.current = false;
     let started = false;

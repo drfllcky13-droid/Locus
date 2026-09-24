@@ -1,3 +1,4 @@
+import { ExportPanel } from "../export/ExportPanel";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DiagramRevision, type ProjectInfo, type Resolved, type StateView } from "../api";
@@ -421,6 +422,12 @@ export function Viewport({
               setTool("orbit");
               setPickRequest({ hint, then });
             }}
+            onNotice={onNotice}
+          />
+          <ExportPanel
+            key={`x${project.root}`}
+            scans={shownScene?.scans ?? []}
+            diagrams={diagrams}
             onNotice={onNotice}
           />
           <TrajectoryPanel

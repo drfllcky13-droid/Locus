@@ -35,6 +35,8 @@ import { buildScene, type Diagrams } from "./render";
 import { DEFAULT_ROOF, rectangle, type RoofType } from "./roof";
 import { walls } from "../diagram2d/builders";
 import { AnimationPanel } from "../animation/AnimationPanel";
+import { savePath } from "../export/ExportPanel";
+import { sceneGlb } from "./gltf";
 import type { EvidenceRecord } from "../api";
 
 const AUTOSAVE_MS = 1500;
@@ -703,6 +705,35 @@ export function SceneBuilder({
         (ambient) => ambient >= 0 && change({ ...doc, ambient }),
         0.1,
       )}
+      <button
+        disabled={dirty}
+        title={dirty ? "Waiting for the scene to save" : undefined}
+        onClick={async () => {
+          const e = engine();
+          if (!e) return;
+          try {
+            const path = await savePath(rev.name, "glb", "glTF binary");
+            if (!path) return;
+            const bytes = await sceneGlb(doc, diagrams, e.origin);
+            const sha = await api.exportBytes(
+              path,
+              "3D scene glTF",
+              {
+                scene: rev.document_id,
+                revision: rev.revision_id,
+                revision_sha256: rev.sha256,
+                origin: e.origin,
+              },
+              bytes,
+            );
+            onNotice(`3D scene written as glTF (SHA-256 ${sha}; recorded in the audit log).`);
+          } catch (err) {
+            onNotice(String(err));
+          }
+        }}
+      >
+        Export glTF…
+      </button>
       <p className="muted dg-hash">
         Revision {rev.number}
         {dirty ? " (saving…)" : ""} · SHA-256 {rev.sha256.slice(0, 16)}…

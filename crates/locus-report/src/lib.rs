@@ -13,7 +13,9 @@ pub mod camera;
 pub mod case;
 pub mod crash;
 pub mod diagram;
+pub mod dxf;
 pub mod photo;
+pub mod raster;
 pub mod registration;
 pub mod trajectory;
 

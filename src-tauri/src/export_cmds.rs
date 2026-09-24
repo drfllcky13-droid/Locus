@@ -276,3 +276,110 @@ pub async fn measurements_csv(app: AppHandle, path: String) -> CmdResult<String>
     })
     .await
 }
+
+/// Export the chosen scans' visible points (cleanup applied) in the project frame as E57, LAS
+/// or LAZ, streamed node by node. `scans` are "evidence-scan" keys; empty means every scan.
+/// Returns the file's SHA-256.
+#[tauri::command]
+pub async fn pointcloud_export(
+    app: AppHandle,
+    scans: Vec<String>,
+    format: String,
+    path: String,
+) -> CmdResult<String> {
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        let scene = s.scene.read().unwrap();
+        let all = scene.scan_keys();
+        let keys: Vec<locus_octree::scene::ScanKey> = if scans.is_empty() {
+            all.iter().map(|(k, _)| *k).collect()
+        } else {
+            scans
+                .iter()
+                .map(|k| locus_octree::scene::ScanKey::parse(k).ok_or(format!("Not a scan: {k}.")))
+                .collect::<CmdResult<_>>()?
+        };
+        if keys.is_empty() {
+            return Err("The project has no point clouds.".into());
+        }
+        let out = std::path::Path::new(&path);
+        let mut feed = |sink: &mut locus_io::Sink| {
+            scene
+                .visit_points(&keys, &mut |xyz, rgb, intensity| {
+                    sink(locus_io::OutPoint {
+                        xyz,
+                        rgb,
+                        intensity,
+                    })
+                })
+                .map(|_| ())
+        };
+        let written = match format.as_str() {
+            "e57" => locus_io::stream_e57(
+                out,
+                &format!("locus-export-{}", locus_core::timestamp()),
+                "Locus export (project frame)",
+                true,
+                true,
+                &mut feed,
+            )?,
+            "las" | "laz" => locus_io::stream_las(out, scene.origin(), &mut feed)?,
+            f => return Err(format!("No {f} export.")),
+        };
+        let names: Vec<String> = keys
+            .iter()
+            .map(|k| {
+                all.iter()
+                    .find(|(a, _)| a == k)
+                    .map_or(k.to_string(), |(_, n)| format!("{k} {n}"))
+            })
+            .collect();
+        drop(scene);
+        let registration = p.applied_registration().map_err(err)?;
+        crate::export_cmds::log_written(
+            p,
+            &format!("point cloud {}", format.to_uppercase()),
+            &path,
+            serde_json::json!({
+                "scans": names,
+                "points": written,
+                "frame": "project frame, metres",
+                "registration": registration,
+                "cleanup": "applied (removed points left out)",
+            }),
+        )
+    })
+    .await
+}
+
+/// A file the view makes (a glTF scene) waiting for its bytes: where, what, and from what.
+static PENDING: std::sync::Mutex<Option<(String, String, Value)>> = std::sync::Mutex::new(None);
+
+/// Name the next file the view sends with `export_bytes`.
+#[tauri::command]
+pub async fn export_begin(path: String, what: String, from: Value) -> CmdResult<()> {
+    *PENDING.lock().unwrap() = Some((path, what, from));
+    Ok(())
+}
+
+/// The bytes of the file named by `export_begin` (raw request body): written, hashed and
+/// logged. Returns its SHA-256.
+#[tauri::command]
+pub async fn export_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> CmdResult<String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("The file is sent as raw bytes.".into());
+    };
+    let (path, what, from) = PENDING
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or("No export was started.")?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not write {path}: {e}"))?;
+    blocking(app, move |s| {
+        let mut guard = s.project.lock().unwrap();
+        let p = guard.as_mut().ok_or("Open or create a project first.")?;
+        log_written(p, &what, &path, from)
+    })
+    .await
+}

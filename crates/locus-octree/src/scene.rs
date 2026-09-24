@@ -36,6 +36,10 @@ pub fn invert_rigid(m: &Pose) -> Pose {
     out
 }
 
+/// Called with each point (project frame), its colour and its intensity.
+pub type PointVisitor<'a> =
+    dyn FnMut([f64; 3], Option<[u8; 3]>, Option<u16>) -> std::result::Result<(), String> + 'a;
+
 /// A scan in the scene: evidence id and scan index, written "e-s" in URLs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct ScanKey {
@@ -209,6 +213,46 @@ impl Scene {
             })?;
         }
         Ok(out)
+    }
+
+    /// Visit every visible point (cleanup applied) of the given scans, in the project frame,
+    /// with its colour and intensity when the scan has them. Node by node, so a whole cloud
+    /// never has to be in memory.
+    pub fn visit_points(
+        &self,
+        keys: &[ScanKey],
+        f: &mut PointVisitor,
+    ) -> std::result::Result<u64, String> {
+        let mut n = 0u64;
+        for key in keys {
+            let c = self
+                .scans
+                .get(key)
+                .ok_or_else(|| format!("no scan {key} in the open project"))?;
+            for i in 0..c.tree.nodes.len() {
+                let pts = c.tree.read(i).map_err(|e| e.to_string())?;
+                for k in 0..pts.xyz.len() {
+                    if c.removed.contains(pts.index[k]) {
+                        continue;
+                    }
+                    f(
+                        crate::scene::apply(&c.pose, pts.xyz[k]),
+                        pts.rgb.get(k).copied(),
+                        pts.intensity.get(k).copied(),
+                    )?;
+                    n += 1;
+                }
+            }
+        }
+        Ok(n)
+    }
+
+    /// The scans in the scene: key and name.
+    pub fn scan_keys(&self) -> Vec<(ScanKey, String)> {
+        self.scans
+            .iter()
+            .map(|(k, c)| (*k, c.name.clone()))
+            .collect()
     }
 
     /// Every visible point of one scan (project frame) inside the box `lo`–`hi`.

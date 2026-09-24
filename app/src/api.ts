@@ -319,6 +319,26 @@ export const api = {
     landscape: boolean,
     path: string,
   ) => invoke<string>("diagram_pdf", { diagramId, scale, paper, landscape, path }),
+  diagramImage: (
+    diagramId: number,
+    scale: number,
+    paper: "A4" | "A3",
+    landscape: boolean,
+    dpi: number,
+    format: "png" | "tiff",
+    path: string,
+  ) => invoke<string>("diagram_image", { diagramId, scale, paper, landscape, dpi, format, path }),
+  diagramDxf: (diagramId: number, path: string) =>
+    invoke<string>("diagram_dxf", { diagramId, path }),
+  caseReport: (path: string) => invoke<string>("case_report", { path }),
+  measurementsCsv: (path: string) => invoke<string>("measurements_csv", { path }),
+  pointcloudExport: (scans: string[], format: "e57" | "las" | "laz", path: string) =>
+    invoke<string>("pointcloud_export", { scans, format, path }),
+  /** A file made in the view: named first, then its bytes sent raw. */
+  exportBytes: async (path: string, what: string, from: unknown, bytes: ArrayBuffer) => {
+    await invoke("export_begin", { path, what, from });
+    return invoke<string>("export_bytes", new Uint8Array(bytes));
+  },
   underlayImages: () =>
     invoke<
       {
