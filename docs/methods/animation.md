@@ -130,10 +130,17 @@ The report also carries:
 
 ## Renders
 
-Renders are MP4 at a chosen resolution and frame rate:
-- exactly (to − from) × fps + 1 frames, each at its timeline time;
-- written with Windows Media Foundation (no ffmpeg);
-- read back after writing to check the frame count and duration.
+Renders are MP4 at a chosen resolution and frame rate, from one of the animation's views:
+- one frame at the start and every 1/fps after it, up to the end: ⌊(to − from) × fps⌋ + 1 frames;
+- each frame drawn from the motion and camera evaluated at exactly its time (not interpolated from playback);
+- written with Windows Media Foundation, H.264 at 40 Mbit/s (no ffmpeg); refused on macOS and Linux for now;
+- read back after writing. The frame count, frame size and duration (frames ÷ fps, within half a frame) are checked; if they don't match, the file is removed and nothing is recorded.
+
+Other tools' overlays (a trajectory, a crash analysis) are hidden in renders. The path lines drawn during playback are hidden too.
+
+**Driver views** carry "Vehicle interior (pillars, mirrors, dashboard) not shown" on every frame, whatever the overlays, since the driver's own vehicle isn't drawn.
+
+**The scale bar** holds only at one depth in a perspective view. It is sized for the distance from the camera to what it looks at, and says so: "2 m at 23.4 m from the camera".
 
 **Overlays** are all optional and off by default:
 - elapsed time (from time zero);
@@ -148,8 +155,12 @@ Renders are MP4 at a chosen resolution and frame rate:
 - the audit log's head hash (the project state it came from);
 - the view;
 - the settings: resolution, frame rate, time range and overlays;
-- the frame count;
+- the frame count, and the frame count and duration read back from the file;
+- any permanent labels;
+- the encoder;
 - the file and its SHA-256.
+
+It is stored as a "render" analysis record, and listed in the scene's time–distance–speed reports.
 
 ## Assumptions and limitations
 

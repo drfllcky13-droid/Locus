@@ -35,19 +35,17 @@ Locus is a desktop application for documenting, analyzing, and presenting crime 
 - `pnpm -C app test`: frontend tests
 - `cargo run -p locus-validate`: accuracy validation suite (Phase 13)
 
-## Handoff protocol
-Chat plans, Code builds, the user relays. HANDOFF.md is the mailbox.
+## Planning
 
-Start of every session and every scheduled check-in: read HANDOFF.md.
+Claude Code plans and builds. `docs/PLAN.md` is the single, living plan: goal and scope, standing rules and working principles, decisions by area, remaining work in order, open questions for Addison, and a short status. Read it at the start of every session.
 
-Do it yourself, no handoff: bug fixes, red CI, refactors, dependency bumps, and anything already specified in the current phase plan.
-Hand to CHAT: end of a phase or numbered item, a design decision, unclear or conflicting requirements, or stuck after two attempts.
-Hand to ME only for things only the user can do: merges, approvals, credentials, real-device or real-world checks.
-
-End of every task: overwrite HANDOFF.md with the footer below plus a "## Report for Chat" section (what changed, commit hashes, test results, decisions needed with options). Commit and push it with the work. End your reply with the footer:
+- Keep PLAN.md current: update it when a decision is made, a phase closes or the order changes. Log each decision in `docs/DECISIONS.md` as before, and summarise it in PLAN.md.
+- Decide routine matters yourself. Ask Addison only about PLAN.md's open questions or what is genuinely his call (licensing, legal, lab practice, spending, hardware), and batch the questions.
+- Before closing a phase, check every acceptance criterion, run it in the app, and ask how opposing counsel would attack each result.
+- End every reply with:
 
 PROJECT: <name>
-BATON → CODE / CHAT / ME / IDLE
+BATON → CODE / ME / IDLE
 Carry: <the single next action and who does it>
 Status: <phase + what's done, one line>
 Blocked on: <what needs the user, or "nothing">
