@@ -39,6 +39,7 @@ import { AnimationPanel } from "../animation/AnimationPanel";
 import { useReadOnly } from "../readOnly";
 import { savePath } from "../export/ExportPanel";
 import { sceneGlb } from "./gltf";
+import { whilePending } from "../pendingSaves";
 import type { EvidenceRecord } from "../api";
 
 const AUTOSAVE_MS = 1500;
@@ -221,7 +222,7 @@ export function SceneBuilder({
   const revName = rev?.name;
   useEffect(() => {
     if (!dirty || revId === undefined || revName === undefined) return;
-    const t = setTimeout(() => {
+    const save = () =>
       api
         .sceneSave(revId, revName, doc)
         .then((r) => {
@@ -229,8 +230,12 @@ export function SceneBuilder({
           setSaved(doc);
         })
         .catch((e) => onNotice(String(e)));
-    }, AUTOSAVE_MS);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => void save(), AUTOSAVE_MS);
+    const done = whilePending(save);
+    return () => {
+      clearTimeout(t);
+      done();
+    };
   }, [dirty, doc, revId, revName, onNotice]);
 
   if (rev === undefined) return null;

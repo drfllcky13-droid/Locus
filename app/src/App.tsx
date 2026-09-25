@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import { api, type DiagramRevision, type EvidenceRecord, type ProjectInfo } from "./api";
@@ -14,6 +15,7 @@ import { PackagePanel } from "./PackagePanel";
 import { GuidePanel } from "./guide/GuidePanel";
 import { ReadOnly, type PackageInfo } from "./readOnly";
 import { allows, License, type LicenseInfo } from "./license";
+import { flushPending } from "./pendingSaves";
 
 const IMPORT_EXTENSIONS = [
   "e57",
@@ -68,6 +70,11 @@ export function App() {
   }, []);
   useEffect(() => {
     void api.licenseInfo().then(setLicense);
+  }, []);
+  // Edits still waiting for their autosave are saved before the window closes.
+  useEffect(() => {
+    const off = getCurrentWindow().onCloseRequested(() => flushPending());
+    return () => void off.then((f) => f());
   }, []);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [notice, setNotice] = useState<string | null>(null);

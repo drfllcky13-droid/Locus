@@ -22,6 +22,7 @@ import {
   type LegendItem,
 } from "./symbols";
 import { isViewKey } from "../keys";
+import { whilePending } from "../pendingSaves";
 import type { Diagram, Entity, EntityInput, Layer, Pt } from "./model";
 import {
   commit,
@@ -196,6 +197,7 @@ export function DiagramEditor({
     const t = setTimeout(() => void save(), AUTOSAVE_MS);
     return () => clearTimeout(t);
   }, [dirty, doc, name, save]);
+  useEffect(() => (dirty ? whilePending(save) : undefined), [dirty, save]);
   useEffect(
     () => () => {
       if (latest.current.dirty) void save();
