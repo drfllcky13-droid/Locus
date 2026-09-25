@@ -2,6 +2,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { LicenseInfo } from "./license";
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { HelpButton } from "./help/Help";
 
 interface GpuInfo {
   webgl: string;
@@ -71,7 +72,9 @@ export function AboutDialog({
         <h2>Lotus {app?.version}</h2>
         <p className="muted">Forensic scene reconstruction.</p>
         <dl className="facts">
-          <dt>Licence</dt>
+          <dt className="with-help">
+            Licence <HelpButton topic="licensing" />
+          </dt>
           <dd>
             {license?.license
               ? `${license.tier_name}, ${license.license.licensee} (${license.license.id}${license.license.expires ? `, until ${license.license.expires}` : ""})`

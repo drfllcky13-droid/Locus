@@ -3,7 +3,7 @@
 // tolerance; the backend gives the value, the range method's extremes and a Monte Carlo
 // interval. Marks can be picked on the cloud (resolved again from stored data). Runs are saved
 // as audit-logged analyses with PDF reports.
-import { HelpButton } from "../../help/Help";
+import { HelpButton, type Topic } from "../../help/Help";
 import { useAllows } from "../../license";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
@@ -540,6 +540,12 @@ export function CrashPanel({
   };
 
   const crushVolume = useAllows("crush_volume");
+  // Tools with a method note of their own, besides the crash note in the heading.
+  const TOOL_NOTE: Partial<Record<Tool, Topic>> = {
+    crush: "crash-stiffness",
+    volume: "crash-volume",
+    edr: "crash-edr",
+  };
   const titles: Record<Tool, string> = {
     skid: "Speed from skid marks",
     yaw: "Critical speed from a yaw mark",
@@ -574,7 +580,9 @@ export function CrashPanel({
       )}
       {tool && (
         <div className="dg-built">
-          <strong>{titles[tool]}</strong>
+          <strong className="with-help">
+            {titles[tool]} {TOOL_NOTE[tool] && <HelpButton topic={TOOL_NOTE[tool]} />}
+          </strong>
           <label>
             Name
             <input value={name} onChange={(e) => setName(e.target.value)} />

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HelpButton } from "../help/Help";
 import { api, type HandRequest, type HandSolved } from "../api";
 import type { Entity, EntityInput, FieldMeasurement } from "./model";
 
@@ -123,7 +124,9 @@ export function MeasureDialog({
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
     >
-      <strong>Measured point</strong>
+      <strong className="with-help">
+        Measured point <HelpButton topic="hand-measurements" />
+      </strong>
       {points.length < 2 ? (
         <p className="warn">
           Place at least two reference points first (Point tool, with their coordinates).
