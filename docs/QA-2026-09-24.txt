@@ -1,0 +1,280 @@
+Lotus QA pass, 2026-09-24
+=========================
+
+Build under test: target/release/locus.exe from 0079809 (and each fix commit after it).
+Method: the real app, launched on a synthetic project by tools/smoke/app.mjs, driven over CDP
+with real mouse and keyboard events (Input.dispatchMouseEvent / dispatchKeyEvent). Native file
+dialogs are answered by intercepting the webview's IPC fetch for plugin:dialog|open/save, so the
+app's own code path runs; native menu items are sent as the app's "menu" event. Scripts:
+E:\Claude\scratch\locus\qa\*.mjs (lib.mjs holds the helpers). Screenshots are in the same folder.
+
+Legend: PASS works as specified; FIXED broken, fixed in the named commit; OPEN left open (why).
+
+
+1. Project create / open, evidence import, verify
+-------------------------------------------------
+Script: a1_project.mjs, a1b_tamper.mjs
+- New project from the menu: name, folder (Choose…), examiner; "Creates <folder>\<name>.locus"
+  preview; created with 1 audit entry. PASS
+- Import through the dialog: E57 (unit stated by file), LAS and PLY ascii/binary (unit required,
+  Import disabled until chosen; mm choice shows extents in mm), PNG photo, MP4 video. Each shows
+  SHA-256, size, points, extents; evidence list shows them with hash and examiner. PASS
+- Duplicate import (same LAS again) refused at commit: "already in the project as evidence item 2".
+  PASS (minor: the preview shows first and the refusal only comes on "Import as evidence").
+- Verify evidence: "All 6 evidence files match their recorded SHA-256." PASS
+- Copied evidence files are read-only on disk (a write fails with EPERM). PASS
+- Evidence tampered (read-only cleared, bytes appended) then project opened: red "Evidence
+  integrity check failed / Evidence #1 has changed: its SHA-256 is now …". PASS
+- Audit log edited in SQLite (append-only trigger dropped first, one row changed): open refused,
+  "audit log has been altered at entry 2: contents do not match their hash". PASS
+- Open project from the menu: reopens with all evidence and the audit count. PASS
+- Note: the video preview shows only format and size (no duration or frame count). Not a defect.
+- XYZ (hand-typed room corners), PTS, OBJ and GLB (Lotus's own glTF export) import and hash
+  (a1c_formats.mjs). PASS for import. OPEN (question): mesh evidence (OBJ, glTF/GLB, PLY
+  meshes) is imported, hashed and listed, but nothing in the app shows or uses it: the 3D view
+  draws only point clouds and the scene builder places only library models.
+
+
+2. 3D viewer: navigation, display, measurements, cleanup, undo
+---------------------------------------------------------------
+Script: a2_viewer.mjs, a2_lasso.mjs, a2b_box.mjs (300k-point synthetic room)
+- Orbit (drag) and zoom (wheel) move the camera. PASS
+- Distance (2 clicks), angle (3), area (4 + Enter), height (3 plane points + Enter + 1): each
+  lands in the list with value ± 1σ and the point model; labels drawn in the view. PASS
+- Colour RGB / intensity / elevation, point size, eye-dome lighting. PASS (screenshots)
+- Outlier removal, voxel downsample, lasso delete (count preview for visible surface / all
+  depths, then Delete). Each is a cleanup record with its derived file hash. PASS
+- Ctrl+Z / Ctrl+Y undo and redo the last cleanup. PASS
+- Ctrl+Z pressed in a diagram tab also undid the last 3D cleanup (the hidden 3D view listened
+  on the whole window). FIXED 6a65e0e (shortcuts go to the view on screen; selects and
+  textareas excluded too; duplicate React key on the crash panel).
+- Clip box "Show inside" hid every point and "Delete inside box" said "Nothing to remove": the
+  box and the orbit centre were placed at the octree root cube's centre, metres above a room.
+  FIXED c183e53 (view and box start from the occupied nodes' bounds); re-run removed 251,359
+  points inside the box as expected.
+- Measurement delete (×) removes it. PASS
+- Minor, left: a lasso too thin to enclose anything still opens the dialog with 0 points;
+  "Outliers: 8 neighbours, beyond [8] [2] σ" repeats the neighbour count in the label; the
+  sidebar's "Audit log: N entries" only refreshes on import, verify or reopen (measurements,
+  cleanups and diagram saves are logged but the count shown goes stale).
+
+
+3. 2D diagram editor
+--------------------
+Script: a3_diagram.mjs (every tool placed with real clicks and keys)
+- Line (chains, Esc), polyline (Enter), room (double-click), road (Enter), arc, dimension,
+  text, reference points by coordinates, measured point by triangulation (5 m and 4.472136 m
+  from (0,0) and (5,0), Left: solved x 3.000 y 4.000 ± 10.7 mm, residuals 0.0 mm), north
+  arrow, symbol, two evidence markers, scale bar, legend (lists car, markers 1–2, reference
+  and measured points). PASS
+- Room: door and window added from the panel, drawn in the wall. PASS
+- Select + drag moves the north arrow exactly 2 m (80 px at 40 px/m). PASS
+- Delete key, Ctrl+Z, Ctrl+Y. PASS
+- Layers: add, draw on the new layer in its colour. PASS
+- Autosave: every change settles into a new revision (12 revisions after the run). PASS
+- A marker snapped onto a road edge could not be selected (the road under it always won the
+  click), so it couldn't be moved or deleted. FIXED fce2ef0 (items at a point win over lines).
+- North arrow, symbols and text have a stored rotation (symbols a scale) that screen and print
+  honour, but nothing could set them: every north arrow pointed up the page, every vehicle
+  faced right, text couldn't be edited. FIXED 24ad8b1 (settings panel for the selected item,
+  degrees in the UI). Re-run: north 30°, car turned 90°, both drawn turned.
+- Reference points could be dragged or deleted after a measured point was solved from them;
+  the measured point stayed put, so its stored tape readings no longer gave its position.
+  FIXED 4b399bd (such points stay put; deleting one says to delete the measured point first).
+  Re-run (a16_refs.mjs): RP1/RP2 fixed, unused RP3 moves 1.00 m, measured point unchanged.
+- Clicking the middle of a road selected nothing (only painted lines picked it; the broken
+  centre line is mostly gap). FIXED b072ad8 (the centre line picks the road). Re-run
+  (a17_diagram_more.mjs): road selected, lanes 1+2 and double centre line set.
+- Baseline and offset: A (0,0), B (8,0), 4 m along, 3 m left: x 4.000 y 3.000 ± 7.8 mm. PASS
+- Renumber markers (reading order): (−5,5)→1, (0,−2.5)→2, (5,−5)→3. PASS
+- Legend follows the drawing ("Evidence markers 1–3", reference, measured). PASS
+- Locked layer: drawing refused ("The active layer is locked."), Delete does nothing; hidden
+  layer: its items are not drawn. PASS
+- Layout at 1280 × 720 and 1024 × 700: toolbar wraps, panels scroll, all usable. PASS
+- Aerial underlay: image placed, "Calibrate…", three crosses clicked on the image, positions
+  typed: 50.00 mm per pixel, turned 0.00°, RMS 0.0 mm, applied and logged. PASS (a4)
+- Point-cloud slice 0–2 m and 0.5–1.5 m: placed in project coordinates, logged. PASS. (The
+  synthetic "room" is a 40 × 30 m scene of targets and boxes, so the slice is sparse by nature.)
+- Print to scale 1:100 A4: PDF written, hashed, logged; drawing centred, calibration bar,
+  title block with revision, audit entry, examiner. 1:10 refused ("at this scale the drawing
+  is 1000 × 0 mm but the sheet's frame is 273 × 152 mm…"). PASS
+- Export panel: diagram PDF, PNG, TIFF, DXF all written with hash notices; DXF holds the line
+  in world metres with $INSUNITS 6. PASS
+
+
+4. Registration (Analyst Plus)
+------------------------------
+Script: a5_register.mjs (3 scans × 1.5M points, stored poses perturbed 0.3 m / 3°)
+- Run registration (spheres, boards, cloud-to-cloud, file poses): 3 cloud links, all
+  consistent; link figures (residual, χ²/dof, overlap) on click. PASS
+- Delete a link and re-solve: new registration "#2 (edit of #1)" with 2 untested links. PASS
+- Export PDF (hashed, logged), Apply, Revert to file poses. PASS
+- Applied poses against the truth: scanner-to-scanner distances within 0.01 mm. PASS
+- With 400k points per scan (sparse for a 40 × 30 m scene) no sphere targets are found and
+  the links come out untested; expected from density, noted only.
+
+
+5. Analyses
+-----------
+5a Trajectory (a6_trajectory.mjs; gt/trajectory, three surfaces, holes picked in the view)
+- Bearing 62.00° ± 0.01°, elevation 4.01° ± 0.01° down (truth 62°, −4°); impact angles 55.0,
+  68.0, 78.0° (truth incidences 35, 22, 12° from the normal); saved, report PDF, withdrawn
+  through the prompt with a reason. PASS
+- Observation, OPEN (low): picking inside a hole in a 12–18 mm thick panel can land on the
+  far face's rim (the nearest-surface pick allows 1 cm + 2 % of range in depth), so the
+  "entry" of surfaces 2 and 3 was fitted at the exit hole and vice versa. The direction is
+  unaffected (same line) but the report's per-point table then labels the two holes the
+  wrong way round. A cross-check "entry lies beyond its exit along the path" would catch it.
+5b Bloodstain (blood_ui.mjs and a7_blood_floor.mjs; gt/bloodstain)
+- Six wall stains aligned by three fiducials each (0.0 mm RMS), edges found automatically,
+  tails marked: origin (2.200, 1.598, 1.090), 10.7 mm from the truth (2.2, 1.6, 1.1);
+  conventional point 8 mm away shown alongside; saved; report written. PASS
+- Four wall + five floor stains: floor stains converge in plan at (2.201, 1.599) from 5 floor
+  stains, reported separately; 3D origin from the 4 upward wall stains. PASS
+5c Camera match and height (cam_ui.mjs; gt/camera CCTV frame)
+- 14 pairs, 0.72 px RMS, lens by leave-one-out; heights 1.635 / 1.844 / 1.723 m against true
+  1.63 / 1.84 / 1.72 (errors 4.8, 4.3, 2.5 mm, σ ≈ 10 mm); saved, report. PASS
+5d Witness view (a8_witness.mjs)
+- Standing point, eye height 1.6 m, looking point, target: "1 of 1 lines of sight clear";
+  View from the eye; saved; report PDF. PASS
+- Minor, OPEN: the standing point is not checked to be on a level surface; a click on a wall
+  is accepted as "the floor where the witness stood".
+5e Photogrammetry without COLMAP (a9_photo.mjs)
+- Panel says "COLMAP: not set up" with where to get it; Reconstruct is not offered. A non-
+  COLMAP exe: "didn't identify itself as COLMAP". PASS
+- A path that doesn't exist said "The directory name is invalid. (os error 267)". FIXED
+  4b2b85c ("there is no file at C:/nope/COLMAP.bat").
+5f Crash reconstruction (crash_ui, edr_ui, crush_profile_ui, crush_table_ui, mirror_ui,
+   a10_volume.mjs)
+- Skid on the cloud plus a second surface: 11.62 m/s, range 10.94–12.27, 95 % 11.13–12.09;
+  yaw from six picked points: radius 2.89 m, 4.46 m/s; momentum 20.00 / 15.00 m/s as entered;
+  each saved with a report. PASS
+- EDR CSV with a picked path: 7.20 m (5.61–8.79) over −5 to 0 s; saved, report. PASS
+- Crush profile measured on the scan (C1, C2 from picks); crush energy from the NHTSA table
+  (2021 RAV4, test 15703, "one test only" flagged): 183.3 kJ, 14.68 m/s. PASS
+- Crush volume against an exemplar: 7.89 L (95 % 7.75–8.05) vs truth 7.854 L; mirrored
+  opposite side: 8.16 L (95 % 7.60–8.98) with the asymmetry warning. PASS
+- Note: the old volume_ui.mjs driver picked the wrong "Reference…" select after the mirror
+  option was added (driver fixed in qa/a10_volume.mjs, not an app defect). While the damaged
+  or reference scan is unchosen, the tool shows nothing and doesn't say what is missing.
+
+
+6. 3D scene builder and animation
+---------------------------------
+Script: a11_scene.mjs, anim_ui.mjs
+- Start a 3D scene; extrude a diagram room (revision pinned, hash shown); roof on the room;
+  vehicle model with the full specification panel; point light; glTF export (35 kB, hashed,
+  logged); scene revisions saved (5). PASS
+- Snap to the cloud where the scan is sparse: "No surface to snap to within 0.1 m of that
+  point: needs at least 10 points." Clear refusal. PASS
+- Animation: EDR-driven car and an assumed walker; plausibility flags (friction circle,
+  assumption without reason); timeline play; time–distance–speed report; MP4 renders for the
+  driver (211 frames, read back 211 / 7.033 s), mirror, 360° and fly-through views, each
+  hashed and recorded; driver render labelled "Vehicle interior … not shown". PASS
+- Minor, OPEN: an extrusion stays on the diagram revision it was made from; after the diagram
+  is edited nothing says a newer revision exists (remove and extrude again to update).
+
+
+7. Reports and exports
+----------------------
+Script: a12_exports.mjs
+- Case report twice: text identical except the printed time. PASS
+- Case report said "Evidence integrity: no check recorded" although the project re-hashed
+  every file when it was opened (recorded in project.opened). FIXED 0517f6a; now "…: all 1
+  evidence files match their recorded SHA-256".
+- Measurements CSV (value, 1σ, unit, point model, who/when, audit entry, points). PASS
+- Point clouds as E57, LAS, LAZ; each re-imported into a new project: 285,367 points each
+  (300,000 less the outlier removal), E57 states metres, LAS/LAZ ask for the unit (no CRS, as
+  documented). PASS
+- Every analysis report above (trajectory, bloodstain, camera, witness, crash tools,
+  registration, diagram PDF) written, hashed, logged. PASS
+- Note, question: the case report lists evidence, measurements, diagrams, scenes,
+  registrations and analyses, but not point-cloud cleanups (they are in the audit log).
+
+
+8. Case package and read-only viewer
+------------------------------------
+Script: a13_package.mjs (package_ui.mjs with the viewer's new name "Lotus Viewer.exe")
+- Package of 10 files with the viewer, case, reports and videos; the viewer started from the
+  package folder verifies "All 10 files match the package manifest", shows the package hash,
+  hides import / cleanup / export / new diagram, refuses every write ("this is a read-only
+  case package…"), measures for the session only ("viewer (not saved)"), plays the
+  animation; afterwards every file still matches and is read-only. PASS
+
+
+9. Licensing, crash reports, help, guides, sample case, About
+-------------------------------------------------------------
+Script: phase14_ui.mjs, a14_help_about.mjs, a14b_notes.mjs
+- No licence: every tool on, About "All tools (no licence needed)". A Diagram licence blocks
+  the 3D tools ("This needs a higher licence…"); a forged licence is refused ("signature
+  doesn't match"). PASS
+- Crash report: saved with paths removed, shown on the next start with View / Dismiss. PASS
+- Guides (indoor, crash, fire) tick their steps from the project state; sample case created
+  (scan + 25 stain photos) and imported. PASS
+- "?" buttons: 17 in the 3D view, each opens its method note; Esc closes. PASS
+- Five method notes had no "?" at all (EDR, CRASH3 stiffness, crush volume, hand
+  measurements, licensing): those tools only offered the general note. FIXED db24fdb.
+- About: version, licence, GPU (RTX 3070 Ti via ANGLE D3D11), WebGL 2, WebGPU, WebView2,
+  third-party notices. PASS
+
+
+10. Work lost on closing
+------------------------
+Script: a15_close.mjs (draw a line, then WM_CLOSE to the test's own window)
+- Diagrams and scenes autosave 1.5 s after edits settle; closing inside that time lost the
+  last edits (reopened project: revision 1 with 0 items). FIXED 559b5f4 (the window waits for
+  pending saves; re-run: revision 2 with the line).
+- Opening another project straight after an edit (a20_switch.mjs, 168 ms): the pending save
+  went to the right project. PASS
+- Not fixed, OPEN (design): work in progress inside an analysis tool (picked trajectory
+  points, stains aligned and edged in the bloodstain tool, camera pairs) lives only in the
+  panel until "Save analysis"; closing the window or opening another project discards it
+  without asking. Asking before closing, or keeping drafts, is a product choice.
+- Minor, OPEN: the import dialog has no Cancel while it reads a large file.
+
+
+Summary
+-------
+Areas: 10. Passed with no defect: 4 (project/import, registration, case package, and 3D
+scene/animation). Fixed: 6 areas, 10 commits. Every fix has a test (vitest or cargo) and
+was re-run in the built app. Checks before each commit: cargo fmt, clippy -D warnings,
+cargo test (workspace at the end: 264 passed), pnpm typecheck, lint, test (120 passed),
+format:check. Nothing pushed.
+
+Commits (oldest first):
+  6a65e0e Keys go to the view on screen: Ctrl+Z in a diagram no longer undoes a 3D cleanup
+  fce2ef0 Diagram: a marker or symbol on a line can be picked again
+  24ad8b1 Diagram: turn north arrows, symbols and text; resize symbols; edit text
+  c183e53 3D view: aim at the points and start the clip box around them
+  4b2b85c Photogrammetry: a COLMAP path that doesn't exist says so
+  0517f6a Case report: the evidence check made on opening counts
+  db24fdb Help: the EDR, crush, crush-volume, hand-measurement and licence notes can be opened
+  559b5f4 Closing the window saves edits still waiting for their autosave
+  4b399bd Diagram: reference points a measured point was taken from stay put
+  b072ad8 Diagram: a road can be selected by clicking its centre line
+
+Open problems and questions for Addison
+---------------------------------------
+1. Mesh evidence: OBJ, glTF/GLB and PLY meshes import and are hashed, but nothing shows or
+   uses them (the 3D view draws point clouds only; the scene builder places library models
+   only). Should imported meshes be viewable, or placeable in the 3D scene?
+2. Unsaved analysis work: picks and stains in the trajectory, bloodstain and camera tools are
+   held only in the panel until "Save analysis"; closing the window or opening another
+   project discards them without asking. Ask before closing, keep drafts, or leave as is?
+3. The case report lists evidence, measurements, diagrams, scenes, registrations and
+   analyses, but not point-cloud cleanups (they are in the audit log). Should it?
+4. Trajectory: a click inside a hole in a thick panel can fit the far face's rim, so a
+   surface's entry and exit come out swapped in the report's point table (direction
+   unaffected). Proposal: warn when an "entry" lies beyond its "exit" along the fitted path.
+5. Witness view: the standing point isn't checked to be on a level surface (a wall click is
+   accepted as "the floor").
+6. Small UI items, left as they are: a lasso that encloses nothing still opens the delete
+   dialog (0 points); "Outliers: 8 neighbours, beyond [8] [2] σ" repeats the count; the
+   sidebar's audit-entry count refreshes only on import, verify or reopen; a scene extrusion
+   doesn't say when its diagram has a newer revision; a crash tool with a required input
+   missing shows nothing rather than what is missing; the import dialog can't be cancelled
+   while reading; a measurement's × deletes it at once with no undo in the UI (the record is
+   kept, marked deleted, and logged).
+7. Not app defects: several older driver scripts in E:\Claude\scratch\locus (builders_ui,
+   crash_ui's crush step, volume_ui, package_ui) no longer match the UI (renamed viewer,
+   new selects, a renamed command argument). The qa\ copies are current.
