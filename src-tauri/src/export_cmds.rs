@@ -37,6 +37,20 @@ impl Entries {
     }
 }
 
+/// The newest evidence check in the log: when, and its report. "Verify evidence" records one,
+/// and so does every project open, which re-hashes the evidence.
+fn latest_check(log: &[AuditEntry]) -> Option<(String, Value)> {
+    log.iter().rev().find_map(|e| {
+        let d: Value = serde_json::from_str(&e.details).ok()?;
+        let report = match e.action.as_str() {
+            "evidence.verified" => d,
+            "project.opened" => d.get("evidence")?.clone(),
+            _ => return None,
+        };
+        Some((e.timestamp.clone(), report))
+    })
+}
+
 pub(crate) fn case_data(p: &Project) -> CmdResult<CaseData> {
     let log = p.audit_log().map_err(err)?;
     let entries = Entries::new(&log);
@@ -48,33 +62,24 @@ pub(crate) fn case_data(p: &Project) -> CmdResult<CaseData> {
             .find(|e| e.id == id)
             .map_or(format!("#{id}"), |e| file_name(&e.original_path))
     };
-    let integrity = log
-        .iter()
-        .rev()
-        .find(|e| e.action == "evidence.verified")
-        .and_then(|e| {
-            let d: Value = serde_json::from_str(&e.details).ok()?;
-            let failed = d["failed"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .map(|f| {
-                            let id = f["evidence_id"].as_i64().unwrap_or(0);
-                            format!(
-                                "#{id} {}: {}",
-                                name_of(id),
-                                f["result"]["status"].as_str().unwrap_or("not intact")
-                            )
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            Some((
-                e.timestamp.clone(),
-                d["checked"].as_u64().unwrap_or(0) as usize,
-                failed,
-            ))
-        });
+    let integrity = latest_check(&log).map(|(at, d)| {
+        let failed = d["failed"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|f| {
+                        let id = f["evidence_id"].as_i64().unwrap_or(0);
+                        format!(
+                            "#{id} {}: {}",
+                            name_of(id),
+                            f["result"]["status"].as_str().unwrap_or("not intact")
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        (at, d["checked"].as_u64().unwrap_or(0) as usize, failed)
+    });
     let evidence = evidence_list
         .iter()
         .map(|e| EvidenceRow {
@@ -382,4 +387,37 @@ pub async fn export_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> C
         log_written(p, &what, &path, from)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(seq: i64, action: &str, details: &str) -> AuditEntry {
+        AuditEntry {
+            seq,
+            timestamp: format!("t{seq}"),
+            actor: "x".into(),
+            action: action.into(),
+            details: details.into(),
+            prev_hash: String::new(),
+            hash: String::new(),
+        }
+    }
+
+    #[test]
+    fn an_open_counts_as_an_evidence_check() {
+        let report = r#"{"checked":2,"failed":[],"unrecorded":[]}"#;
+        let mut log = vec![
+            entry(1, "evidence.verified", report),
+            entry(2, "project.opened", &format!(r#"{{"evidence":{report}}}"#)),
+            entry(3, "measurement.created", "{}"),
+        ];
+        assert_eq!(latest_check(&log).unwrap().0, "t2");
+        log.push(entry(4, "evidence.verified", report));
+        assert_eq!(latest_check(&log).unwrap().0, "t4");
+        // An open entry without a report (older projects) is passed over.
+        let old = vec![entry(1, "project.opened", "{}")];
+        assert!(latest_check(&old).is_none());
+    }
 }
