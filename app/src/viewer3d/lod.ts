@@ -5,6 +5,8 @@
 // is active, nodes the cursor ray passes through are refined all the way to the leaves
 // first, whatever their size, so snapping uses full-resolution points (item 8).
 
+import type { ScanData } from "./pointcloud";
+
 export interface LodNode {
   /** Bounding sphere in render space (project frame minus the render origin). */
   center: [number, number, number];
@@ -130,4 +132,36 @@ export function selectNodes(scans: LodScan[], view: View): Selection {
     }
   }
   return out;
+}
+
+/**
+ * Where the points are, in render space: the octree cubes three levels down that hold points,
+ * posed into the project frame. The root cube is up to a room's length on every side, so a
+ * view or clip box built on it sits mostly in empty air above a room.
+ */
+export function dataBounds(
+  scans: Pick<ScanData, "pose" | "nodes">[],
+  origin: [number, number, number],
+): { min: [number, number, number]; max: [number, number, number] } | null {
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (const s of scans) {
+    const depth = Math.min(
+      3,
+      s.nodes.reduce((d, n) => Math.max(d, n.name.length - 1), 0),
+    );
+    for (const n of s.nodes) {
+      if (n.name.length - 1 !== depth || n.count === 0) continue;
+      for (let c = 0; c < 8; c++) {
+        const l = [0, 1, 2].map((d) => n.min[d] + ((c >> d) & 1) * n.size);
+        for (let i = 0; i < 3; i++) {
+          const p = s.pose[i * 4] * l[0] + s.pose[i * 4 + 1] * l[1] + s.pose[i * 4 + 2] * l[2];
+          const v = p + s.pose[i * 4 + 3] - origin[i];
+          min[i] = Math.min(min[i], v);
+          max[i] = Math.max(max[i], v);
+        }
+      }
+    }
+  }
+  return min[0] <= max[0] ? { min, max } : null;
 }

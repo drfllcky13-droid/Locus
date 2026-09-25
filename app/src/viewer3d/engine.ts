@@ -7,7 +7,7 @@ import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer
 import type { CleanupRequest, LassoDepth, Region, SolvedCamera, StateView } from "../api";
 import { initialBudget, updateBudget, type BudgetState } from "./budget";
 import { EdlPass } from "./edl";
-import type { View } from "./lod";
+import { dataBounds, type View } from "./lod";
 import { formatMeasurement } from "./measureFormat";
 import { PointCloudLayer, type ColorMode, type PickOutcome, type SceneData } from "./pointcloud";
 import { createScene } from "./scene";
@@ -379,11 +379,19 @@ export class Engine {
     for (const s of data.scans) r = Math.max(r, s.size);
     this.camera.near = Math.max(r / 5000, 0.005);
     this.camera.far = r * 50;
-    this.camera.position.set(r * 0.7, -r * 0.9, r * 0.6);
-    this.controls.target.set(0, 0, 0);
+    // Aim at the points and start the clip box around them, not at the octree cube's centre.
+    const b = dataBounds(data.scans, data.origin);
+    const c = b ? b.min.map((v, i) => (v + b.max[i]) / 2) : [0, 0, 0];
+    this.camera.position.set(c[0] + r * 0.7, c[1] - r * 0.9, c[2] + r * 0.6);
+    this.controls.target.set(c[0], c[1], c[2]);
     this.camera.updateProjectionMatrix();
     this.controls.update();
-    this.clipBox.scale.setScalar(r * 0.5);
+    this.clipBox.position.set(c[0], c[1], c[2]);
+    if (b)
+      this.clipBox.scale.set(
+        ...(b.min.map((v, i) => (b.max[i] - v) * 1.02) as [number, number, number]),
+      );
+    else this.clipBox.scale.setScalar(r * 0.5);
     this.updateClipUniforms();
   }
 

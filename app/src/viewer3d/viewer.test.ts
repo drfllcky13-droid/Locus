@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { BUDGET_MAX, BUDGET_MIN, BUDGET_START, initialBudget, updateBudget } from "./budget";
-import { inFocus, selectNodes, type LodNode, type LodScan, type View } from "./lod";
+import { dataBounds, inFocus, selectNodes, type LodNode, type LodScan, type View } from "./lod";
 import {
   MAX_POINTS_PER_NODE,
   MAX_SLOTS,
@@ -213,5 +213,39 @@ describe("LOD selection", () => {
     // Focus nodes come before everything else.
     const firstNonFocus = s.nodes.findIndex(([, n]) => !inFocus(t.nodes[n], focus));
     expect(s.nodes.slice(0, firstNonFocus).length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("data bounds", () => {
+  // A 20 m cube holding a room 20 m × 16 m × 3 m on its floor: nodes three levels down are 2.5 m.
+  const node = (name: string, min: number[], size: number, count = 1) => ({
+    name,
+    min: min as [number, number, number],
+    size,
+    count,
+    spacing: 0,
+    children: 0,
+  });
+  const nodes = [node("r", [0, 0, 0], 20)];
+  for (let x = 0; x < 8; x++)
+    for (let y = 0; y < 8; y++) {
+      if (y * 2.5 >= 16) continue;
+      for (let z = 0; z < 2; z++)
+        nodes.push(node(`r${x}${y}${z}`, [x * 2.5, y * 2.5, z * 2.5], 2.5));
+    }
+  nodes.push(node("r777", [17.5, 17.5, 17.5], 2.5, 0)); // an empty node doesn't count
+  const shifted = [1, 0, 0, 100, 0, 1, 0, 200, 0, 0, 1, 0, 0, 0, 0, 1];
+
+  test("hug the occupied nodes, not the root cube, in render space", () => {
+    const b = dataBounds([{ pose: shifted, nodes }], [100, 200, 0])!;
+    expect(b.min).toEqual([0, 0, 0]);
+    expect(b.max).toEqual([20, 17.5, 5]);
+  });
+
+  test("a single-node cloud falls back to its root cube; no scans, no bounds", () => {
+    const b = dataBounds([{ pose: shifted, nodes: [nodes[0]] }], [0, 0, 0])!;
+    expect(b.min).toEqual([100, 200, 0]);
+    expect(b.max).toEqual([120, 220, 20]);
+    expect(dataBounds([], [0, 0, 0])).toBeNull();
   });
 });
