@@ -11,7 +11,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 
 ## Status
 
-*Updated 2026-09-24.*
+*Updated 2026-09-25.*
 
 - **Done.** Phases 0–11, 13 and 14 are done. Phase 11's clean-machine check is under Open questions. Phase 7's textbook-case criterion is blocked (see Open questions).
 - **Phase 9 (animation), closed 2026-09-23.** It covers:
@@ -25,6 +25,7 @@ Claude Code does both the planning and the building from 2026-09-23. Before that
 - **Phase 13 (validation), closed 2026-09-24.** `locus-validate run` prints the validation report for every release ([validation.md](methods/validation.md)), and the physical study protocol is written ([validation-protocol.md](methods/validation-protocol.md)). The full run found the hand-measured bloodstain region under-covering (81 %); bloodstain method version 2 corrects the bias (coverage now 97 %).
 - **Phase 14 (polish), closed 2026-09-24.** Offline signed licences with Diagram, Analyst and Analyst Plus tiers, crash reports that stay on the machine with paths removed, a "?" beside each tool opening its method note, guides for indoor, crash and fire scenes that tick themselves, and a generated sample case ([licensing.md](methods/licensing.md)). The signed MSI, updates and the 30-minute new-user test wait on Addison.
 - **Installer and updates, 2026-09-24:** MSI built and checked; a `v*` tag publishes a release with the MSI, update files and validation report; no in-app updater (no signing key, by choice): a newer MSI upgrades in place. The repository is public, and CI is green again.
+- **Imported meshes, 2026-09-25:** OBJ, glTF/GLB and PLY meshes show in the 3D view and can be placed in the 3D scene, hash-checked before drawing; not pickable ([scene3d.md](methods/scene3d.md)).
 - **Next:** every planned phase is built. What remains is Addison's list and the Blocked items.
 - **Waiting on Addison:** his to-do list is [ADDISON-TODO.md](ADDISON-TODO.md) (also summarised under Open questions).
 

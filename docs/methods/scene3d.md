@@ -46,6 +46,18 @@ The fit's residual is shown and stored with the model: the number of points and 
 
 Limitations: a snap puts the model's base plane on the surface at one point. It doesn't check that the rest of the model rests on the cloud (a car on a slope touches with its wheels, not its centre). Check the placement visually, or place the model by measured positions.
 
+## Imported meshes
+
+OBJ, glTF/GLB and PLY meshes imported as evidence can be shown in the 3D view (the Meshes list, off until ticked) and placed in a scene ("Add an imported mesh").
+
+**Frame and unit.** A mesh is drawn in the project frame in metres: its own coordinates are multiplied by the unit recorded at import (glTF is metres by its specification; OBJ and PLY take the unit the examiner chose). glTF is y up and the project frame is z up, so glTF coordinates (x, y, z) become (x, −z, y), a +90° turn about x. This is the inverse of the turn the scene's glTF export applies, so an exported scene re-imported lands where it was (`fileToProject`, tested). OBJ and PLY are taken as z up, as scans are. In the 3D view a mesh sits at its own coordinates, like a scan with no registration; meshes are not registered.
+
+**Placing.** A mesh added to a scene gets a pivot: the bottom centre of its bounds, stored with it. Its placement (position, heading, uniform scale, or the move and rotate gizmo) puts that pivot at the given point, so a mesh first added sits exactly where the 3D view shows it. The placement is stored as a 4 × 4 matrix in the scene revision, with the mesh's evidence id and SHA-256. Placed meshes are drawn in renders and animations like other static objects and are exported with the scene glTF. A scale other than 1 changes the drawn size of measured geometry; it is recorded in the revision and should be explained if used.
+
+**Integrity.** The file is read from the project's evidence copy and its SHA-256 compared with the hash recorded at import before anything is drawn. A file that no longer matches is refused with a message naming both hashes. A file is checked when it is first shown in a session; a change made while the project stays open is found on the next open or by Verify evidence.
+
+**Limitations.** Meshes can't be picked or measured: picks and measurements go through them to the point cloud. OBJ materials (a separate .mtl file) and glTF external buffers or textures are not part of the evidence item and are not loaded; OBJ and PLY are drawn in grey (PLY vertex colours are used). A .gltf with external buffers can't be shown; import the .glb. Vertices are drawn in single precision, so a mesh stored in large georeferenced coordinates loses precision (about 3 cm at 500 km).
+
 ## Materials and lights
 
 Each part of an extrusion, roof or model has a physically based material: a preset (asphalt, concrete, plaster, brick, wood, painted metal, metal, glass, rubber, fabric, skin, road paint, marker, grass, roof tile) with approximate roughness and metalness, and a colour the examiner can change. Presets are for legibility, not photometric accuracy.
