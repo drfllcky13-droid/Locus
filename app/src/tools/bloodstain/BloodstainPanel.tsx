@@ -3,6 +3,7 @@
 // find its edge (automatically from a seed and threshold, or by clicking), and mark its
 // tail. The backend fits each ellipse and the origin from the stored data; the preview is
 // drawn over the scene, and a run is saved as an audit-logged analysis with a PDF report.
+import { useUnsaved } from "../../unsaved";
 import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -386,6 +387,7 @@ export function BloodstainPanel({
   const [reason, setReason] = useState("");
   const [result, setResult] = useState<BloodstainRun | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  useUnsaved("Bloodstain area of origin", open && drafts.length > 0);
   const [shown, setShown] = useState<number | null>(null);
   const [opacity, setOpacity] = useState(0.7);
   const [adding, setAdding] = useState<number | "">("");

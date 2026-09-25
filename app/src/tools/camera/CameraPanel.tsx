@@ -5,6 +5,7 @@
 // photo over the scene. For each subject, mark the point between the feet and the top of the
 // head: the height comes by reverse projection, with a person model of that height drawn over
 // the photo to match by eye. A run is saved as an audit-logged analysis with a PDF report.
+import { useUnsaved } from "../../unsaved";
 import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -186,6 +187,7 @@ export function CameraPanel({
   const [editing, setEditing] = useState(false);
   const [mode, setMode] = useState<Mode>("pairs");
   const [result, setResult] = useState<CameraRun | null>(null);
+  useUnsaved("Camera match", open && pairs.length > 0);
   const [failure, setFailure] = useState<string | null>(null);
   const [points, setPoints] = useState<V3[]>([]);
   const [look, setLook] = useState(false);

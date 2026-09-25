@@ -16,6 +16,7 @@ import { GuidePanel } from "./guide/GuidePanel";
 import { ReadOnly, type PackageInfo } from "./readOnly";
 import { allows, License, type LicenseInfo } from "./license";
 import { flushPending } from "./pendingSaves";
+import { confirmDiscard } from "./unsaved";
 
 const IMPORT_EXTENSIONS = [
   "e57",
@@ -73,7 +74,10 @@ export function App() {
   }, []);
   // Edits still waiting for their autosave are saved before the window closes.
   useEffect(() => {
-    const off = getCurrentWindow().onCloseRequested(() => flushPending());
+    const off = getCurrentWindow().onCloseRequested(async (event) => {
+      await flushPending();
+      if (!(await confirmDiscard("Close Lotus"))) event.preventDefault();
+    });
     return () => void off.then((f) => f());
   }, []);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -170,9 +174,12 @@ export function App() {
     const unlisten = listen<string>("menu", ({ payload }) => {
       // A case package can't be changed or swapped for another project.
       if (pkg && payload !== "about") return;
-      if (payload === "new_project") setDialog({ kind: "new" });
-      else if (payload === "open_project") setDialog({ kind: "open" });
-      else if (payload === "import") void startImport();
+      if (payload === "new_project" || payload === "open_project") {
+        const kind = payload === "new_project" ? "new" : "open";
+        void confirmDiscard(kind === "new" ? "New project" : "Open project").then(
+          (go) => go && setDialog({ kind }),
+        );
+      } else if (payload === "import") void startImport();
       else if (payload === "verify_evidence") void verify();
       else if (payload === "about") setDialog({ kind: "about" });
       else if (payload === "register") {

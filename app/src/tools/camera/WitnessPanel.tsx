@@ -2,6 +2,7 @@
 // floor point, looking toward a picked point, with lines of sight to picked targets tested
 // against the scan (clear in green, blocked in red, drawn in the 3D view). The view can be
 // set to the eye. A run is saved as an audit-logged analysis with a PDF report.
+import { useUnsaved } from "../../unsaved";
 import { HelpButton } from "../../help/Help";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
@@ -82,6 +83,7 @@ export function WitnessPanel({
   const [result, setResult] = useState<WitnessRun | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [shown, setShown] = useState<number | null>(null);
+  useUnsaved("Witness view", open && (floor !== null || targets.length > 0));
 
   useEffect(() => {
     api.analyses().then(setRecords, (e) => onNotice(String(e)));

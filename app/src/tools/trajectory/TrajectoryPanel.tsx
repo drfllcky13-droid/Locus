@@ -2,6 +2,7 @@
 // surface, in the order the bullet travelled) or both ends of a probe rod; the result is
 // previewed live from the backend (which re-resolves every pick), drawn over the scene, and
 // saved as an audit-logged analysis record with a PDF report.
+import { useUnsaved } from "../../unsaved";
 import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
@@ -92,6 +93,7 @@ export function TrajectoryPanel({
   const [shown, setShown] = useState<number | null>(null);
   const [caseNumber, setCaseNumber] = useState("");
   const [holeRadius, setHoleRadius] = useState(0.03);
+  useUnsaved("Trajectory", open && rows.length > 0);
 
   useEffect(() => {
     api.analyses().then(setRecords, (e) => onNotice(String(e)));
