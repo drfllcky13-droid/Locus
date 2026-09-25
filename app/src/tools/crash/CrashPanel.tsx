@@ -4,6 +4,7 @@
 // interval. Marks can be picked on the cloud (resolved again from stored data). Runs are saved
 // as audit-logged analyses with PDF reports.
 import { HelpButton, type Topic } from "../../help/Help";
+import { PanelHeader } from "../../PanelHeader";
 import { useAllows } from "../../license";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
@@ -556,9 +557,9 @@ export function CrashPanel({
   };
   return (
     <section className="panel-section crash">
-      <h3 className="with-help">
+      <PanelHeader>
         Crash reconstruction <HelpButton topic="crash" />
-      </h3>
+      </PanelHeader>
       {!tool && (
         <div className="buttons">
           {(Object.keys(titles) as Tool[])

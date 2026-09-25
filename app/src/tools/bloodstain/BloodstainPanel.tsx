@@ -4,6 +4,7 @@
 // tail. The backend fits each ellipse and the origin from the stored data; the preview is
 // drawn over the scene, and a run is saved as an audit-logged analysis with a PDF report.
 import { useUnsaved } from "../../unsaved";
+import { PanelHeader } from "../../PanelHeader";
 import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -542,9 +543,9 @@ export function BloodstainPanel({
 
   return (
     <section className="panel-section bloodstain">
-      <h3 className="with-help">
+      <PanelHeader>
         Bloodstain area of origin <HelpButton topic="bloodstain" />
-      </h3>
+      </PanelHeader>
       {!open && (
         <button
           onClick={() => {

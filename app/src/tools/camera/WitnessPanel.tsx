@@ -3,6 +3,7 @@
 // against the scan (clear in green, blocked in red, drawn in the 3D view). The view can be
 // set to the eye. A run is saved as an audit-logged analysis with a PDF report.
 import { useUnsaved } from "../../unsaved";
+import { PanelHeader } from "../../PanelHeader";
 import { HelpButton } from "../../help/Help";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
@@ -141,9 +142,9 @@ export function WitnessPanel({
 
   return (
     <section className="panel-section witness">
-      <h3 className="with-help">
+      <PanelHeader>
         Witness perspective <HelpButton topic="camera-height" />
-      </h3>
+      </PanelHeader>
       {!open && (
         <button
           onClick={() => {

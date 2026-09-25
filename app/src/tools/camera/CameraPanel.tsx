@@ -6,6 +6,7 @@
 // head: the height comes by reverse projection, with a person model of that height drawn over
 // the photo to match by eye. A run is saved as an audit-logged analysis with a PDF report.
 import { useUnsaved } from "../../unsaved";
+import { PanelHeader } from "../../PanelHeader";
 import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -374,9 +375,9 @@ export function CameraPanel({
   const fmt = (v: number, s: number, d = 3) => `${v.toFixed(d)} ± ${s.toFixed(d)}`;
   return (
     <section className="panel-section camera-match">
-      <h3 className="with-help">
+      <PanelHeader>
         Camera matching and height <HelpButton topic="camera-height" />
-      </h3>
+      </PanelHeader>
       {!open && (
         <button
           onClick={() => {

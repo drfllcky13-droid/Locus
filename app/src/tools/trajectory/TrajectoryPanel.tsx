@@ -3,6 +3,7 @@
 // previewed live from the backend (which re-resolves every pick), drawn over the scene, and
 // saved as an audit-logged analysis record with a PDF report.
 import { useUnsaved } from "../../unsaved";
+import { PanelHeader } from "../../PanelHeader";
 import { HelpButton } from "../../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
@@ -209,9 +210,9 @@ export function TrajectoryPanel({
 
   return (
     <section className="panel-section trajectory">
-      <h3 className="with-help">
+      <PanelHeader>
         Bullet trajectory <HelpButton topic="trajectory" />
-      </h3>
+      </PanelHeader>
       {!open && (
         <button
           onClick={() => {
