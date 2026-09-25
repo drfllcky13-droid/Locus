@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DiagramRevision, type ProjectInfo, type Resolved, type StateView } from "../api";
 import { formatCount } from "../format";
+import { isViewKey } from "../keys";
 import { Engine, type ClipMode, type Stats } from "./engine";
 import { TOOL_POINTS, type MeasurementRecord } from "./measureFormat";
 import type { ColorMode, PickHit, SceneData } from "./pointcloud";
@@ -42,9 +43,12 @@ const DEFAULT_SETTINGS: ViewSettings = {
 export function Viewport({
   project,
   diagrams,
+  active,
   onNotice,
 }: {
   project: ProjectInfo | null;
+  /** Whether the 3D view is on screen (it stays mounted behind the diagram tabs). */
+  active: boolean;
   /** The project's diagrams at their newest revisions (for extruding). */
   diagrams: DiagramRevision[];
   onNotice: (message: string | null) => void;
@@ -238,7 +242,7 @@ export function Viewport({
   // Keyboard: Enter completes open-ended tools, Escape cancels, Ctrl+Z / Ctrl+Y undo cleanup.
   useEffect(() => {
     const onKey = async (ev: KeyboardEvent) => {
-      if (ev.target instanceof HTMLInputElement) return;
+      if (!isViewKey(ev, active)) return;
       if (ev.key === "Escape") {
         resetTool();
         setPickRequest(null);
@@ -266,7 +270,7 @@ export function Viewport({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tool, picks, planeDone, state, finish, resetTool, onNotice]);
+  }, [tool, picks, planeDone, state, finish, resetTool, onNotice, active]);
 
   // Pointer handling on the canvas: click to pick (not after a drag), drag to lasso.
   const down = useRef<{ x: number; y: number } | null>(null);
@@ -495,7 +499,7 @@ export function Viewport({
                 onNotice={onNotice}
               />
               <CrashPanel
-                key={`x${project.root}`}
+                key={`r${project.root}`}
                 engine={getEngine}
                 origin={shownScene?.origin.join() ?? ""}
                 scans={shownScene?.scans ?? []}

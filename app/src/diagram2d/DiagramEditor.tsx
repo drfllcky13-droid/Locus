@@ -31,6 +31,7 @@ import {
   symbolById,
   type LegendItem,
 } from "./symbols";
+import { isViewKey } from "../keys";
 import type { Diagram, Entity, EntityInput, Layer, Pt } from "./model";
 import {
   commit,
@@ -374,7 +375,7 @@ export function DiagramEditor({
   // Keyboard: Esc, Enter, Delete, undo/redo.
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if ((ev.target as HTMLElement)?.closest("input, textarea, select")) return;
+      if (!isViewKey(ev, true)) return;
       if (ev.key === "Escape") {
         setClicks([]);
         setPending(null);

@@ -240,7 +240,12 @@ export function App() {
             )}
             {/* The 3D view stays mounted, so its point clouds don't reload on every switch. */}
             <div className="main-view" style={{ display: shown === "scene" ? undefined : "none" }}>
-              <Viewport project={project} diagrams={diagrams} onNotice={setNotice} />
+              <Viewport
+                project={project}
+                diagrams={diagrams}
+                active={shown === "scene"}
+                onNotice={setNotice}
+              />
             </div>
             {shown !== "scene" &&
               diagrams
