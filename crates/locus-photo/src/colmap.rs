@@ -45,6 +45,10 @@ pub fn parse_banner(text: &str) -> Option<Build> {
 
 /// Run `colmap -h` and read its build.
 pub fn detect(exe: &Path) -> Result<Build, String> {
+    // Otherwise Windows reports a missing file as "The directory name is invalid".
+    if !exe.is_file() {
+        return Err(format!("there is no file at {}", exe.display()));
+    }
     let out = Command::new(exe)
         .arg("-h")
         .current_dir(exe.parent().unwrap_or(Path::new(".")))
@@ -463,6 +467,12 @@ pub fn to_text(model: &Path, out: &Path) -> Stage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_colmap_is_named_as_missing() {
+        let e = detect(Path::new("C:/nope/COLMAP.bat")).unwrap_err();
+        assert_eq!(e, "there is no file at C:/nope/COLMAP.bat");
+    }
 
     #[test]
     fn the_banner_gives_version_and_cuda() {
