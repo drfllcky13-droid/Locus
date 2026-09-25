@@ -29,3 +29,6 @@ tauri-plugin-dialog = "2"
 [features]
 # Phase 2 rendering spike; see docs/spike-rendering.md. Never enabled in releases.
 spike = []
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -150,6 +150,36 @@ pub(crate) fn case_data(p: &Project) -> CmdResult<CaseData> {
             entry: entries.get(&["analysis.created"], "id", a.id),
         });
     }
+    for c in p.cleanups().map_err(err)? {
+        let removed: u64 = c.scans.iter().map(|s| s.removed).sum();
+        let from: Vec<String> = c
+            .scans
+            .iter()
+            .map(|s| format!("{} scan {}", name_of(s.evidence_id), s.scan_idx + 1))
+            .collect();
+        records.push(RecordRow {
+            kind: "Point-cloud cleanups".into(),
+            id: c.id.to_string(),
+            name: format!(
+                "{}: {removed} points hidden from {} (the evidence is unchanged)",
+                c.kind,
+                from.join(", ")
+            ),
+            sha256: c
+                .scans
+                .iter()
+                .map(|s| s.sha256.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            made: format!("{} by {}", c.created_at, c.created_by),
+            status: if c.active {
+                String::new()
+            } else {
+                "undone".into()
+            },
+            entry: entries.get(&["cleanup.applied"], "id", c.id),
+        });
+    }
     for m in p.measurements().map_err(err)? {
         records.push(RecordRow {
             kind: "Measurements".into(),
@@ -419,5 +449,33 @@ mod tests {
         // An open entry without a report (older projects) is passed over.
         let old = vec![entry(1, "project.opened", "{}")];
         assert!(latest_check(&old).is_none());
+    }
+
+    #[test]
+    fn cleanups_are_listed_in_the_case_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = Project::create(&dir.path().join("c.locus"), "C", "A").unwrap();
+        let scan = locus_core::CleanupScan {
+            evidence_id: 1,
+            scan_idx: 0,
+            removed: 12,
+            file: "derived/cleanup/1-1-0.roar".into(),
+            sha256: "ab".into(),
+        };
+        let op = p
+            .add_cleanup("box_delete", Value::Null, vec![scan])
+            .unwrap();
+        p.set_cleanup_active(op, false).unwrap();
+        let d = case_data(&p).unwrap();
+        let row = d
+            .records
+            .iter()
+            .find(|r| r.kind == "Point-cloud cleanups")
+            .unwrap();
+        assert!(row
+            .name
+            .starts_with("box_delete: 12 points hidden from #1 scan 1"));
+        assert_eq!((row.sha256.as_str(), row.status.as_str()), ("ab", "undone"));
+        assert!(row.entry.starts_with('#'), "{}", row.entry);
     }
 }
