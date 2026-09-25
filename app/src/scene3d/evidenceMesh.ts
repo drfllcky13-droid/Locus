@@ -17,6 +17,12 @@ export function basePoint(m: THREE.Object3D): [number, number, number] {
   return [c.x, c.y, b.min.z];
 }
 
+/** The size of an object's bounds along x, y, z. */
+export function extentOf(m: THREE.Object3D): [number, number, number] {
+  const s = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+  return [s.x, s.y, s.z];
+}
+
 const grey = () =>
   new THREE.MeshStandardMaterial({ color: 0xb0b0b0, roughness: 0.8, side: THREE.DoubleSide });
 

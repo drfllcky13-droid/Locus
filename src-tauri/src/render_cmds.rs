@@ -54,6 +54,29 @@ fn abandon(mut j: Job) {
     let _ = std::fs::remove_file(&j.path);
 }
 
+/// The label every frame carries when the scene has exemplar meshes (resized stand-ins, not
+/// measurements); refused while one doesn't say where its dimensions came from.
+fn exemplar_label(doc: &serde_json::Value) -> CmdResult<Option<String>> {
+    let mut names = vec![];
+    for o in doc["objects"].as_array().into_iter().flatten() {
+        let e = &o["exemplar"];
+        if o["kind"] != "mesh" || e.is_null() {
+            continue;
+        }
+        let name = o["name"].as_str().unwrap_or("mesh");
+        match e["source"].as_str().map(str::trim) {
+            Some(s) if !s.is_empty() => names.push(format!("{name} ({s})")),
+            _ => {
+                return Err(format!(
+                    "The exemplar model {name} needs the source of its dimensions before rendering."
+                ))
+            }
+        }
+    }
+    Ok((!names.is_empty())
+        .then(|| format!("Resized exemplar model, not measured: {}", names.join("; "))))
+}
+
 /// Check the request against the saved scene and start the writer.
 #[tauri::command]
 pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<RenderPlan> {
@@ -96,7 +119,8 @@ pub async fn render_start(app: AppHandle, request: RenderRequest) -> CmdResult<R
         ));
     }
     let frames = render_frames(q.from, q.to, q.fps);
-    let labels = permanent_labels(v);
+    let mut labels = permanent_labels(v);
+    labels.extend(exemplar_label(&rev.document)?);
     let path = PathBuf::from(&q.path);
     let mut guard = JOB.lock().unwrap();
     if let Some(old) = guard.take() {
@@ -247,4 +271,25 @@ pub async fn render_cancel() -> CmdResult<()> {
         abandon(j);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn exemplar_meshes_are_labelled_and_need_a_source() {
+        let mesh = |ex: serde_json::Value| json!({ "kind": "mesh", "name": "car", "exemplar": ex });
+        let doc = json!({ "objects": [mesh(serde_json::Value::Null), { "kind": "light" }] });
+        assert_eq!(exemplar_label(&doc).unwrap(), None);
+        let doc =
+            json!({ "objects": [mesh(json!({ "size": [4.8, 1.9, 1.5], "source": "spec" }))] });
+        assert_eq!(
+            exemplar_label(&doc).unwrap().unwrap(),
+            "Resized exemplar model, not measured: car (spec)"
+        );
+        let doc = json!({ "objects": [mesh(json!({ "size": [1, 1, 1], "source": " " }))] });
+        assert!(exemplar_label(&doc).is_err());
+    }
 }

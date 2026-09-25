@@ -95,6 +95,14 @@ export type SceneObject =
       /** 4×4, column-major, pivot-relative mesh to project frame; translation = the pivot's
        * place. `placeMatrix(pivot, 0)` leaves the mesh at its own coordinates. */
       matrix: number[];
+      /** Its bounds' size along its own x, y, z (m), as imported. */
+      extent?: [number, number, number];
+      /**
+       * Set only for an exemplar model (a stand-in, not a measurement of this scene): fitted
+       * to stated dimensions along its own x, y, z, with where they came from. A measured
+       * mesh is always drawn at its true size.
+       */
+      exemplar?: { size: [number, number, number]; source: string } | null;
     })
   | (Base & { kind: "light"; light: LightDef });
 
@@ -190,6 +198,25 @@ export function placeMatrix(
   const t = (heading * Math.PI) / 180;
   const [c, s] = [Math.cos(t) * scale, Math.sin(t) * scale];
   return [c, s, 0, 0, -s, c, 0, 0, 0, 0, scale, 0, position[0], position[1], position[2], 1];
+}
+
+/**
+ * A placed mesh's matrix: turned `heading`° about z and moved to `position`, at its true size,
+ * or for an exemplar stretched along its own axes so its bounds match the stated size.
+ */
+export function meshMatrix(
+  position: [number, number, number],
+  heading: number,
+  extent?: [number, number, number],
+  exemplar?: { size: [number, number, number] } | null,
+): number[] {
+  const m = placeMatrix(position, heading);
+  if (!exemplar || !extent) return m;
+  for (let axis = 0; axis < 3; axis++) {
+    const k = extent[axis] > 0 ? exemplar.size[axis] / extent[axis] : 1;
+    for (let r = 0; r < 3; r++) m[axis * 4 + r] *= k;
+  }
+  return m;
 }
 
 /** Uniform scale of a placement matrix (length of its x axis). */

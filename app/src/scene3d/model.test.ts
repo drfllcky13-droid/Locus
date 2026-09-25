@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { UNITS } from "../format";
-import { fileToProject, placeMatrix, scaleOf } from "./model";
+import { fileToProject, meshMatrix, placeMatrix, scaleOf } from "./model";
 
 const apply = (m: number[], p: [number, number, number]) =>
   new THREE.Vector3(...p).applyMatrix4(new THREE.Matrix4().fromArray(m)).toArray();
@@ -39,5 +39,17 @@ describe("placement", () => {
     close(apply(m, [0, 0, 1]), [10, 20, 3]);
     expect(scaleOf(m)).toBeCloseTo(2, 12);
     expect(placeMatrix([1, 2, 3], 30)).toEqual(placeMatrix([1, 2, 3], 30, 1));
+  });
+});
+
+describe("exemplar meshes", () => {
+  it("a measured mesh keeps its size; an exemplar is fitted along its own axes", () => {
+    expect(meshMatrix([1, 2, 3], 30, [4, 2, 1.5], null)).toEqual(placeMatrix([1, 2, 3], 30));
+    const m = meshMatrix([0, 0, 0], 90, [4, 2, 1.5], { size: [4.8, 1.9, 1.5] });
+    // Its x axis (length 4 → 4.8) now runs along project +y after the 90° turn.
+    expect(Math.hypot(m[0], m[1], m[2])).toBeCloseTo(1.2, 12);
+    expect(m[1]).toBeCloseTo(1.2, 12);
+    expect(Math.hypot(m[4], m[5], m[6])).toBeCloseTo(0.95, 12);
+    expect(m[10]).toBeCloseTo(1, 12);
   });
 });

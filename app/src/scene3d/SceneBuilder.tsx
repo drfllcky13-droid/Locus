@@ -27,15 +27,15 @@ import {
   EMPTY_SCENE,
   PRESETS,
   preset,
+  meshMatrix,
   placeMatrix,
-  scaleOf,
   type DiagramRef,
   type MaterialDef,
   type SceneDoc,
   type SceneObject,
 } from "./model";
 import { buildScene, type Diagrams, type Meshes } from "./render";
-import { basePoint, isMesh, loadEvidenceMesh } from "./evidenceMesh";
+import { basePoint, extentOf, isMesh, loadEvidenceMesh } from "./evidenceMesh";
 import { DEFAULT_ROOF, rectangle, type RoofType } from "./roof";
 import { walls } from "../diagram2d/builders";
 import { AnimationPanel } from "../animation/AnimationPanel";
@@ -540,6 +540,8 @@ export function SceneBuilder({
                     visible: true,
                     evidence: { id: rec.id, sha256: rec.sha256, name: rec.contents.meshes[0].name },
                     pivot,
+                    extent: extentOf(m),
+                    exemplar: null,
                     // At the mesh's own coordinates, as the 3D view shows it; move it from there.
                     matrix: placeMatrix(pivot, 0),
                   });
@@ -868,9 +870,15 @@ function MeshEditor({
   setMove: (m: "off" | "translate" | "rotate") => void;
 }) {
   const pos: [number, number, number] = [m.matrix[12], m.matrix[13], m.matrix[14]];
-  const [heading, scale] = [headingOf(m.matrix), scaleOf(m.matrix)];
-  const place = (p: [number, number, number], h: number, s: number) =>
-    update({ ...m, matrix: placeMatrix(p, h, s) });
+  const heading = headingOf(m.matrix);
+  const ex = m.exemplar ?? null;
+  const set = (p: [number, number, number], h: number, e: typeof ex) =>
+    update({ ...m, exemplar: e, matrix: meshMatrix(p, h, m.extent, e) });
+  const size = ex?.size ?? m.extent ?? [0, 0, 0];
+  const setSize = (axis: number, v: number) =>
+    v > 0 &&
+    ex &&
+    set(pos, heading, { ...ex, size: size.map((s, i) => (i === axis ? v : s)) as typeof size });
   return (
     <>
       <p className="muted">
@@ -878,11 +886,43 @@ function MeshEditor({
         metres from its recorded unit. x, y, z is where the bottom centre of its bounds goes; as
         first added it sits at its own coordinates. It can&apos;t be picked or measured.
       </p>
-      {num("x (m)", pos[0], (x) => place([x, pos[1], pos[2]], heading, scale), 0.01)}
-      {num("y (m)", pos[1], (y) => place([pos[0], y, pos[2]], heading, scale), 0.01)}
-      {num("z (m)", pos[2], (z) => place([pos[0], pos[1], z], heading, scale), 0.01)}
-      {num("Heading (°, anticlockwise from +x)", heading, (h) => place(pos, h, scale), 1)}
-      {num("Scale (×)", scale, (s) => s > 0 && place(pos, heading, s), 0.01)}
+      {num("x (m)", pos[0], (x) => set([x, pos[1], pos[2]], heading, ex), 0.01)}
+      {num("y (m)", pos[1], (y) => set([pos[0], y, pos[2]], heading, ex), 0.01)}
+      {num("z (m)", pos[2], (z) => set([pos[0], pos[1], z], heading, ex), 0.01)}
+      {num("Heading (°, anticlockwise from +x)", heading, (h) => set(pos, h, ex), 1)}
+      {m.extent && (
+        <label className="inline">
+          <input
+            type="checkbox"
+            checked={!!ex}
+            onChange={(e) =>
+              set(pos, heading, e.target.checked ? { size: m.extent!, source: "" } : null)
+            }
+          />
+          Exemplar model: fit to stated dimensions
+        </label>
+      )}
+      {ex ? (
+        <>
+          <p className="warn">
+            Resized exemplar model, not measured. Renders of this scene say so on every frame.
+          </p>
+          {num("Size along its x (m)", size[0], (v) => setSize(0, v), 0.01)}
+          {num("Size along its y (m)", size[1], (v) => setSize(1, v), 0.01)}
+          {num("Size along its z (m)", size[2], (v) => setSize(2, v), 0.01)}
+          <label>
+            Source of the dimensions
+            <input
+              value={ex.source}
+              placeholder="e.g. manufacturer specification, 2019 model year"
+              onChange={(e) => set(pos, heading, { ...ex, source: e.target.value })}
+            />
+          </label>
+          {!ex.source.trim() && <p className="error">State where the dimensions come from.</p>}
+        </>
+      ) : (
+        <p className="muted">Drawn at its true measured size.</p>
+      )}
       <div className="buttons">
         <button
           className={move === "translate" ? "primary" : ""}
