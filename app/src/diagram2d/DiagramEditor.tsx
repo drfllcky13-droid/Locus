@@ -81,6 +81,14 @@ const TOOLS: [Tool, string][] = [
   ["legend", "Legend"],
 ];
 
+/** The tool row in groups: select, draw, measure, annotate. */
+const TOOL_GROUPS: [string, Tool[]][] = [
+  ["Select", ["select"]],
+  ["Draw", ["line", "polyline", "room", "road", "arc"]],
+  ["Measure", ["dimension", "point", "measure"]],
+  ["Annotate", ["text", "north", "symbol", "marker", "scalebar", "legend"]],
+];
+
 /** Instructions for each click of each tool. */
 const STEPS: Record<Tool, string[]> = {
   select: [
@@ -616,30 +624,37 @@ export function DiagramEditor({
           }}
           aria-label="Diagram name"
         />
-        {TOOLS.map(([t, label]) => (
-          <button
-            key={t}
-            className={tool === t ? "primary" : ""}
-            onClick={() => {
-              if (multi && clicks.length) finishPolyline();
-              setTool(t);
-              setClicks([]);
-            }}
-          >
-            {label}
-          </button>
+        {TOOL_GROUPS.map(([group, ids]) => (
+          <div key={group} className="seg" role="group" aria-label={group}>
+            {TOOLS.filter(([t]) => ids.includes(t)).map(([t, label]) => (
+              <button
+                key={t}
+                className={tool === t ? "primary" : ""}
+                aria-pressed={tool === t}
+                onClick={() => {
+                  if (multi && clicks.length) finishPolyline();
+                  setTool(t);
+                  setClicks([]);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         ))}
-        <span className="dg-sep" />
-        {(["endpoint", "midpoint", "perpendicular", "grid"] as const).map((k) => (
-          <label key={k} className="inline">
-            <input
-              type="checkbox"
-              checked={snaps[k]}
-              onChange={(e) => setSnaps({ ...snaps, [k]: e.target.checked })}
-            />
-            {k}
-          </label>
-        ))}
+        <div className="dg-snaps" role="group" aria-label="Snap to">
+          <span aria-hidden="true">Snap</span>
+          {(["endpoint", "midpoint", "perpendicular", "grid"] as const).map((k) => (
+            <label key={k} className="inline">
+              <input
+                type="checkbox"
+                checked={snaps[k]}
+                onChange={(e) => setSnaps({ ...snaps, [k]: e.target.checked })}
+              />
+              {k}
+            </label>
+          ))}
+        </div>
         <button onClick={() => setPrinting({ scale: 100, paper: "A4", landscape: true })}>
           Print to scale…
         </button>
