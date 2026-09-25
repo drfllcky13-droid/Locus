@@ -5,7 +5,7 @@ import { api, type DiagramRevision } from "../api";
 import { corners, dist, movable, pickAt, snap, translate, type Snap } from "./geometry";
 import { MeasureDialog } from "./MeasureDialog";
 import { road, room } from "./builders";
-import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL } from "./BuiltPanel";
+import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL, ItemPanel } from "./BuiltPanel";
 import {
   UnderlayPanel,
   useUnderlayUrl,
@@ -214,6 +214,13 @@ export function DiagramEditor({
     (e): e is Extract<Entity, { kind: "room" | "road" }> =>
       e.id === selected &&
       (e.kind === "room" || e.kind === "road") &&
+      !layerOf.get(e.layer)?.locked,
+  );
+
+  const selectedItem = doc.entities.find(
+    (e): e is Extract<Entity, { kind: "north" | "symbol" | "text" }> =>
+      e.id === selected &&
+      (e.kind === "north" || e.kind === "symbol" || e.kind === "text") &&
       !layerOf.get(e.layer)?.locked,
   );
 
@@ -953,6 +960,17 @@ export function DiagramEditor({
           {selectedBuilt && (
             <BuiltPanel
               entity={selectedBuilt}
+              onChange={(next) =>
+                change({
+                  ...doc,
+                  entities: doc.entities.map((x) => (x.id === next.id ? next : x)),
+                })
+              }
+            />
+          )}
+          {selectedItem && (
+            <ItemPanel
+              entity={selectedItem}
               onChange={(next) =>
                 change({
                   ...doc,

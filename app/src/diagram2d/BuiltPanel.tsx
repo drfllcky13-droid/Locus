@@ -196,3 +196,43 @@ export function BuiltPanel({
     </div>
   );
 }
+
+type Placed = Extract<Entity, { kind: "north" | "symbol" | "text" }>;
+
+/** Turning, sizing and rewording a placed north arrow, symbol or text (angles shown in degrees). */
+export function ItemPanel({ entity, onChange }: { entity: Placed; onChange: (e: Placed) => void }) {
+  const deg = Math.round(((entity.rotation * 180) / Math.PI) * 100) / 100;
+  const rotation = num(
+    entity.kind === "north" ? "North, anticlockwise from up (°)" : "Rotation, anticlockwise (°)",
+    deg,
+    (d) => onChange({ ...entity, rotation: (d * Math.PI) / 180 }),
+    1,
+    -360,
+  );
+  return (
+    <div className="dg-built">
+      <h3>
+        {entity.kind === "north" ? "North arrow" : entity.kind === "text" ? "Text" : "Symbol"}
+      </h3>
+      {entity.kind === "text" && (
+        <label>
+          Text
+          <input
+            value={entity.text}
+            onChange={(e) => e.target.value.trim() && onChange({ ...entity, text: e.target.value })}
+          />
+        </label>
+      )}
+      {entity.kind === "text" &&
+        num(
+          "Height on paper (mm)",
+          entity.height,
+          (height) => height > 0 && onChange({ ...entity, height }),
+          0.5,
+        )}
+      {rotation}
+      {entity.kind === "symbol" &&
+        num("Scale (×)", entity.scale, (scale) => scale > 0 && onChange({ ...entity, scale }), 0.1)}
+    </div>
+  );
+}
