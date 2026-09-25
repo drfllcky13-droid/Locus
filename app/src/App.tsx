@@ -216,7 +216,10 @@ export function App() {
               />
             ) : (
               <div className="welcome">
-                <h1>Lotus</h1>
+                <h1>
+                  <Mark size={22} />
+                  Lotus
+                </h1>
                 <p className="muted">Create a project, or open an existing .locus folder.</p>
                 <button className="primary" onClick={() => setDialog({ kind: "new" })}>
                   New project…
@@ -260,6 +263,16 @@ export function App() {
                 active={shown === "scene"}
                 onNotice={setNotice}
               />
+              {!project && !pkg && (
+                <div className="empty-state">
+                  <Mark size={40} />
+                  <strong>No project open</strong>
+                  <p>
+                    Create a project for the case, or open an existing .locus folder, from the panel
+                    on the left or the File menu.
+                  </p>
+                </div>
+              )}
             </div>
             {shown !== "scene" &&
               diagrams
@@ -469,5 +482,35 @@ function EvidenceItem({ e }: { e: EvidenceRecord }) {
         <div className="warn">{formatCount(c.warnings.length, "warning")}</div>
       )}
     </li>
+  );
+}
+
+/** The app's mark: three petals, drawn here (no bundled image). */
+function Mark({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path
+        d="M12 3c2.6 2.6 3.2 6.4 0 11-3.2-4.6-2.6-8.4 0-11z"
+        fill="currentColor"
+        opacity="0.9"
+      />
+      <path
+        d="M3.5 9.5c3.5-.2 6.6 1.6 8.5 6.5-4.9-.2-8-2.6-8.5-6.5z"
+        fill="currentColor"
+        opacity="0.6"
+      />
+      <path
+        d="M20.5 9.5c-3.5-.2-6.6 1.6-8.5 6.5 4.9-.2 8-2.6 8.5-6.5z"
+        fill="currentColor"
+        opacity="0.6"
+      />
+      <path
+        d="M5 18.5h14"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.5"
+      />
+    </svg>
   );
 }
