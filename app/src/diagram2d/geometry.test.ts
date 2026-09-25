@@ -9,7 +9,7 @@ import {
   translate,
   type SnapOptions,
 } from "./geometry";
-import { room } from "./builders";
+import { road, room } from "./builders";
 import type { Entity, Pt } from "./model";
 
 const line = (id: string, a: [number, number], b: [number, number]): Entity => ({
@@ -200,6 +200,28 @@ describe("picking", () => {
   it("an item placed at a point wins over a line it sits on", () => {
     expect(pickAt([edge, marker], [0, -2.01], 0.2)?.id).toBe("m");
     expect(pickAt([marker, edge], [0, -2.01], 0.2)?.id).toBe("m");
+  });
+
+  it("a road is picked on its centre line, painted or not", () => {
+    const params = {
+      lanes: [1, 1] as [number, number],
+      laneWidth: 3.5,
+      shoulder: 1,
+      centre: "none" as const,
+    };
+    const centreline: Pt[] = [
+      [-7.5, 0],
+      [7.5, 0],
+    ];
+    const r: Entity = {
+      id: "r",
+      layer: "base",
+      kind: "road",
+      centreline,
+      road: params,
+      geometry: road(centreline, params),
+    };
+    expect(pickAt([r], [0, 0.1], 0.2)?.id).toBe("r");
   });
 
   it("otherwise the nearest within reach, and nothing beyond it", () => {

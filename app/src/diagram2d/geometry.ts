@@ -204,7 +204,10 @@ export function corners(pts: Pt[], closed: boolean, tol = 1e-3): Pt[] {
 /** Distance from `p` to an entity, for picking (m). */
 function distanceTo(e: Entity, p: Pt): number {
   let d = Infinity;
-  for (const [a, b] of segments(e)) {
+  // A road is also picked on its centre line, which may be broken or not painted at all.
+  const centre: [Pt, Pt][] =
+    e.kind === "road" ? e.centreline.slice(1).map((p, i) => [e.centreline[i], p]) : [];
+  for (const [a, b] of [...segments(e), ...centre]) {
     const f = foot(p, a, b);
     const on = f && dist(a, f) + dist(f, b) <= dist(a, b) * (1 + 1e-9);
     d = Math.min(d, on && f ? dist(p, f) : Math.min(dist(p, a), dist(p, b)));
