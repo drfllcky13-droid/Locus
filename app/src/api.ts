@@ -302,6 +302,7 @@ export const api = {
   measure: (kind: MeasurementRecord["kind"], picks: PickHit[]) =>
     invoke<StateView>("measure", { kind, picks }),
   measurementDelete: (id: number) => invoke<StateView>("measurement_delete", { id }),
+  measurementRestore: (id: number) => invoke<StateView>("measurement_restore", { id }),
   setPointSigma: (meters: number) => invoke<StateView>("set_point_sigma", { meters }),
   cleanupApply: (request: CleanupRequest) => invoke<StateView>("cleanup_apply", { request }),
   cleanupPreview: (request: CleanupRequest) => invoke<number>("cleanup_preview", { request }),

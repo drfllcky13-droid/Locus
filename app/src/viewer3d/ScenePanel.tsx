@@ -48,6 +48,8 @@ export function ScenePanel(props: {
   const { scene, state, settings, setSettings } = props;
   const readOnly = useReadOnly();
   const [k, setK] = useState(8);
+  // The last measurement deleted, so it can be restored.
+  const [deleted, setDeleted] = useState<{ id: number; kind: string } | null>(null);
   const [stdMult, setStdMult] = useState(2);
   const [voxel, setVoxel] = useState(0.01);
   const [sigmaMm, setSigmaMm] = useState<string>("");
@@ -315,6 +317,20 @@ export function ScenePanel(props: {
           </button>
         </label>
       )}
+      {deleted && (
+        <p className="muted">
+          Deleted #{deleted.id} {deleted.kind} (kept in the project and logged).{" "}
+          <button
+            className="link"
+            onClick={async () => {
+              props.setState(await api.measurementRestore(deleted.id));
+              setDeleted(null);
+            }}
+          >
+            Undo
+          </button>
+        </p>
+      )}
       {state?.measurements.length ? (
         <ul className="measurements">
           {state.measurements.map((m) => {
@@ -329,7 +345,10 @@ export function ScenePanel(props: {
                   <button
                     className="link"
                     aria-label={`Delete measurement ${m.id}`}
-                    onClick={async () => props.setState(await api.measurementDelete(m.id))}
+                    onClick={async () => {
+                      props.setState(await api.measurementDelete(m.id));
+                      setDeleted(m.id > 0 ? { id: m.id, kind: m.kind } : null);
+                    }}
                   >
                     ×
                   </button>

@@ -56,6 +56,7 @@ fn main() {
             scene_cmds::pick_resolve,
             scene_cmds::measure,
             scene_cmds::measurement_delete,
+            scene_cmds::measurement_restore,
             scene_cmds::set_point_sigma,
             scene_cmds::cleanup_apply,
             scene_cmds::cleanup_preview,

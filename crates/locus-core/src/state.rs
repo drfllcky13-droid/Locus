@@ -247,6 +247,20 @@ impl Project {
         })
     }
 
+    /// Undo a deletion: the measurement is listed again, and the restore is logged.
+    pub fn restore_measurement(&mut self, id: i64) -> Result<()> {
+        self.logged("measurement.restored", |tx| {
+            let n = tx.execute(
+                "UPDATE measurements SET deleted_at = NULL WHERE id = ?1 AND deleted_at IS NOT NULL",
+                params![id],
+            )?;
+            if n == 0 {
+                return Err(crate::Error::NotFound(format!("deleted measurement {id}")));
+            }
+            Ok(((), json!({ "id": id })))
+        })
+    }
+
     pub fn measurements(&self) -> Result<Vec<MeasurementRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, kind, points, result, created_at, created_by FROM measurements

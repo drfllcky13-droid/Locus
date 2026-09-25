@@ -73,6 +73,10 @@ fn settings_measurements_and_cleanups_are_audit_logged() {
     assert!(p.measurements().unwrap().is_empty());
     assert_eq!(last_action(&p).0, "measurement.deleted");
     assert!(p.delete_measurement(id).is_err(), "already deleted");
+    p.restore_measurement(id).unwrap();
+    assert_eq!(last_action(&p).0, "measurement.restored");
+    assert_eq!(p.measurements().unwrap().len(), 1);
+    assert!(p.restore_measurement(id).is_err(), "not deleted");
 
     let scan = CleanupScan {
         evidence_id: 1,

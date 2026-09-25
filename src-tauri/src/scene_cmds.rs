@@ -422,6 +422,22 @@ pub async fn measure(app: AppHandle, kind: String, picks: Vec<Pick>) -> CmdResul
     .await
 }
 
+/// Undo a measurement's deletion.
+#[tauri::command]
+pub async fn measurement_restore(app: AppHandle, id: i64) -> CmdResult<StateView> {
+    blocking(app, move |s| {
+        s.project
+            .lock()
+            .unwrap()
+            .as_mut()
+            .ok_or("no project")?
+            .restore_measurement(id)
+            .map_err(err)?;
+        state_view(s)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn measurement_delete(app: AppHandle, id: i64) -> CmdResult<StateView> {
     blocking(app, move |s| {
