@@ -150,8 +150,38 @@ describe("moving and finishing", () => {
       measurement: { method: "triangulation", refs: [], side: null },
       sigma: 0.01,
     };
-    expect(movable(p)).toBe(false);
-    expect(movable({ ...p, measurement: null })).toBe(true);
+    expect(movable(p, [p])).toBe(false);
+    expect(movable({ ...p, measurement: null }, [])).toBe(true);
+  });
+
+  it("reference points a measured point was taken from don't move", () => {
+    type Point = Extract<Entity, { kind: "point" }>;
+    const ref = (id: string): Point => ({
+      id,
+      layer: "base",
+      kind: "point",
+      at: [0, 0],
+      label: id,
+      measurement: null,
+      sigma: null,
+    });
+    const tri: Entity = {
+      ...ref("m"),
+      measurement: { method: "triangulation", refs: [{ point: "a", distance: 5 }], side: null },
+    };
+    const base: Entity = {
+      ...ref("n"),
+      measurement: {
+        method: "baseline_offset",
+        from: "b",
+        to: "c",
+        along: 1,
+        offset: 1,
+        side: "Left",
+      },
+    };
+    const all = [ref("a"), ref("b"), ref("c"), ref("d"), tri, base];
+    expect(all.filter((e) => movable(e, all)).map((e) => e.id)).toEqual(["d"]);
   });
 });
 

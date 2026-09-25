@@ -2,7 +2,16 @@ import { HelpButton } from "../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
-import { corners, dist, movable, pickAt, snap, translate, type Snap } from "./geometry";
+import {
+  corners,
+  dist,
+  measuredFrom,
+  movable,
+  pickAt,
+  snap,
+  translate,
+  type Snap,
+} from "./geometry";
 import { MeasureDialog } from "./MeasureDialog";
 import { road, room } from "./builders";
 import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL, ItemPanel } from "./BuiltPanel";
@@ -361,7 +370,11 @@ export function DiagramEditor({
       } else if (ev.key === "Enter" && multi) finishPolyline();
       else if ((ev.key === "Delete" || ev.key === "Backspace") && selected) {
         const e = doc.entities.find((x) => x.id === selected);
-        if (e && !layerOf.get(e.layer)?.locked) {
+        if (e && measuredFrom(doc.entities).has(e.id))
+          onNotice(
+            "A measured point was taken from this reference point. Delete the measured point first.",
+          );
+        else if (e && !layerOf.get(e.layer)?.locked) {
           change({ ...doc, entities: doc.entities.filter((x) => x.id !== selected) });
           setSelected(null);
         }
@@ -644,7 +657,7 @@ export function DiagramEditor({
             if (tool === "select" && ev.button === 0 && !calibrating) {
               const from = toWorld(view, screen(ev));
               const hit = hitAt(from);
-              if (hit && movable(hit) && !layerOf.get(hit.layer)?.locked) {
+              if (hit && movable(hit, doc.entities) && !layerOf.get(hit.layer)?.locked) {
                 dragging.current.move = { id: hit.id, from };
                 setSelected(hit.id);
               }

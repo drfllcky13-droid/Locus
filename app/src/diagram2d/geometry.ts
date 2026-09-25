@@ -142,13 +142,26 @@ export function length(e: Entity): number {
   return segments(e).reduce((s, [a, b]) => s + dist(a, b), 0);
 }
 
+/** Ids of the reference points that measured points were taken from. */
+export function measuredFrom(entities: Entity[]): Set<string> {
+  const ids = new Set<string>();
+  for (const e of entities)
+    if (e.kind === "point" && e.measurement)
+      for (const id of e.measurement.method === "baseline_offset"
+        ? [e.measurement.from, e.measurement.to]
+        : e.measurement.refs.map((r) => r.point))
+        ids.add(id);
+  return ids;
+}
+
 /**
  * Whether an entity can be dragged to a new place. Measured points sit where their field
- * measurements put them, and underlays where their calibration or slice placed them, so they
- * stay put.
+ * measurements put them, the reference points they were taken from stay where they were
+ * (or the readings would no longer give the point), and underlays sit where their
+ * calibration or slice placed them.
  */
-export const movable = (e: Entity): boolean =>
-  e.kind !== "underlay" && !(e.kind === "point" && e.measurement);
+export const movable = (e: Entity, all: Entity[]): boolean =>
+  e.kind !== "underlay" && !(e.kind === "point" && e.measurement) && !measuredFrom(all).has(e.id);
 
 /** An entity moved by `d` metres; built items keep their parameters and geometry. */
 export function translate(e: Entity, d: Pt): Entity {
