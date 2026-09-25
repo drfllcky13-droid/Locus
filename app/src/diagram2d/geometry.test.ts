@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { corners, foot, length, movable, snap, translate, type SnapOptions } from "./geometry";
+import {
+  corners,
+  foot,
+  length,
+  movable,
+  pickAt,
+  snap,
+  translate,
+  type SnapOptions,
+} from "./geometry";
 import { room } from "./builders";
 import type { Entity, Pt } from "./model";
 
@@ -143,5 +152,29 @@ describe("moving and finishing", () => {
     };
     expect(movable(p)).toBe(false);
     expect(movable({ ...p, measurement: null })).toBe(true);
+  });
+});
+
+describe("picking", () => {
+  const edge: Entity = { id: "edge", layer: "base", kind: "line", a: [-5, -2], b: [5, -2] };
+  // A marker snapped onto the edge, a hair off where the user then clicks.
+  const marker: Entity = {
+    id: "m",
+    layer: "base",
+    kind: "marker",
+    number: 2,
+    at: [-0.02, -2],
+    note: "",
+  };
+
+  it("an item placed at a point wins over a line it sits on", () => {
+    expect(pickAt([edge, marker], [0, -2.01], 0.2)?.id).toBe("m");
+    expect(pickAt([marker, edge], [0, -2.01], 0.2)?.id).toBe("m");
+  });
+
+  it("otherwise the nearest within reach, and nothing beyond it", () => {
+    const other: Entity = { id: "o", layer: "base", kind: "line", a: [-5, -2.1], b: [5, -2.1] };
+    expect(pickAt([edge, other], [3, -2.08], 0.2)?.id).toBe("o");
+    expect(pickAt([edge, marker], [0, -3], 0.2)).toBeUndefined();
   });
 });

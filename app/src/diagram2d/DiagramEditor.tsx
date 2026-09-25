@@ -2,17 +2,7 @@ import { HelpButton } from "../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
-import {
-  corners,
-  dist,
-  endpoints,
-  foot,
-  movable,
-  segments,
-  snap,
-  translate,
-  type Snap,
-} from "./geometry";
+import { corners, dist, movable, pickAt, snap, translate, type Snap } from "./geometry";
 import { MeasureDialog } from "./MeasureDialog";
 import { road, room } from "./builders";
 import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL } from "./BuiltPanel";
@@ -119,22 +109,6 @@ const STEPS: Record<Tool, string[]> = {
 const newId = () => crypto.randomUUID();
 const fmt = (m: number) => `${m.toFixed(3)} m`;
 const AUTOSAVE_MS = 1500;
-
-/** Distance from `p` to an entity, for picking (m). */
-function distanceTo(e: Entity, p: Pt): number {
-  const segs = segments(e);
-  let d = Infinity;
-  for (const [a, b] of segs) {
-    const f = foot(p, a, b);
-    const on = f && dist(a, f) + dist(f, b) <= dist(a, b) * (1 + 1e-9);
-    d = Math.min(d, on && f ? dist(p, f) : Math.min(dist(p, a), dist(p, b)));
-  }
-  if (e.kind === "arc") d = Math.min(d, Math.abs(dist(p, e.center) - e.radius));
-  for (const q of endpoints(e)) d = Math.min(d, dist(p, q));
-  if (e.kind === "north" || e.kind === "scalebar" || e.kind === "legend")
-    d = Math.min(d, dist(p, e.at));
-  return d;
-}
 
 export function DiagramEditor({
   initial,
@@ -293,11 +267,7 @@ export function DiagramEditor({
   };
 
   /** The nearest visible item within 8 px of `p`. */
-  const hitAt = (p: Pt) =>
-    visible
-      .map((e) => [e, distanceTo(e, p)] as const)
-      .filter(([, d]) => d <= 8 / view.scale)
-      .sort((a, b) => a[1] - b[1])[0]?.[0];
+  const hitAt = (p: Pt) => pickAt(visible, p, 8 / view.scale);
 
   const click = (p: Pt) => {
     if (calibrating) {

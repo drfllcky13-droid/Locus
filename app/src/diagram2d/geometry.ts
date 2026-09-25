@@ -187,3 +187,40 @@ export function corners(pts: Pt[], closed: boolean, tol = 1e-3): Pt[] {
   if (closed) while (out.length > 1 && dist(out[out.length - 1], out[0]) <= tol) out.pop();
   return out;
 }
+
+/** Distance from `p` to an entity, for picking (m). */
+function distanceTo(e: Entity, p: Pt): number {
+  let d = Infinity;
+  for (const [a, b] of segments(e)) {
+    const f = foot(p, a, b);
+    const on = f && dist(a, f) + dist(f, b) <= dist(a, b) * (1 + 1e-9);
+    d = Math.min(d, on && f ? dist(p, f) : Math.min(dist(p, a), dist(p, b)));
+  }
+  if (e.kind === "arc") d = Math.min(d, Math.abs(dist(p, e.center) - e.radius));
+  for (const q of endpoints(e)) d = Math.min(d, dist(p, q));
+  if (e.kind === "north" || e.kind === "scalebar" || e.kind === "legend")
+    d = Math.min(d, dist(p, e.at));
+  return d;
+}
+
+/** Items placed at a point. Snapping often puts them on a wall or road edge. */
+const AT_A_POINT = new Set<Entity["kind"]>([
+  "point",
+  "marker",
+  "symbol",
+  "text",
+  "north",
+  "scalebar",
+  "legend",
+]);
+
+/**
+ * The item a click at `p` means: the nearest within `reach` (m), except that an item placed at
+ * a point wins over lines. Otherwise a marker snapped onto a road edge could never be picked.
+ */
+export function pickAt(entities: Entity[], p: Pt, reach: number): Entity | undefined {
+  return entities
+    .map((e) => [e, distanceTo(e, p), AT_A_POINT.has(e.kind) ? 0 : 1] as const)
+    .filter(([, d]) => d <= reach)
+    .sort((a, b) => a[2] - b[2] || a[1] - b[1])[0]?.[0];
+}
