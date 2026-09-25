@@ -176,3 +176,23 @@ pub async fn animation_save(
     })
     .await
 }
+
+/// An imported mesh's file bytes (OBJ, glTF/GLB or PLY), after checking them against the
+/// SHA-256 recorded at import. A file that no longer matches is refused, not shown.
+#[tauri::command]
+pub async fn mesh_bytes(app: AppHandle, evidence_id: i64) -> CmdResult<tauri::ipc::Response> {
+    blocking(app, move |s| {
+        let guard = s.project.lock().unwrap();
+        let p = guard.as_ref().ok_or("Open or create a project first.")?;
+        let rec = p
+            .evidence()
+            .map_err(err)?
+            .into_iter()
+            .find(|e| e.id == evidence_id && !e.contents.meshes.is_empty())
+            .ok_or(format!("Evidence #{evidence_id} is not an imported mesh."))?;
+        let bytes = crate::diagram_cmds::read_checked(p.root(), &rec.stored_path, &rec.sha256)
+            .map_err(|e| format!("Evidence #{evidence_id} is not shown: {e}"))?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
+    .await
+}

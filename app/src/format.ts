@@ -1,13 +1,14 @@
 // Display formatting. Every number shown carries its unit (CLAUDE.md rule 3).
 import type { Contents, EvidenceStatus, IntegrityReport, LinearUnit } from "./api";
 
-export const UNITS: { value: LinearUnit; label: string; symbol: string }[] = [
-  { value: "meter", label: "Meters", symbol: "m" },
-  { value: "centimeter", label: "Centimeters", symbol: "cm" },
-  { value: "millimeter", label: "Millimeters", symbol: "mm" },
-  { value: "foot", label: "International feet", symbol: "ft" },
-  { value: "us_survey_foot", label: "US survey feet", symbol: "US ft" },
-  { value: "inch", label: "Inches", symbol: "in" },
+/** `metres`: one unit in metres, as locus-core's LinearUnit::meters. */
+export const UNITS: { value: LinearUnit; label: string; symbol: string; metres: number }[] = [
+  { value: "meter", label: "Meters", symbol: "m", metres: 1 },
+  { value: "centimeter", label: "Centimeters", symbol: "cm", metres: 0.01 },
+  { value: "millimeter", label: "Millimeters", symbol: "mm", metres: 0.001 },
+  { value: "foot", label: "International feet", symbol: "ft", metres: 0.3048 },
+  { value: "us_survey_foot", label: "US survey feet", symbol: "US ft", metres: 1200 / 3937 },
+  { value: "inch", label: "Inches", symbol: "in", metres: 0.0254 },
 ];
 
 export function unitSymbol(u: LinearUnit | null): string {

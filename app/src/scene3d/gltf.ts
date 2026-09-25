@@ -1,17 +1,19 @@
 // The 3D scene as glTF binary (.glb): what the scene builder builds (extrusions, roofs, models,
-// lights), not the point cloud. glTF is y-up; the project frame is z-up, so the scene is turned
-// −90° about x, and the root node's extras say so, with the offset the geometry is relative to.
+// imported meshes, lights), not the point cloud. glTF is y-up; the project frame is z-up, so
+// the scene is turned −90° about x, and the root node's extras say so, with the offset the
+// geometry is relative to.
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import type { SceneDoc } from "./model";
-import { buildScene, type Diagrams } from "./render";
+import { buildScene, type Diagrams, type Meshes } from "./render";
 
 export async function sceneGlb(
   doc: SceneDoc,
   diagrams: Diagrams,
   origin: [number, number, number],
+  meshes: Meshes,
 ): Promise<ArrayBuffer> {
-  const built = buildScene(doc, diagrams, origin);
+  const built = buildScene(doc, diagrams, origin, meshes);
   const root = new THREE.Group();
   root.name = "Lotus scene";
   root.rotation.x = -Math.PI / 2;

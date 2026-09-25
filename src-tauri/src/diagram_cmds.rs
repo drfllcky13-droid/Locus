@@ -283,7 +283,7 @@ pub(crate) fn read_checked(root: &Path, file: &str, sha256: &str) -> CmdResult<V
     let (sha, _) = locus_core::hash::sha256_reader(bytes.as_slice(), &mut |_| {}).map_err(err)?;
     if sha != sha256 {
         return Err(format!(
-            "{file} has changed since it was placed (SHA-256 {sha}, expected {sha256})."
+            "{file} has changed since it was recorded (SHA-256 {sha}, expected {sha256})."
         ));
     }
     Ok(bytes)

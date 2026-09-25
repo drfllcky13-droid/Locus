@@ -86,6 +86,16 @@ export type SceneObject =
       materials: Partial<Record<Slot, MaterialDef>>;
       snap: SnapRecord | null;
     })
+  | (Base & {
+      kind: "mesh";
+      /** An imported mesh (OBJ, glTF/GLB, PLY), drawn in metres, z up (`fileToProject`). */
+      evidence: { id: number; sha256: string; name: string };
+      /** The mesh's pivot, in its own converted coordinates: the bottom centre of its bounds. */
+      pivot: [number, number, number];
+      /** 4×4, column-major, pivot-relative mesh to project frame; translation = the pivot's
+       * place. `placeMatrix(pivot, 0)` leaves the mesh at its own coordinates. */
+      matrix: number[];
+    })
   | (Base & { kind: "light"; light: LightDef });
 
 export interface Sun {
@@ -170,9 +180,30 @@ export const DEFAULT_MATERIAL: Record<Part | Slot, MaterialDef> = {
   marker: preset("marker"),
 };
 
-/** Column-major 4×4 for a rotation about z by `heading` degrees, then a translation. */
-export function placeMatrix(position: [number, number, number], heading: number): number[] {
+/** Column-major 4×4: a uniform `scale`, a rotation about z by `heading` degrees, then a
+ * translation. */
+export function placeMatrix(
+  position: [number, number, number],
+  heading: number,
+  scale = 1,
+): number[] {
   const t = (heading * Math.PI) / 180;
-  const [c, s] = [Math.cos(t), Math.sin(t)];
-  return [c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, position[0], position[1], position[2], 1];
+  const [c, s] = [Math.cos(t) * scale, Math.sin(t) * scale];
+  return [c, s, 0, 0, -s, c, 0, 0, 0, 0, scale, 0, position[0], position[1], position[2], 1];
+}
+
+/** Uniform scale of a placement matrix (length of its x axis). */
+export const scaleOf = (m: number[]) => Math.hypot(m[0], m[1], m[2]);
+
+/**
+ * Column-major 4×4 from a mesh file's own coordinates to project metres, z up: scaled by the
+ * unit recorded at import (`metres` per unit), and, for glTF (y up by its spec), turned +90°
+ * about x so (x, y, z) becomes (x, −z, y). The scene's glTF export turns −90° about x, the
+ * inverse, so a mesh exported and re-imported lands where it was.
+ */
+export function fileToProject(metres: number, yUp: boolean): number[] {
+  const s = metres;
+  return yUp
+    ? [s, 0, 0, 0, 0, 0, s, 0, 0, -s, 0, 0, 0, 0, 0, 1]
+    : [s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1];
 }

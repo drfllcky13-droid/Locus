@@ -84,6 +84,7 @@ fn main() {
             scene3d_cmds::diagram_revision,
             scene3d_cmds::surface_at,
             scene3d_cmds::sun_position,
+            scene3d_cmds::mesh_bytes,
             scene3d_cmds::animation_evaluate,
             scene3d_cmds::animation_save,
             export_cmds::case_report,

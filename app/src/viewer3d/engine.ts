@@ -404,7 +404,8 @@ export class Engine {
     if (this.built) {
       this.scene.remove(this.built);
       this.built.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
+        // `keep`: shared with a cache (imported meshes), not this object's to dispose.
+        if (o instanceof THREE.Mesh && !o.userData.keep) {
           o.geometry.dispose();
           for (const m of [o.material].flat()) {
             (m as THREE.MeshStandardMaterial).map?.dispose();
@@ -452,7 +453,7 @@ export class Engine {
     if (old) {
       this.scene.remove(old);
       old.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+        if ((o instanceof THREE.Mesh || o instanceof THREE.Line) && !o.userData.keep) {
           o.geometry.dispose();
           const m = o.material as THREE.Material & { map?: THREE.Texture | null };
           m.map?.dispose();

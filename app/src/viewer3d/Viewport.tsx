@@ -2,7 +2,7 @@ import { useAllows } from "../license";
 import { useReadOnly } from "../readOnly";
 import { ExportPanel } from "../export/ExportPanel";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision, type ProjectInfo, type Resolved, type StateView } from "../api";
 import { formatCount } from "../format";
 import { isViewKey } from "../keys";
@@ -11,6 +11,8 @@ import { TOOL_POINTS, type MeasurementRecord } from "./measureFormat";
 import type { ColorMode, PickHit, SceneData } from "./pointcloud";
 import { ScenePanel, type BuildStatus } from "./ScenePanel";
 import { SceneBuilder } from "../scene3d/SceneBuilder";
+import { loadEvidenceMesh } from "../scene3d/evidenceMesh";
+import * as THREE from "three";
 import { BloodstainPanel } from "../tools/bloodstain/BloodstainPanel";
 import { CameraPanel } from "../tools/camera/CameraPanel";
 import { PhotoPanel } from "../tools/photo/PhotoPanel";
@@ -143,6 +145,38 @@ export function Viewport({
   }, [loadScene, onNotice]);
 
   useEffect(() => engineRef.current?.setScene(shownScene), [shownScene]);
+
+  // Imported meshes ticked in the panel, at their own coordinates in the project frame.
+  // Kept with the project they belong to: evidence ids repeat across projects.
+  const [meshSel, setMeshSel] = useState<{ root?: string; ids: number[] }>({ ids: [] });
+  const shownMeshes = useMemo(() => (meshSel.root === root ? meshSel.ids : []), [meshSel, root]);
+  const setShownMeshes = useCallback((ids: number[]) => setMeshSel({ root, ids }), [root]);
+  const evidence = project?.evidence;
+  useEffect(() => {
+    const e = engineRef.current;
+    if (!e) return;
+    let live = true;
+    const recs = (evidence ?? []).filter((r) => shownMeshes.includes(r.id));
+    void Promise.allSettled(recs.map((r) => loadEvidenceMesh(r, root ?? ""))).then((results) => {
+      if (!live) return;
+      const g = new THREE.Group();
+      const o = e.origin;
+      g.position.set(-o[0], -o[1], -o[2]);
+      const failed: number[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") g.add(r.value.clone());
+        else {
+          failed.push(recs[i].id);
+          onNotice(String(r.reason));
+        }
+      });
+      e.setAnalysisOverlay("evidence-meshes", g.children.length ? g : null);
+      if (failed.length) setShownMeshes(shownMeshes.filter((id) => !failed.includes(id)));
+    });
+    return () => {
+      live = false;
+    };
+  }, [shownMeshes, setShownMeshes, evidence, root, shownScene, onNotice]);
   useEffect(() => {
     if (state && shownScene) engineRef.current?.setState(state);
   }, [state, shownScene]);
@@ -415,6 +449,9 @@ export function Viewport({
       {project && (
         <ScenePanel
           scene={shownScene}
+          meshes={project.evidence}
+          shownMeshes={shownMeshes}
+          setShownMeshes={setShownMeshes}
           state={state}
           builds={builds}
           tool={tool}
@@ -433,6 +470,7 @@ export function Viewport({
             key={project.root}
             engine={getEngine}
             evidence={project.evidence}
+            root={project.root}
             diagramList={diagrams}
             origin={shownScene?.origin.join() ?? ""}
             requestPick={(hint, then) => {

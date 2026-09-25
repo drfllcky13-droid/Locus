@@ -354,6 +354,8 @@ export const api = {
         height: number;
       }[]
     >("underlay_images"),
+  /** An imported mesh file, refused unless it still matches its recorded SHA-256. */
+  meshBytes: (evidenceId: number) => invoke<ArrayBuffer>("mesh_bytes", { evidenceId }),
   /** The image bytes, after the backend has checked their hash. */
   underlayBytes: (file: string, sha256: string) =>
     invoke<ArrayBuffer>("underlay_bytes", { file, sha256 }),

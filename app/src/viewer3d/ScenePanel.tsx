@@ -1,7 +1,15 @@
 import { HelpButton } from "../help/Help";
 import { useReadOnly } from "../readOnly";
 import { useState } from "react";
-import { api, type CleanupRecord, type CleanupRequest, type Region, type StateView } from "../api";
+import {
+  api,
+  type CleanupRecord,
+  type CleanupRequest,
+  type EvidenceRecord,
+  type Region,
+  type StateView,
+} from "../api";
+import { isMesh } from "../scene3d/evidenceMesh";
 import { formatCount } from "../format";
 import { formatCoordinate, formatMeasurement } from "./measureFormat";
 import type { SceneData } from "./pointcloud";
@@ -32,6 +40,10 @@ const CLEANUP_LABEL: Record<CleanupRecord["kind"], string> = {
 
 export function ScenePanel(props: {
   scene: SceneData | null;
+  /** The project's evidence; its imported meshes can be shown. */
+  meshes: EvidenceRecord[];
+  shownMeshes: number[];
+  setShownMeshes: (ids: number[]) => void;
   state: StateView | null;
   builds: Record<string, BuildStatus>;
   tool: Tool;
@@ -81,6 +93,43 @@ export function ScenePanel(props: {
               }`}
         </p>
       ))}
+
+      {props.meshes.some(isMesh) && (
+        <>
+          <h2>Meshes</h2>
+          <ul className="scans">
+            {props.meshes.filter(isMesh).map((m) => (
+              <li key={m.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={props.shownMeshes.includes(m.id)}
+                    onChange={(e) =>
+                      props.setShownMeshes(
+                        e.target.checked
+                          ? [...props.shownMeshes, m.id]
+                          : props.shownMeshes.filter((id) => id !== m.id),
+                      )
+                    }
+                  />{" "}
+                  #{m.id} {m.contents.meshes[0].name}{" "}
+                  <span className="muted">
+                    {m.contents.format},{" "}
+                    {formatCount(
+                      m.contents.meshes.reduce((n, x) => n + x.face_count, 0),
+                      "face",
+                    )}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className="muted">
+            Shown at their own coordinates, in metres. Picks and measurements go through meshes to
+            the point clouds.
+          </p>
+        </>
+      )}
 
       <h2>Tools</h2>
       <div className="toolbar">

@@ -61,12 +61,25 @@ function label(text: string): THREE.CanvasTexture {
 
 /** Diagram revisions by revision id, loaded by the caller. */
 export type Diagrams = Map<number, Diagram>;
+/** Imported meshes by evidence id, in project metres (evidenceMesh.ts), loaded by the caller. */
+export type Meshes = Map<number, THREE.Object3D>;
+
+/** Set a placement (model to project frame) on `g`, its translation relative to `origin`. */
+function place(g: THREE.Object3D, matrix: number[], origin: V3) {
+  const m = new THREE.Matrix4().fromArray(matrix);
+  m.elements[12] -= origin[0];
+  m.elements[13] -= origin[1];
+  m.elements[14] -= origin[2];
+  g.matrixAutoUpdate = false;
+  g.matrix.copy(m);
+}
 
 function objectGroup(
   o: SceneObject,
   diagrams: Diagrams,
   origin: V3,
   all: SceneObject[],
+  meshes: Meshes,
 ): THREE.Object3D | null {
   const g = new THREE.Group();
   g.userData.sceneObject = o.id;
@@ -118,12 +131,17 @@ function objectGroup(
           g.add(p);
         }
       }
-      const m = new THREE.Matrix4().fromArray(o.matrix);
-      m.elements[12] -= origin[0];
-      m.elements[13] -= origin[1];
-      m.elements[14] -= origin[2];
-      g.matrixAutoUpdate = false;
-      g.matrix.copy(m);
+      place(g, o.matrix, origin);
+      return g;
+    }
+    case "mesh": {
+      const m = meshes.get(o.evidence.id);
+      if (!m) return null;
+      const pivoted = new THREE.Group();
+      pivoted.position.set(-o.pivot[0], -o.pivot[1], -o.pivot[2]);
+      pivoted.add(m.clone());
+      g.add(pivoted);
+      place(g, o.matrix, origin);
       return g;
     }
     case "light": {
@@ -164,12 +182,17 @@ export function sunDirection(azimuth: number, elevation: number, north: number):
 }
 
 /** Everything in the scene document, relative to `origin`; `extent` bounds the sun's shadows. */
-export function buildScene(doc: SceneDoc, diagrams: Diagrams, origin: V3): THREE.Group {
+export function buildScene(
+  doc: SceneDoc,
+  diagrams: Diagrams,
+  origin: V3,
+  meshes: Meshes = new Map(),
+): THREE.Group {
   const root = new THREE.Group();
   root.name = "scene3d";
   for (const o of doc.objects) {
     if (!o.visible) continue;
-    const g = objectGroup(o, diagrams, origin, doc.objects);
+    const g = objectGroup(o, diagrams, origin, doc.objects, meshes);
     if (g) root.add(g);
   }
   if (doc.ambient > 0) root.add(new THREE.HemisphereLight(0xffffff, 0x444444, doc.ambient));

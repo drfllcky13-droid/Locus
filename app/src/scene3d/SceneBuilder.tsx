@@ -27,12 +27,14 @@ import {
   PRESETS,
   preset,
   placeMatrix,
+  scaleOf,
   type DiagramRef,
   type MaterialDef,
   type SceneDoc,
   type SceneObject,
 } from "./model";
-import { buildScene, type Diagrams } from "./render";
+import { buildScene, type Diagrams, type Meshes } from "./render";
+import { basePoint, isMesh, loadEvidenceMesh } from "./evidenceMesh";
 import { DEFAULT_ROOF, rectangle, type RoofType } from "./roof";
 import { walls } from "../diagram2d/builders";
 import { AnimationPanel } from "../animation/AnimationPanel";
@@ -46,6 +48,7 @@ const AUTOSAVE_MS = 1500;
 const newId = () => crypto.randomUUID();
 
 type Model = Extract<SceneObject, { kind: "model" }>;
+type MeshObject = Extract<SceneObject, { kind: "mesh" }>;
 
 const num = (label: string, value: number, set: (v: number) => void, step = 0.05) => (
   <label>
@@ -125,9 +128,12 @@ export function SceneBuilder({
   requestPick,
   onNotice,
   evidence,
+  root,
 }: {
   engine: () => Engine | null;
   evidence: EvidenceRecord[];
+  /** The project's folder (imported meshes are loaded per project). */
+  root: string;
   /** The project's diagrams at their newest revisions. */
   diagramList: DiagramRevision[];
   /** The view's render origin; geometry is rebuilt relative to it when it changes. */
@@ -143,6 +149,7 @@ export function SceneBuilder({
   const [saved, setSaved] = useState<SceneDoc>(EMPTY_SCENE);
   const dirty = doc !== saved;
   const [diagrams, setDiagrams] = useState<Diagrams>(new Map());
+  const [meshes, setMeshes] = useState<Meshes>(new Map());
   const [selected, setSelected] = useState<string | null>(null);
   const [move, setMove] = useState<"off" | "translate" | "rotate">("off");
   const [snapOpts, setSnapOpts] = useState({ radius: 0.1, align: false });
@@ -188,12 +195,34 @@ export function SceneBuilder({
     );
   }, [wanted, onNotice]);
 
+  // The imported meshes the scene's objects name (each hash-checked by the backend).
+  const wantedMeshes = useMemo(
+    () =>
+      [...new Set(doc.objects.flatMap((o) => (o.kind === "mesh" ? [o.evidence.id] : [])))].filter(
+        (id) => !meshes.has(id),
+      ),
+    [doc.objects, meshes],
+  );
+  useEffect(() => {
+    for (const id of wantedMeshes) {
+      const rec = evidence.find((e) => e.id === id);
+      if (!rec) {
+        onNotice(`The scene names evidence #${id}, which is not in this project.`);
+        continue;
+      }
+      loadEvidenceMesh(rec, root).then(
+        (m) => setMeshes((old) => new Map(old).set(id, m)),
+        (e) => onNotice(String(e)),
+      );
+    }
+  }, [wantedMeshes, evidence, root, onNotice]);
+
   // Document → view.
   useEffect(() => {
     const e = engine();
     if (!e) return;
-    e.setBuilt(buildScene(doc, diagrams, e.origin));
-  }, [doc, diagrams, engine, origin]);
+    e.setBuilt(buildScene(doc, diagrams, e.origin, meshes));
+  }, [doc, diagrams, meshes, engine, origin]);
   useEffect(() => () => engine()?.setBuilt(null), [engine]);
 
   const change = useCallback((next: SceneDoc) => setDoc(next), []);
@@ -210,6 +239,7 @@ export function SceneBuilder({
     e.onModelMoved = (id, matrix) => {
       const o = doc.objects.find((x) => x.id === id);
       if (o?.kind === "model") update({ ...o, matrix, snap: null });
+      if (o?.kind === "mesh") update({ ...o, matrix });
     };
     e.attachModel(move === "off" ? null : selected, move === "off" ? "translate" : move);
     return () => {
@@ -491,6 +521,41 @@ export function SceneBuilder({
           <option value="marker">Evidence marker</option>
         </select>
       </label>
+      {evidence.some(isMesh) && (
+        <label>
+          Add an imported mesh
+          <select
+            value=""
+            onChange={(e) => {
+              const rec = evidence.find((r) => r.id === Number(e.target.value));
+              if (!rec) return;
+              loadEvidenceMesh(rec, root).then(
+                (m) => {
+                  const pivot = basePoint(m);
+                  add({
+                    id: newId(),
+                    kind: "mesh",
+                    name: rec.contents.meshes[0].name,
+                    visible: true,
+                    evidence: { id: rec.id, sha256: rec.sha256, name: rec.contents.meshes[0].name },
+                    pivot,
+                    // At the mesh's own coordinates, as the 3D view shows it; move it from there.
+                    matrix: placeMatrix(pivot, 0),
+                  });
+                },
+                (err) => onNotice(String(err)),
+              );
+            }}
+          >
+            <option value="">Choose…</option>
+            {evidence.filter(isMesh).map((r) => (
+              <option key={r.id} value={r.id}>
+                #{r.id} {r.contents.meshes[0].name} ({r.contents.format})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         Add a light
         <select
@@ -683,6 +748,9 @@ export function SceneBuilder({
               setSnapOpts={setSnapOpts}
             />
           )}
+          {sel.kind === "mesh" && (
+            <MeshEditor m={sel} update={update} move={move} setMove={setMove} />
+          )}
           {sel.kind === "light" && <LightEditor o={sel} update={update} />}
         </div>
       )}
@@ -749,7 +817,7 @@ export function SceneBuilder({
           try {
             const path = await savePath(rev.name, "glb", "glTF binary");
             if (!path) return;
-            const bytes = await sceneGlb(doc, diagrams, e.origin);
+            const bytes = await sceneGlb(doc, diagrams, e.origin, meshes);
             const sha = await api.exportBytes(
               path,
               "3D scene glTF",
@@ -784,6 +852,51 @@ export function SceneBuilder({
         onNotice={onNotice}
       />
     </section>
+  );
+}
+
+function MeshEditor({
+  m,
+  update,
+  move,
+  setMove,
+}: {
+  m: MeshObject;
+  update: (o: SceneObject) => void;
+  move: "off" | "translate" | "rotate";
+  setMove: (m: "off" | "translate" | "rotate") => void;
+}) {
+  const pos: [number, number, number] = [m.matrix[12], m.matrix[13], m.matrix[14]];
+  const [heading, scale] = [headingOf(m.matrix), scaleOf(m.matrix)];
+  const place = (p: [number, number, number], h: number, s: number) =>
+    update({ ...m, matrix: placeMatrix(p, h, s) });
+  return (
+    <>
+      <p className="muted">
+        Imported mesh, evidence #{m.evidence.id} (SHA-256 {m.evidence.sha256.slice(0, 12)}…), in
+        metres from its recorded unit. x, y, z is where the bottom centre of its bounds goes; as
+        first added it sits at its own coordinates. It can&apos;t be picked or measured.
+      </p>
+      {num("x (m)", pos[0], (x) => place([x, pos[1], pos[2]], heading, scale), 0.01)}
+      {num("y (m)", pos[1], (y) => place([pos[0], y, pos[2]], heading, scale), 0.01)}
+      {num("z (m)", pos[2], (z) => place([pos[0], pos[1], z], heading, scale), 0.01)}
+      {num("Heading (°, anticlockwise from +x)", heading, (h) => place(pos, h, scale), 1)}
+      {num("Scale (×)", scale, (s) => s > 0 && place(pos, heading, s), 0.01)}
+      <div className="buttons">
+        <button
+          className={move === "translate" ? "primary" : ""}
+          onClick={() => setMove(move === "translate" ? "off" : "translate")}
+        >
+          Move
+        </button>
+        <button
+          className={move === "rotate" ? "primary" : ""}
+          onClick={() => setMove(move === "rotate" ? "off" : "rotate")}
+        >
+          Rotate
+        </button>
+      </div>
+    </>
   );
 }
 
