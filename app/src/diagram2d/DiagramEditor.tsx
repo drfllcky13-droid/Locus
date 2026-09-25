@@ -2,7 +2,17 @@ import { HelpButton } from "../help/Help";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DiagramRevision } from "../api";
-import { dist, endpoints, foot, segments, snap, type Snap } from "./geometry";
+import {
+  corners,
+  dist,
+  endpoints,
+  foot,
+  movable,
+  segments,
+  snap,
+  translate,
+  type Snap,
+} from "./geometry";
 import { MeasureDialog } from "./MeasureDialog";
 import { road, room } from "./builders";
 import { BuiltPanel, DEFAULT_ROAD, DEFAULT_WALL } from "./BuiltPanel";
@@ -72,12 +82,14 @@ const TOOLS: [Tool, string][] = [
 
 /** Instructions for each click of each tool. */
 const STEPS: Record<Tool, string[]> = {
-  select: ["Click an item to select it; Delete removes it. Drag to pan, wheel to zoom."],
+  select: [
+    "Click an item to select it; drag it to move it; Delete removes it. Drag empty space to pan, wheel to zoom.",
+  ],
   line: ["Click the start.", "Click the end (Esc to stop)."],
   polyline: ["Click the first point.", "Click the next point; Enter or double-click to finish."],
   room: [
     "Click the first inside corner of the room.",
-    "Click the next corner; Enter or double-click to close the room.",
+    "Click the next corner; Enter, double-click or another tool closes the room (Esc cancels).",
   ],
   road: [
     "Click the start of the road's centre line.",
@@ -165,7 +177,14 @@ export function DiagramEditor({
   } | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ center: [0, 0], scale: 40, width: 800, height: 600 });
-  const dragging = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const dragging = useRef<{
+    x: number;
+    y: number;
+    moved: boolean;
+    /** Dragging an item with the Select tool: its id and where the drag started (m). */
+    move?: { id: string; from: Pt };
+  } | null>(null);
+  const [moveBy, setMoveBy] = useState<{ id: string; d: Pt } | null>(null);
 
   // Keep the view sized to its box.
   useEffect(() => {
@@ -247,25 +266,37 @@ export function DiagramEditor({
   /** Tools that collect clicks until Enter or a double-click. */
   const multi = tool === "polyline" || tool === "room" || tool === "road";
   const finishPolyline = () => {
-    if (tool === "room" && clicks.length >= 3)
+    const pts = corners(clicks, tool === "room");
+    if (tool === "room" && pts.length >= 3)
       add({
         kind: "room",
-        outline: clicks,
+        outline: pts,
         thickness: DEFAULT_WALL,
         openings: [],
-        geometry: room(clicks, DEFAULT_WALL, []),
+        geometry: room(pts, DEFAULT_WALL, []),
       });
-    else if (tool === "road" && clicks.length >= 2)
+    else if (tool === "room" && clicks.length > 0)
+      onNotice(
+        "A room needs at least 3 corners: click each corner, then double-click or press Enter.",
+      );
+    else if (tool === "road" && pts.length >= 2)
       add({
         kind: "road",
-        centreline: clicks,
+        centreline: pts,
         road: DEFAULT_ROAD,
-        geometry: road(clicks, DEFAULT_ROAD),
+        geometry: road(pts, DEFAULT_ROAD),
       });
-    else if (tool === "polyline" && clicks.length >= 2)
-      add({ kind: "polyline", points: clicks, closed: false });
+    else if (tool === "polyline" && pts.length >= 2)
+      add({ kind: "polyline", points: pts, closed: false });
     setClicks([]);
   };
+
+  /** The nearest visible item within 8 px of `p`. */
+  const hitAt = (p: Pt) =>
+    visible
+      .map((e) => [e, distanceTo(e, p)] as const)
+      .filter(([, d]) => d <= 8 / view.scale)
+      .sort((a, b) => a[1] - b[1])[0]?.[0];
 
   const click = (p: Pt) => {
     if (calibrating) {
@@ -279,14 +310,9 @@ export function DiagramEditor({
     }
     const pts = [...clicks, p];
     switch (tool) {
-      case "select": {
-        const hit = visible
-          .map((e) => [e, distanceTo(e, p)] as const)
-          .filter(([, d]) => d <= 8 / view.scale)
-          .sort((a, b) => a[1] - b[1])[0];
-        setSelected(hit ? hit[0].id : null);
+      case "select":
+        setSelected(hitAt(p)?.id ?? null);
         return;
-      }
       case "line":
         if (pts.length === 2) {
           add({ kind: "line", a: pts[0], b: pts[1] });
@@ -602,6 +628,7 @@ export function DiagramEditor({
             key={t}
             className={tool === t ? "primary" : ""}
             onClick={() => {
+              if (multi && clicks.length) finishPolyline();
               setTool(t);
               setClicks([]);
             }}
@@ -634,11 +661,29 @@ export function DiagramEditor({
           onWheel={(ev) => setView((v) => zoomAt(v, screen(ev), ev.deltaY < 0 ? 1.15 : 1 / 1.15))}
           onPointerDown={(ev) => {
             dragging.current = { x: ev.clientX, y: ev.clientY, moved: false };
+            if (tool === "select" && ev.button === 0 && !calibrating) {
+              const from = toWorld(view, screen(ev));
+              const hit = hitAt(from);
+              if (hit && movable(hit) && !layerOf.get(hit.layer)?.locked) {
+                dragging.current.move = { id: hit.id, from };
+                setSelected(hit.id);
+              }
+            }
             (ev.target as Element).setPointerCapture?.(ev.pointerId);
           }}
           onPointerMove={(ev) => {
             const d = dragging.current;
-            if (d && (ev.buttons & 1 || ev.buttons & 4) && (tool === "select" || ev.buttons & 4)) {
+            if (d?.move && ev.buttons & 1) {
+              if (Math.abs(ev.clientX - d.x) + Math.abs(ev.clientY - d.y) > 2) d.moved = true;
+              if (d.moved) {
+                const now = toWorld(view, screen(ev));
+                setMoveBy({ id: d.move.id, d: [now[0] - d.move.from[0], now[1] - d.move.from[1]] });
+              }
+            } else if (
+              d &&
+              (ev.buttons & 1 || ev.buttons & 4) &&
+              (tool === "select" || ev.buttons & 4)
+            ) {
               const dx = ev.clientX - d.x;
               const dy = ev.clientY - d.y;
               if (Math.abs(dx) + Math.abs(dy) > 2) {
@@ -657,6 +702,16 @@ export function DiagramEditor({
           onPointerUp={(ev) => {
             const d = dragging.current;
             dragging.current = null;
+            if (d?.move && moveBy) {
+              change({
+                ...doc,
+                entities: doc.entities.map((e) =>
+                  e.id === moveBy.id ? translate(e, moveBy.d) : e,
+                ),
+              });
+              setMoveBy(null);
+              return;
+            }
             if (d?.moved || ev.button !== 0) return;
             click(
               tool === "select" || calibrating
@@ -691,7 +746,7 @@ export function DiagramEditor({
                 ),
             )}
             {gridLines}
-            {visible.map(drawEntity)}
+            {visible.map((e) => (moveBy?.id === e.id ? translate(e, moveBy.d) : e)).map(drawEntity)}
             {preview}
             {multi && clicks.length > 1 && (
               <polyline

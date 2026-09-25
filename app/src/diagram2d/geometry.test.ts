@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { foot, length, snap, type SnapOptions } from "./geometry";
-import type { Entity } from "./model";
+import { corners, foot, length, movable, snap, translate, type SnapOptions } from "./geometry";
+import { room } from "./builders";
+import type { Entity, Pt } from "./model";
 
 const line = (id: string, a: [number, number], b: [number, number]): Entity => ({
   id,
@@ -75,5 +76,72 @@ describe("geometry", () => {
       closed: true,
     };
     expect(length(poly)).toBe(12);
+  });
+});
+
+describe("moving and finishing", () => {
+  it("a double-clicked last corner would make a zero-length wall; corners() drops it", () => {
+    const clicked: Pt[] = [
+      [0, 0],
+      [4, 0],
+      [4, 3],
+      [0, 3],
+      [0, 3],
+    ];
+    // The repeated corner loses two outer wall faces (inner and outer face per wall: 8 lines).
+    expect(room(clicked, 0.15, []).segments).toHaveLength(6);
+    const pts = corners(clicked, true);
+    expect(pts).toHaveLength(4);
+    expect(room(pts, 0.15, []).segments).toHaveLength(8);
+    // Closing on the first corner is the same room.
+    expect(corners([...pts, [0, 0]], true)).toEqual(pts);
+  });
+
+  it("translate moves every kind by the offset, and built geometry with it", () => {
+    const r = room(
+      [
+        [0, 0],
+        [4, 0],
+        [4, 3],
+      ],
+      0.15,
+      [],
+    );
+    const e: Entity = {
+      id: "r",
+      layer: "base",
+      kind: "room",
+      outline: [
+        [0, 0],
+        [4, 0],
+        [4, 3],
+      ],
+      thickness: 0.15,
+      openings: [],
+      geometry: r,
+    };
+    const m = translate(e, [1, 2]);
+    if (m.kind !== "room") throw new Error();
+    expect(m.outline[1]).toEqual([5, 2]);
+    expect(m.geometry.segments[0].a).toEqual([r.segments[0].a[0] + 1, r.segments[0].a[1] + 2]);
+    const s = translate(
+      { id: "s", layer: "base", kind: "symbol", symbol: "car", at: [1, 1], rotation: 0, scale: 1 },
+      [-1, 0.5],
+    );
+    expect(s.kind === "symbol" && s.at).toEqual([0, 1.5]);
+  });
+
+  it("measured points and underlays don't move", () => {
+    const p: Entity = {
+      id: "p",
+      layer: "base",
+      kind: "point",
+      at: [0, 0],
+      label: "A",
+      measurement: { method: "triangulation", refs: [], side: null },
+      sigma: 0.01,
+    };
+    expect(movable(p)).toBe(false);
+    expect(movable({ ...p, measurement: null })).toBe(true);
   });
 });

@@ -141,3 +141,49 @@ export function length(e: Entity): number {
   }
   return segments(e).reduce((s, [a, b]) => s + dist(a, b), 0);
 }
+
+/**
+ * Whether an entity can be dragged to a new place. Measured points sit where their field
+ * measurements put them, and underlays where their calibration or slice placed them, so they
+ * stay put.
+ */
+export const movable = (e: Entity): boolean =>
+  e.kind !== "underlay" && !(e.kind === "point" && e.measurement);
+
+/** An entity moved by `d` metres; built items keep their parameters and geometry. */
+export function translate(e: Entity, d: Pt): Entity {
+  const m = (p: Pt) => add(p, d);
+  switch (e.kind) {
+    case "line":
+    case "dimension":
+      return { ...e, a: m(e.a), b: m(e.b) };
+    case "polyline":
+      return { ...e, points: e.points.map(m) };
+    case "arc":
+      return { ...e, center: m(e.center) };
+    case "room":
+    case "road": {
+      const geometry = {
+        segments: e.geometry.segments.map((s) => ({ ...s, a: m(s.a), b: m(s.b) })),
+        arcs: e.geometry.arcs.map((a) => ({ ...a, center: m(a.center) })),
+      };
+      return e.kind === "room"
+        ? { ...e, outline: e.outline.map(m), geometry }
+        : { ...e, centreline: e.centreline.map(m), geometry };
+    }
+    case "underlay":
+      return e;
+    default:
+      return { ...e, at: m(e.at) };
+  }
+}
+
+/**
+ * Clicked corners without repeats: a double-click lands twice on one spot, and clicking the
+ * first corner again to close a room repeats it; either gives a zero-length wall.
+ */
+export function corners(pts: Pt[], closed: boolean, tol = 1e-3): Pt[] {
+  const out = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > tol);
+  if (closed) while (out.length > 1 && dist(out[out.length - 1], out[0]) <= tol) out.pop();
+  return out;
+}
